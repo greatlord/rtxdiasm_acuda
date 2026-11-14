@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <lz4.h>
 #if defined(_M_IX86)
 #include <intrin.h>
 #endif
@@ -2277,53 +2278,12 @@ static uint64_t rd64le(const unsigned char *p) {
 static int lz4_block_decompress(const unsigned char *src, size_t slen,
                                 unsigned char *dst, size_t dcap,
                                 size_t *dlen_out) {
-    size_t si = 0, di = 0;
-    for (;;) {
-        unsigned tok, lit, ml, off, b;
-        if (si >= slen)
-            break;
-        tok = src[si++];
-        lit = tok >> 4;
-        if (lit == 15) {
-            do {
-                if (si >= slen)
-                    return -1;
-                b = src[si++];
-                lit += b;
-            } while (b == 255);
-        }
-        if (si + lit > slen || di + lit > dcap)
-            return -1;
-        if (lit) {
-            memcpy(dst + di, src + si, lit);
-            si += lit;
-            di += lit;
-        }
-        if (si >= slen)
-            break;
-        if (si + 2 > slen)
-            return -1;
-        off = (unsigned)src[si] | ((unsigned)src[si + 1] << 8);
-        si += 2;
-        if (off == 0 || off > di)
-            return -1;
-        ml = tok & 15;
-        if (ml == 15) {
-            do {
-                if (si >= slen)
-                    return -1;
-                b = src[si++];
-                ml += b;
-            } while (b == 255);
-        }
-        ml += 4;
-        if (di + ml > dcap)
-            return -1;
-        for (; ml > 0; ml--, di++)
-            dst[di] = dst[di - off];
-    }
+    int n = LZ4_decompress_safe((const char *)src, (char *)dst,
+                                (int)slen, (int)dcap);
+    if (n < 0)
+        return -1;
     if (dlen_out)
-        *dlen_out = di;
+        *dlen_out = (size_t)n;
     return 0;
 }
 

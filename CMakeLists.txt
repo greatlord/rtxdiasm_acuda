@@ -81,6 +81,22 @@ if(NOT TARGET acuda_compiler)
 endif()
 target_link_libraries(acuda_runtime PUBLIC acuda_compiler)
 
+# --- External: lz4 (v1.11.1 submodule) for fatbin LZ4 extraction ---
+set(LZ4_BUILD_CLI OFF CACHE BOOL "" FORCE)
+set(LZ4_BUILD_LEGACY_LZ4C OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+add_subdirectory(external/lz4/build/cmake ${CMAKE_CURRENT_BINARY_DIR}/external/lz4 EXCLUDE_FROM_ALL)
+if(TARGET lz4_static)
+  set(ACUDA_LZ4_TARGET lz4_static)
+elseif(TARGET LZ4::lz4_static)
+  set(ACUDA_LZ4_TARGET LZ4::lz4_static)
+elseif(TARGET lz4)
+  set(ACUDA_LZ4_TARGET lz4)
+else()
+  message(FATAL_ERROR "lz4 library target not found in external/lz4 submodule")
+endif()
+
 # --- CUDA Driver API (libcuda.so.1 / nvcuda.dll) ---
 add_library(acuda_driver SHARED
   src/driver/driver.c
@@ -106,7 +122,8 @@ target_include_directories(acuda_driver
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
-target_link_libraries(acuda_driver PRIVATE acuda_runtime Vulkan::Vulkan ${CMAKE_DL_LIBS})
+target_link_libraries(acuda_driver PRIVATE acuda_runtime Vulkan::Vulkan ${CMAKE_DL_LIBS} ${ACUDA_LZ4_TARGET})
+target_include_directories(acuda_driver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/lz4/lib)
 
 if(NOT WIN32)
   target_link_options(acuda_driver PRIVATE
