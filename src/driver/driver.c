@@ -6,8 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <lz4.h>
-#include <zstd.h>
+#include "rtxdiasm_fatbin.h"
 #if defined(_M_IX86)
 #include <intrin.h>
 #endif
@@ -2240,19 +2239,10 @@ CUresult ACUDA_CUDAAPI cuModuleLoadData(CUmodule *module, const void *image) {
 
 // ---- NVIDIA fatbin container parsing ----
 //
-// Layout (verified against torch's real fatbins with cuobjdump +
-// ZLUDA's reference structures; see docs/driver-api.md):
-//   wrapper { u32 magic=0x466243B1, u32 version(1|2), ptr data,
-//             ptr filename_or_fatbins }            <- cuModuleLoadFatBinary arg
-//   data -> header { u32 magic=0xBA55ED50, u16 version=1, u16 hdrsize,
-//                    u64 files_size }              <- 16 bytes
-//   then 64-byte file entries { u16 kind (1=PTX, 2=ELF), u16 version,
-//     u32 header_size, u32 payload_size, ..., u64 flags, ... },
-//   each followed by header_size bytes of header and payload_size bytes
-//   of payload (LZ4/ZSTD members stay unloadable: no decompressor).
-// Only PTX members can ever load here; everything is bounds-checked and
-// candidates must still pass full PTX validation (SASS can never slip
-// through as "PTX").
+// Core PTX member extraction/decompression (raw/LZ4/ZSTD) is shared via
+// rtxdiasm-fatbin-parse (rtxdiasm_fatbin_extract_first_ptx) so acuda and
+// cudart use identical fatbin decode logic. Driver-specific wrapper handling,
+// validation/OOM acceptance, and SASS fallback remain here.
 
 static uint16_t rd16le(const unsigned char *p) {
     return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
@@ -2268,180 +2258,29 @@ static uint64_t rd64le(const unsigned char *p) {
     return lo | (hi << 32);
 }
 
-// Scans one fatbin data blob for the first PTX member. Returns a
-// malloc'd NUL-terminated copy, or NULL (none / malformed / unsupported
-// compression).
-//
-// Compression (see docs/fatbin/fatbin-format.md): bin_info bit 0x2000 is
-// LZ4 block data (no frame magic): the stored payload starts with
-// `compressed_size` bytes of LZ4 that expand to `uncompressed_size`
-// (entry offset 56).  Bit 0x8000 (ZSTD) is decompressed via external zstd.
-static int lz4_block_decompress(const unsigned char *src, size_t slen,
-                                unsigned char *dst, size_t dcap,
-                                size_t *dlen_out) {
-    int n = LZ4_decompress_safe((const char *)src, (char *)dst,
-                                (int)slen, (int)dcap);
-    if (n < 0)
-        return -1;
-    if (dlen_out)
-        *dlen_out = (size_t)n;
-    return 0;
-}
-
-static int zstd_block_decompress(const unsigned char *src, size_t slen,
-                                 unsigned char *dst, size_t dcap,
-                                 size_t *dlen_out) {
-    size_t n = ZSTD_decompress(dst, dcap, src, slen);
-    if (ZSTD_isError(n))
-        return -1;
-    if (dlen_out)
-        *dlen_out = n;
-    return 0;
-}
-
 static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
-    if (cap < 16)
+    char *ptx = NULL;
+    size_t ptx_len = 0;
+    if (rtxdiasm_fatbin_extract_first_ptx(blob, cap, &ptx, &ptx_len) != RTXDIASM_FATBIN_OK)
         return NULL;
-    if (rd32le(blob) != 0xBA55ED50u || rd16le(blob + 4) != 1)
-        return NULL;
-    uint64_t files_size = rd64le(blob + 8);
-    // Sanity cap: a single fatbin blob bigger than this is not credible
-    // (torch's whole .nv_fatbin section is ~36 MiB across ~4000 members).
-    if (files_size > (uint64_t)512 << 20)
-        return NULL;
-    size_t pos = 16, end = pos + (size_t)files_size;
-    if (end < pos || end > cap)
-        return NULL;
-    while (pos + 64 <= end) {
-        const unsigned char *e = blob + pos;
-        uint16_t kind = rd16le(e);
-        uint32_t header_size = rd32le(e + 4);
-        uint32_t payload_size = rd32le(e + 8);
-        uint32_t compressed_size = rd32le(e + 16);
-        uint64_t flags = rd64le(e + 40);
-        uint64_t uncompressed_size = rd64le(e + 56);
-        if (header_size < 64 || header_size > 4096)
-            return NULL; // corrupt chain: stop, do not misparse
-        size_t pay = pos + header_size;
-        size_t disk = payload_size > compressed_size ? payload_size
-                                                     : compressed_size;
-        if (pay < pos || pay + disk < pay || pay + disk > end)
-            return NULL;
-        if (kind == 1 && payload_size > 0) {
-            // Compressed members (LZ4 0x2000, ZSTD 0x8000): decompress first;
-            // payload[0 .. compressed_size) expands to uncompressed_size.
-            // Cap the expansion to keep corrupt headers from huge mallocs.
-            if ((flags & (0x2000ull | 0x8000ull)) && compressed_size > 0 &&
-                compressed_size <= disk && uncompressed_size > 0 &&
-                uncompressed_size <= ((uint64_t)256 << 20)) {
-                size_t raw = compressed_size < disk ? compressed_size : disk;
-                unsigned char *dec = malloc((size_t)uncompressed_size + 1);
-                size_t got = 0;
-                int ok = 0;
-                const char *codec = (flags & 0x8000ull) ? "zstd" : "lz4";
-                if (dec) {
-                    if (flags & 0x8000ull)
-                        ok = zstd_block_decompress(blob + pay, raw, dec,
-                                                   (size_t)uncompressed_size,
-                                                   &got) == 0 &&
-                             got == (size_t)uncompressed_size;
-                    else
-                        ok = lz4_block_decompress(blob + pay, raw, dec,
-                                                  (size_t)uncompressed_size,
-                                                  &got) == 0 &&
-                             got == (size_t)uncompressed_size;
-                    if (!ok && getenv("ACUDA_TRACE"))
-                        fprintf(stderr,
-                                "acuda-trace .. %s entry decode fail "
-                                "(raw=%zu unc=%llu got=%zu)\n",
-                                codec, raw,
-                                (unsigned long long)uncompressed_size, got);
-                }
-                if (dec && ok) {
-                    dec[got] = '\0';
-                    char err[256];
-                    if (looks_like_ptx((const char *)dec)) {
-                        if (uncompressed_size > ACUDA_PTX_EAGER_VALIDATE_MAX) {
-                            ACUDA_DEBUG_PRINT("acuda-trace .. %s ptx large, accept without eager validate (%llu bytes)\n",
-                                        codec, (unsigned long long)uncompressed_size);
-                            return (char *)dec;
-                        }
-                        acuda_status_t vs = acuda_ptx_validate((const char *)dec, err,
-                                           sizeof(err));
-                        if (vs == ACUDA_SUCCESS)
-                            return (char *)dec;
-                        /* 32-bit: full parse of very large PTX can OOM; accept plausible
-                         * PTX and let module load/compile handle it (may compile lazily
-                         * per function or fail per-function rather than blocking).
-                         * An empty error also means an internal allocation failure:
-                         * the 64-bit compile host re-validates per entry anyway. */
-                        if (!err[0] || strstr(err, "out of memory")) {
-                            ACUDA_DEBUG_PRINT("acuda-trace .. %s ptx validate OOM/internal, accepting as ptx\n", codec);
-                            err[0] = '\0';
-                            return (char *)dec;
-                        }
-                    }
-                    ACUDA_DEBUG_PRINT("acuda-trace .. %s entry not ptx: %s\n",
-                                codec, err[0] ? err : "(validate ok, no .version?)");
-                    {
-                        const char *dump_dir = getenv("ACUDA_DUMP_PTX_DIR");
-                        if (dump_dir && *dump_dir) {
-                            static unsigned long dump_fail_serial;
-                            char path[1024];
-                            snprintf(path, sizeof(path), "%s/%sfail_%lu.ptx",
-                                     dump_dir, codec, ++dump_fail_serial);
-                            FILE *dfp = fopen(path, "wb");
-                            if (dfp) {
-                                fwrite(dec, 1, got, dfp);
-                                fclose(dfp);
-                                fprintf(stderr, "acuda-ptxdump %sfail_%lu: %s\n",
-                                        codec, dump_fail_serial,
-                                        err[0] ? err : "(no version)");
-                            }
-                        }
-                    }
-                    free(dec);
-                } else {
-                    free(dec);
-                }
-                // Compressed but undecodable: keep scanning rather than
-                // trusting a single header field.
-            } else if (!(flags & (0x2000ull | 0x8000ull))) {
-            // PTX member, stored raw: strip trailing NULs like the spec.
-            size_t n = payload_size;
-            while (n > 0 && blob[pay + n - 1] == 0)
-                n--;
-            char *out = malloc(n + 1);
-            if (!out)
-                return NULL;
-            memcpy(out, blob + pay, n);
-            out[n] = '\0';
-            char err[256];
-            if (looks_like_ptx(out)) {
-                if (n > ACUDA_PTX_EAGER_VALIDATE_MAX) {
-                    ACUDA_DEBUG_PRINT("acuda-trace .. raw ptx large, accept without eager validate (%zu bytes)\n", n);
-                    return out;
-                }
-                if (acuda_ptx_validate(out, err, sizeof(err)) == ACUDA_SUCCESS)
-                    return out;
-                /* Same 32-bit OOM/internal-failure tolerance as the LZ4 path:
-                 * a plausible PTX blob is re-validated by the 64-bit compile
-                 * host when each entry is requested. */
-                if (!err[0] || strstr(err, "out of memory")) {
-                    ACUDA_DEBUG_PRINT("acuda-trace .. raw ptx validate OOM/internal, accepting as ptx (%zu bytes)\n", n);
-                    return out;
-                }
-            }
-            free(out);
-            // Not valid PTX despite the kind tag: keep scanning rather
-            // than trusting a single header field.
-            }
-        }
-        size_t step = header_size + disk;
-        if (step == 0 || pos + step < pos || pos + step > end)
-            return NULL;
-        pos += step;
+    /* Preserve driver behavior: accept large PTX without eager full validate,
+     * and tolerate 32-bit validation OOM/internal failures (compile host revalidates). */
+    if (ptx_len > ACUDA_PTX_EAGER_VALIDATE_MAX) {
+        ACUDA_DEBUG_PRINT("acuda-trace .. extracted ptx large, accept without eager validate (%zu bytes)\n", ptx_len);
+        return ptx;
     }
+    {
+        char err[256];
+        err[0] = '\0';
+        if (acuda_ptx_validate(ptx, err, sizeof(err)) == ACUDA_SUCCESS)
+            return ptx;
+        if (!err[0] || strstr(err, "out of memory")) {
+            ACUDA_DEBUG_PRINT("acuda-trace .. extracted ptx validate OOM/internal, accepting as ptx (%zu bytes)\n", ptx_len);
+            return ptx;
+        }
+        ACUDA_DEBUG_PRINT("acuda-trace .. extracted ptx validate failed: %s\n", err);
+    }
+    free(ptx);
     return NULL;
 }
 
