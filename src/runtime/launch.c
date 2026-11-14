@@ -637,6 +637,7 @@ typedef struct {
     const size_t *ranges;
     uint32_t num_bufs;
     int has_storage;
+    int mem_barrier; // insert global shader-write -> read/write barrier
     acuda_stream_t stream;
     acuda_buffer_t *handles; // NULL for the raw VkBuffer path
     const uint32_t *written; // per-param write flags (binding order)
@@ -666,7 +667,7 @@ static acuda_status_t record_launch(VkCommandBuffer cmd, void *user) {
             h->gpu_read = 0;
         }
     }
-    if (r->has_storage) {
+    if (r->mem_barrier) {
         VkMemoryBarrier2 mb = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
             .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -744,7 +745,7 @@ static acuda_status_t record_launch(VkCommandBuffer cmd, void *user) {
             }
         }
     }
-    if (r->has_storage) {
+    if (r->mem_barrier) {
         VkMemoryBarrier2 mb = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
             .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -1452,6 +1453,12 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
             has_storage = 1;
     if (info->surf_table)
         has_storage = 1;
+    // Raw device addresses (PhysicalStorageBuffer) bypass the per-buffer
+    // dependency tracking, so a kernel that can resolve them needs a
+    // global memory barrier around its dispatch.  Without it, a kernel
+    // reading a buffer written by the previous launch can observe stale
+    // (e.g. freshly zeroed) contents.
+    int mem_barrier = has_storage || info->uses_bda_access != 0;
     // Image/texture work keeps the full-completion wait; buffer-only
     // submissions rely on the per-buffer dependency tracking.
     int serialize = has_storage;
@@ -1464,6 +1471,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         .push_data = pushbuf ? pushbuf : push_data,
         .push_bytes = total_push,
         .has_storage = has_storage,
+        .mem_barrier = mem_barrier,
         .stream = s,
         .grid = grid_dim_x,
         .grid_y = grid_dim_y,
