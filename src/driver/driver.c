@@ -1858,12 +1858,26 @@ static void acuda_cache_mkdir(const char *dir) {
 
 static uint64_t acuda_cache_hash(const char *ptx, const char *entry) {
     uint64_t h = 1469598103934665603ull;
-    const char *tag = "acuda-kernel-cache-v21";
+    /* Bump this whenever the PTX lifter or compiler changes: negative
+     * (".failed") entries are tag-scoped, so a stale failure would
+     * otherwise mask a fix.  ACUDA_CACHE_TAG adds a per-run namespace
+     * without deleting the cache directory. */
+    const char *tag = "acuda-kernel-cache-v22";
     const unsigned char *s;
     for (s = (const unsigned char *)tag; *s; s++) {
         h ^= *s;
         h *= 1099511628211ull;
     }
+    {
+        const char *extra = getenv("ACUDA_CACHE_TAG");
+        if (extra)
+            for (s = (const unsigned char *)extra; *s; s++) {
+                h ^= *s;
+                h *= 1099511628211ull;
+            }
+    }
+    h ^= 0xfcu;
+    h *= 1099511628211ull;
     if (ptx)
         for (s = (const unsigned char *)ptx; *s; s++) {
             h ^= *s;
@@ -1964,9 +1978,10 @@ static void acuda_cache_fail_path(const char *dir, uint64_t h, char *out,
 /* Tag-scoped negative cache: deterministic compile failures (unsupported
  * SASS, missing BDA types, ...) are re-attempted on every run, each
  * paying a full lift+compile roundtrip.  A .failed marker skips them.
- * The marker key includes the cache tag (via acuda_cache_hash), so a
- * compiler fix automatically re-attempts.  OOM/resource failures are
- * transient and never cached. */
+ * The marker key includes the cache tag (via acuda_cache_hash), so
+ * bumping the tag -- or setting ACUDA_CACHE_TAG per run -- makes a
+ * compiler/lifter fix re-attempt the kernel.  OOM/resource failures
+ * are transient and never cached. */
 static int acuda_cache_is_transient(const char *err) {
     static const char *words[] = {"oom", "out of memory", "out_of_memory",
                                   "no memory", "alloc fail", "resource"};
