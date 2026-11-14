@@ -1856,9 +1856,43 @@ static void acuda_cache_mkdir(const char *dir) {
 #endif
 }
 
+/* Default namespace for the kernel cache when ACUDA_CACHE_TAG is unset.
+ * Derived from this module's PE link timestamp: stable for every run of
+ * one build, but automatically different after a rebuild, so a new
+ * lifter never silently reuses kernels (or .failed markers) produced by
+ * an older one.  ACUDA_CACHE_TAG overrides it. */
+static const char *acuda_cache_default_tag(void) {
+    static char tag[64];
+    if (!tag[0]) {
+        unsigned long stamp = 0;
+#if defined(_WIN32)
+        HMODULE self = NULL;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)&acuda_cache_default_tag, &self) &&
+            self) {
+            const IMAGE_DOS_HEADER *dos = (const IMAGE_DOS_HEADER *)self;
+            if (dos->e_magic == IMAGE_DOS_SIGNATURE) {
+                const IMAGE_NT_HEADERS *nt =
+                    (const IMAGE_NT_HEADERS *)((const char *)self +
+                                               dos->e_lfanew);
+                if (nt->Signature == IMAGE_NT_SIGNATURE)
+                    stamp = nt->FileHeader.TimeDateStamp;
+            }
+        }
+#endif
+        snprintf(tag, sizeof(tag), "acuda-kernel-cache-%08lx", stamp);
+    }
+    return tag;
+}
+
 static uint64_t acuda_cache_hash(const char *ptx, const char *entry) {
     uint64_t h = 1469598103934665603ull;
-    const char *tag = "acuda-kernel-cache-v23";
+    /* The tag is the cache namespace: ACUDA_CACHE_TAG wins when set
+     * (a build id, a timestamp, ...); otherwise use the build stamp. */
+    const char *tag = getenv("ACUDA_CACHE_TAG");
+    if (!tag || !*tag)
+        tag = acuda_cache_default_tag();
     const unsigned char *s;
     for (s = (const unsigned char *)tag; *s; s++) {
         h ^= *s;
