@@ -99,6 +99,25 @@ else()
   message(FATAL_ERROR "lz4 library target not found in external/lz4 submodule")
 endif()
 
+# --- External: zstd (v1.5.7 submodule) for fatbin ZSTD extraction ---
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+if(NOT TARGET libzstd_static AND NOT TARGET libzstd_shared AND NOT TARGET zstd::libzstd_static)
+  add_subdirectory(external/zstd/build/cmake ${CMAKE_BINARY_DIR}/external/zstd EXCLUDE_FROM_ALL)
+endif()
+if(TARGET libzstd_static)
+  set(ACUDA_ZSTD_TARGET libzstd_static)
+elseif(TARGET zstd::libzstd_static)
+  set(ACUDA_ZSTD_TARGET zstd::libzstd_static)
+elseif(TARGET libzstd_shared)
+  set(ACUDA_ZSTD_TARGET libzstd_shared)
+else()
+  message(FATAL_ERROR "zstd library target not found in external/zstd submodule")
+endif()
+
 # --- CUDA Driver API (libcuda.so.1 / nvcuda.dll) ---
 add_library(acuda_driver SHARED
   src/driver/driver.c
@@ -124,8 +143,8 @@ target_include_directories(acuda_driver
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
-target_link_libraries(acuda_driver PRIVATE acuda_runtime Vulkan::Vulkan ${CMAKE_DL_LIBS} ${ACUDA_LZ4_TARGET})
-target_include_directories(acuda_driver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/lz4/lib)
+target_link_libraries(acuda_driver PRIVATE acuda_runtime Vulkan::Vulkan ${CMAKE_DL_LIBS} ${ACUDA_LZ4_TARGET} ${ACUDA_ZSTD_TARGET})
+target_include_directories(acuda_driver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/lz4/lib ${CMAKE_CURRENT_SOURCE_DIR}/external/zstd/lib)
 
 if(NOT WIN32)
   target_link_options(acuda_driver PRIVATE

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <lz4.h>
+#include <zstd.h>
 #if defined(_M_IX86)
 #include <intrin.h>
 #endif
@@ -2274,7 +2275,7 @@ static uint64_t rd64le(const unsigned char *p) {
 // Compression (see docs/fatbin/fatbin-format.md): bin_info bit 0x2000 is
 // LZ4 block data (no frame magic): the stored payload starts with
 // `compressed_size` bytes of LZ4 that expand to `uncompressed_size`
-// (entry offset 56).  Bit 0x8000 (ZSTD) stays unsupported.
+// (entry offset 56).  Bit 0x8000 (ZSTD) is decompressed via external zstd.
 static int lz4_block_decompress(const unsigned char *src, size_t slen,
                                 unsigned char *dst, size_t dcap,
                                 size_t *dlen_out) {
@@ -2284,6 +2285,17 @@ static int lz4_block_decompress(const unsigned char *src, size_t slen,
         return -1;
     if (dlen_out)
         *dlen_out = (size_t)n;
+    return 0;
+}
+
+static int zstd_block_decompress(const unsigned char *src, size_t slen,
+                                 unsigned char *dst, size_t dcap,
+                                 size_t *dlen_out) {
+    size_t n = ZSTD_decompress(dst, dcap, src, slen);
+    if (ZSTD_isError(n))
+        return -1;
+    if (dlen_out)
+        *dlen_out = n;
     return 0;
 }
 
@@ -2315,38 +2327,43 @@ static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
                                                      : compressed_size;
         if (pay < pos || pay + disk < pay || pay + disk > end)
             return NULL;
-        if (kind == 1 && !(flags & 0x8000ull) && payload_size > 0) {
-            // LZ4 members (0x2000): decompress first; the stored bytes
-            // are payload[0 .. compressed_size), expanding to
-            // uncompressed_size.  Cap the expansion to keep corrupt
-            // headers from causing huge mallocs.
-            if ((flags & 0x2000ull) && compressed_size > 0 &&
+        if (kind == 1 && payload_size > 0) {
+            // Compressed members (LZ4 0x2000, ZSTD 0x8000): decompress first;
+            // payload[0 .. compressed_size) expands to uncompressed_size.
+            // Cap the expansion to keep corrupt headers from huge mallocs.
+            if ((flags & (0x2000ull | 0x8000ull)) && compressed_size > 0 &&
                 compressed_size <= disk && uncompressed_size > 0 &&
                 uncompressed_size <= ((uint64_t)256 << 20)) {
                 size_t raw = compressed_size < disk ? compressed_size : disk;
-                unsigned char *dec =
-                    malloc((size_t)uncompressed_size + 1);
+                unsigned char *dec = malloc((size_t)uncompressed_size + 1);
                 size_t got = 0;
-                int lz4ok = 0;
+                int ok = 0;
+                const char *codec = (flags & 0x8000ull) ? "zstd" : "lz4";
                 if (dec) {
-                    lz4ok = lz4_block_decompress(blob + pay, raw, dec,
-                                                 (size_t)uncompressed_size,
-                                                 &got) == 0 &&
-                            got == (size_t)uncompressed_size;
-                    if (!lz4ok && getenv("ACUDA_TRACE"))
+                    if (flags & 0x8000ull)
+                        ok = zstd_block_decompress(blob + pay, raw, dec,
+                                                   (size_t)uncompressed_size,
+                                                   &got) == 0 &&
+                             got == (size_t)uncompressed_size;
+                    else
+                        ok = lz4_block_decompress(blob + pay, raw, dec,
+                                                  (size_t)uncompressed_size,
+                                                  &got) == 0 &&
+                             got == (size_t)uncompressed_size;
+                    if (!ok && getenv("ACUDA_TRACE"))
                         fprintf(stderr,
-                                "acuda-trace .. lz4 entry decode fail "
+                                "acuda-trace .. %s entry decode fail "
                                 "(raw=%zu unc=%llu got=%zu)\n",
-                                raw, (unsigned long long)uncompressed_size,
-                                got);
+                                codec, raw,
+                                (unsigned long long)uncompressed_size, got);
                 }
-                if (dec && lz4ok) {
+                if (dec && ok) {
                     dec[got] = '\0';
                     char err[256];
                     if (looks_like_ptx((const char *)dec)) {
                         if (uncompressed_size > ACUDA_PTX_EAGER_VALIDATE_MAX) {
-                            ACUDA_DEBUG_PRINT("acuda-trace .. lz4 ptx large, accept without eager validate (%llu bytes)\n",
-                                        (unsigned long long)uncompressed_size);
+                            ACUDA_DEBUG_PRINT("acuda-trace .. %s ptx large, accept without eager validate (%llu bytes)\n",
+                                        codec, (unsigned long long)uncompressed_size);
                             return (char *)dec;
                         }
                         acuda_status_t vs = acuda_ptx_validate((const char *)dec, err,
@@ -2359,26 +2376,27 @@ static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
                          * An empty error also means an internal allocation failure:
                          * the 64-bit compile host re-validates per entry anyway. */
                         if (!err[0] || strstr(err, "out of memory")) {
-                            ACUDA_DEBUG_PRINT("acuda-trace .. lz4 ptx validate OOM/internal, accepting as ptx\n");
+                            ACUDA_DEBUG_PRINT("acuda-trace .. %s ptx validate OOM/internal, accepting as ptx\n", codec);
                             err[0] = '\0';
                             return (char *)dec;
                         }
                     }
-                    ACUDA_DEBUG_PRINT("acuda-trace .. lz4 entry not ptx: %s\n",
-                                err[0] ? err : "(validate ok, no .version?)");
+                    ACUDA_DEBUG_PRINT("acuda-trace .. %s entry not ptx: %s\n",
+                                codec, err[0] ? err : "(validate ok, no .version?)");
                     {
                         const char *dump_dir = getenv("ACUDA_DUMP_PTX_DIR");
                         if (dump_dir && *dump_dir) {
-                            static unsigned long dump_lz4fail_serial;
+                            static unsigned long dump_fail_serial;
                             char path[1024];
-                            snprintf(path, sizeof(path), "%s/lz4fail_%lu.ptx",
-                                     dump_dir, ++dump_lz4fail_serial);
+                            snprintf(path, sizeof(path), "%s/%sfail_%lu.ptx",
+                                     dump_dir, codec, ++dump_fail_serial);
                             FILE *dfp = fopen(path, "wb");
                             if (dfp) {
                                 fwrite(dec, 1, got, dfp);
                                 fclose(dfp);
-                                fprintf(stderr, "acuda-ptxdump lz4fail_%lu: %s\n",
-                                        dump_lz4fail_serial, err[0] ? err : "(no version)");
+                                fprintf(stderr, "acuda-ptxdump %sfail_%lu: %s\n",
+                                        codec, dump_fail_serial,
+                                        err[0] ? err : "(no version)");
                             }
                         }
                     }
@@ -2388,7 +2406,7 @@ static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
                 }
                 // Compressed but undecodable: keep scanning rather than
                 // trusting a single header field.
-            } else if (!(flags & 0x2000ull)) {
+            } else if (!(flags & (0x2000ull | 0x8000ull))) {
             // PTX member, stored raw: strip trailing NULs like the spec.
             size_t n = payload_size;
             while (n > 0 && blob[pay + n - 1] == 0)
