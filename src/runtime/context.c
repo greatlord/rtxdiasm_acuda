@@ -1507,6 +1507,8 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     };
     vkGetPhysicalDeviceProperties2(ctx->phys, &p2);
     ctx->subgroup_size = (int)subprops.subgroupSize;
+    ctx->subgroup_ops = (uint32_t)subprops.supportedOperations;
+    ctx->subgroup_stages = (uint32_t)subprops.supportedStages;
     ctx->max_workgroup_subgroups = v13props.maxComputeWorkgroupSubgroups;
     ctx->max_buffer_size = v13props.maxBufferSize;
     ctx->max_image_dimension1d = ctx->props.limits.maxImageDimension1D;

@@ -312,6 +312,9 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         eff_sg = 32;
     else if (ctx->pref_subgroup_size && !info->uses_barrier)
         eff_sg = ctx->pref_subgroup_size;
+    if (info->uses_subgroup && !ctx->subgroup32_ok && eff_sg == 0 &&
+        (ctx->subgroup_size == 8 || ctx->subgroup_size == 16))
+        eff_sg = (uint32_t)ctx->subgroup_size;
     if (eff_sg && ctx->max_workgroup_subgroups > 0 &&
         (block_dim_x + eff_sg - 1u) / eff_sg >
             ctx->max_workgroup_subgroups) {
@@ -322,23 +325,36 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
                 ctx->max_workgroup_subgroups);
         return ACUDA_ERROR_NOT_SUPPORTED;
     }
-    // PTX defines warps as 32 lanes; the compiler emits 32-bit lane
-    // masks and SubgroupLocalInvocationId-based shuffles. Request a
-    // 32-wide subgroup when the device supports the control. Without
-    // the control, 32- and 64-lane subgroups are exact (the group
-    // emitters split 64-lane waves into 32-lane segments); anything
-    // else would silently corrupt shuffles/votes, so reject it.
-    // If the launch has no more lanes than the device's native subgroup,
-    // every logical lane lives in one hardware subgroup and the CUDA warp
-    // operations are exact even when that subgroup is smaller than 32.
+    // PTX defines warps as 32 lanes. Request a 32-wide subgroup when
+    // the device supports the control. Without the control, 32- and
+    // 64-lane subgroups are exact (64-lane waves are split into 32-lane
+    // segments). For 8/16-lane physical subgroups, the compiler emits
+    // adaptive SPIR-V that emulates 32-lane logical warps via shared
+    // memory when SubgroupSize < 32. If the launch fits in one native
+    // subgroup, hardware subgroup ops are exact regardless of size.
     if (info->uses_subgroup && !ctx->subgroup32_ok &&
         ctx->subgroup_size != 32 && ctx->subgroup_size != 64 &&
         block_dim_x > (uint32_t)ctx->subgroup_size) {
-        fprintf(stderr,
-                "ACuda: kernel '%s' needs 32-lane warp semantics but this "
-                "device reports %d-lane subgroups and cannot require 32\n",
-                info->entry, ctx->subgroup_size);
-        return ACUDA_ERROR_NOT_SUPPORTED;
+        if (ctx->subgroup_size != 8 && ctx->subgroup_size != 16) {
+            fprintf(stderr,
+                    "ACuda: kernel '%s' needs 32-lane warp semantics but this "
+                    "device reports %d-lane subgroups and cannot require 32\n",
+                    info->entry, ctx->subgroup_size);
+            return ACUDA_ERROR_NOT_SUPPORTED;
+        }
+        /* Emulation uses non-uniform subgroup arithmetic/elect ops. */
+        {
+            const uint32_t need = VK_SUBGROUP_FEATURE_BASIC_BIT |
+                                  VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
+            if ((ctx->subgroup_ops & need) != need ||
+                !(ctx->subgroup_stages & VK_SHADER_STAGE_COMPUTE_BIT)) {
+                fprintf(stderr,
+                        "ACuda: kernel '%s' needs 8/16-lane warp emulation but "
+                        "device subgroup features are insufficient (ops=0x%x stages=0x%x)\n",
+                        info->entry, ctx->subgroup_ops, ctx->subgroup_stages);
+                return ACUDA_ERROR_NOT_SUPPORTED;
+            }
+        }
     }
     launch_cache_t *e = calloc(1, sizeof(*e));
     if (!e)
@@ -537,6 +553,15 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         req_sg = 32;
     else if (ctx->pref_subgroup_size && !info->uses_barrier)
         req_sg = ctx->pref_subgroup_size;
+    /* 8/16-lane devices: prefer a controlled physical subgroup size for
+     * predictable warp emulation grouping when supported. */
+    if (info->uses_subgroup && !ctx->subgroup32_ok && req_sg == 0 &&
+        (ctx->subgroup_size == 8 || ctx->subgroup_size == 16)) {
+        if (ctx->subgroup_min <= (uint32_t)ctx->subgroup_size &&
+            ctx->subgroup_max >= (uint32_t)ctx->subgroup_size &&
+            ctx->subgroup_size >= 8)
+            req_sg = (uint32_t)ctx->subgroup_size;
+    }
     if (req_sg) {
         subgroup_req.requiredSubgroupSize = req_sg;
         stage.pNext = &subgroup_req;

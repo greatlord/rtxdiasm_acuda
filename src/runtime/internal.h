@@ -199,6 +199,8 @@ struct acuda_context_impl {
     int subgroup32_ok;   // subgroupSizeControl can require 32 for compute
     uint32_t subgroup_min, subgroup_max; // control range
     uint32_t pref_subgroup_size; // ACUDA_SUBGROUP_SIZE override (0 = default)
+    uint32_t subgroup_ops; // VkSubgroupFeatureFlags supportedOperations
+    uint32_t subgroup_stages; // VkShaderStageFlags supportedStages
     uint32_t max_workgroup_subgroups; // Vulkan13 maxComputeWorkgroupSubgroups
     uint32_t timestamp_bits; // valid timestamp bits on the compute queue
     VkDeviceSize max_buffer_size; // maintenance4 maxBufferSize (0 = unknown)
