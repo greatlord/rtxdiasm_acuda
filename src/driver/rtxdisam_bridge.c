@@ -1,4 +1,9 @@
 // Optional bridge to rtxdisam's native C ABI.
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
+// dladdr() lives behind _GNU_SOURCE on glibc; define it before the first
+// system header so the sibling-directory lookup below compiles cleanly.
+#define _GNU_SOURCE
+#endif
 //
 // ACuda can load PTX from cubin/fatbin containers, but it does not decode
 // SASS. When an image contains only SM-architecture code, dynamically load
@@ -98,6 +103,31 @@ static int load_library(char *err, size_t errlen) {
             if (g_library)
                 break;
         }
+#ifndef _WIN32
+        if (!g_library) {
+            // The loader searches the process rpath/LD_LIBRARY_PATH, not
+            // the directory this libcuda.so lives in.  ACuda stages the
+            // lifter next to its own libraries, so try that first.
+            Dl_info di;
+            if (dladdr((void *)(uintptr_t)&load_library, &di) &&
+                di.dli_fname) {
+                const char *slash = strrchr(di.dli_fname, '/');
+                if (slash) {
+                    char path[1024];
+                    int dirn = (int)(slash - di.dli_fname);
+                    static const char *siblings[] = {
+                        "librtxdisam_native.so", "rtxdisam_native.so",
+                        NULL,
+                    };
+                    for (int i = 0; !g_library && siblings[i]; i++) {
+                        snprintf(path, sizeof(path), "%.*s/%s", dirn,
+                                 di.dli_fname, siblings[i]);
+                        g_library = open_library(path);
+                    }
+                }
+            }
+        }
+#endif
     }
     if (!g_library) {
         set_error(err, errlen,

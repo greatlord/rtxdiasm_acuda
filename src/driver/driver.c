@@ -2119,11 +2119,32 @@ static CUresult module_from_sass_image(CUmodule *module,
     return CUDA_SUCCESS;
 }
 
+/* Select the cubin/fatbin backend (shared with rtxdiasm_guard/cudart):
+ *   0 (default) - C fatbin parser when the image carries PTX, otherwise
+ *                 lift SASS with rtxdisam (C#).
+ *   1           - C fatbin parser only; never call the SASS lifter.
+ *   2           - rtxdisam (C#) only; skip the C fatbin parser.
+ * Unset, empty or invalid values mean 0. */
+static int cubin_backend(void) {
+    const char *s = getenv("ACUDA_CUBIN_BACKEND");
+    if (s && *s) {
+        long v = strtol(s, NULL, 0);
+        if (v == 1 || v == 2)
+            return (int)v;
+    }
+    return 0;
+}
+
 static CUresult load_sass_image(CUmodule *module, const unsigned char *data,
                                 size_t size) {
     if (!module)
         return CUDA_ERROR_INVALID_VALUE;
     *module = NULL;
+    if (cubin_backend() == 1) {
+        ACUDA_DEBUG_PRINT("acuda-trace .. backend=1 (C parser only): "
+                    "refusing the rtxdisam SASS lift\n");
+        return CUDA_ERROR_INVALID_IMAGE;
+    }
     char err[1024] = {0};
     char target[16];
     reported_sm_target(target, sizeof(target));
@@ -2301,7 +2322,7 @@ static CUresult load_fatbin_member(CUmodule *module,
             ACUDA_DEBUG_PRINT("acuda-trace .. dumped fatbin %zu bytes\n", size);
         }
     }
-    char *ptx = fatbin_first_ptx(data, size);
+    char *ptx = cubin_backend() == 2 ? NULL : fatbin_first_ptx(data, size);
     if (!ptx)
         return load_sass_image(module, data, size);
     CUresult r = cuModuleLoadData(module, ptx);
@@ -2628,7 +2649,13 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
                 acuda_cache_store(module->ptx, name, k);
         }
     }
-    if (!skip_attempts && cst != ACUDA_SUCCESS && module->image && module->image_size) {
+    if (!skip_attempts && cst != ACUDA_SUCCESS && module->image &&
+        module->image_size && cubin_backend() == 1) {
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): "
+                    "backend=1 (C parser only): no rtxdisam lift\n", name);
+    }
+    if (!skip_attempts && cst != ACUDA_SUCCESS && module->image &&
+        module->image_size && cubin_backend() != 1) {
         ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): trying rtxdisam fallback\n", name);
         // The entry-less lift either could not choose a section (multi-entry
         // cubin) or chose the first member of a multi-cubin fatbin. Ask the
@@ -7510,6 +7537,20 @@ CUresult ACUDA_CUDAAPI cuLibraryLoadData(void **library, const void *code, void 
     ACUDA_DEBUG_PRINT("acuda-lib image size=%zu\n", size);
     if (!size)
         return CUDA_ERROR_INVALID_IMAGE;
+    // Library loads stay lazy: cuLibraryGetKernel lifts only the entry
+    // that is actually used.  backend=1 (C parser only) is the exception:
+    // it has to import a PTX member now, and has nothing for SASS-only
+    // containers.
+    if (rd32le(image) == 0xBA55ED50u && cubin_backend() == 1) {
+        char *ptx = fatbin_first_ptx(image, size);
+        if (!ptx)
+            return CUDA_ERROR_INVALID_IMAGE;
+        CUresult r = cuModuleLoadData((CUmodule *)library, ptx);
+        free(ptx);
+        if (r == CUDA_SUCCESS && *(CUmodule *)library)
+            attach_sass_image(*(CUmodule *)library, image, size);
+        return r;
+    }
     return module_from_sass_image((CUmodule *)library, image, size);
 }
 CUresult ACUDA_CUDAAPI cuLibraryLoadFromFile(void **library, const char *fileName,

@@ -61,6 +61,19 @@ touches must exist or its loader degrades silently. Found via
   a multi-architecture fatbin selects the matching SASS member. Set
   `RTXDISAM_LIBRARY` to override the library path; a missing library
   leaves the clean `INVALID_IMAGE` path intact.
+- `ACUDA_CUBIN_BACKEND` — selects who handles cubin/fatbin containers,
+  in both ACuda and the `rtxdiasm_guard` cudart shim:
+  - `0` (default/auto): use the C fatbin parser when the image carries
+    PTX, otherwise lift SASS with rtxdisam (C#).
+  - `1`: C fatbin parser only. A SASS-only container (e.g. torch's
+    `libtorch_cuda.so`, which has no PTX) fails with
+    `CUDA_ERROR_INVALID_IMAGE` instead of calling the lifter.
+  - `2`: rtxdisam (C#) only. The C fatbin parser is skipped; rtxdisam
+    parses the container and lifts SASS, and a PTX-only fatbin is
+    returned verbatim by the C# container path.
+  Unset, empty or invalid values behave like `0`. The lifter is looked
+  up via `RTXDISAM_LIBRARY`, then the loader search path, then next to
+  `libcuda.so` itself.
 - `cuLaunchKernelEx` — plain configs forward to `cuLaunchKernel`
   (offsets verified vs NVIDIA `cuda.h`); any extended attributes are
   rejected (`INVALID_VALUE`).
