@@ -1,0 +1,2128 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include "acuda/compiler.h"
+#include "acuda/context.h"
+#include "internal.h"
+#include "time_compat.h"
+#if defined(_WIN32)
+#include <windows.h>
+#include <vulkan/vulkan_core.h>
+#define acuda_setenv(name, value) _putenv_s((name), (value))
+#define acuda_unsetenv(name) _putenv_s((name), "")
+#define acuda_strdup _strdup
+#else
+#include <pthread.h>
+#include <dlfcn.h>
+#define acuda_setenv(name, value) setenv((name), (value), 1)
+#define acuda_unsetenv(name) unsetenv((name))
+#define acuda_strdup strdup
+#endif
+
+#if !defined(VK_API_VERSION_1_3)
+#error "ACuda requires Vulkan headers with Vulkan 1.3 support"
+#endif
+
+#define ACUDA_VALIDATION_LAYER "VK_LAYER_KHRONOS_validation"
+
+// VK_VALVE_shader_mixed_float_dot_product (headers may predate it).
+#define ACUDA_MFDP_EXT "VK_VALVE_shader_mixed_float_dot_product"
+#define ACUDA_ST_MFDP ((VkStructureType)1000673000)
+typedef struct {
+    VkStructureType sType;
+    void *pNext;
+    VkBool32 shaderMixedFloatDotProductFloat16AccFloat32;
+    VkBool32 shaderMixedFloatDotProductFloat16AccFloat16;
+    VkBool32 shaderMixedFloatDotProductBFloat16Acc;
+    VkBool32 shaderMixedFloatDotProductFloat8AccFloat32;
+} acuda_mfdp_features_t;
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL validation_cb(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT type,
+    const VkDebugUtilsMessengerCallbackDataEXT *data,
+    void *user) {
+    (void)type;
+    acuda_context_t ctx = user;
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        ctx->validation_errors++;
+        fprintf(stderr, "ACuda validation ERROR: %s\n",
+                data && data->pMessage ? data->pMessage : "(no message)");
+    }
+    return VK_FALSE;
+}
+
+static int has_validation_layer(void) {
+    // Validation (and its spirv-opt pass) is off by default; opt in with
+    // ACUDA_VALIDATION=1. ACUDA_NO_VALIDATION still forces it off.
+    if (getenv("ACUDA_NO_VALIDATION"))
+        return 0;
+    if (!getenv("ACUDA_VALIDATION"))
+        return 0;
+    uint32_t n = 0;
+    if (vkEnumerateInstanceLayerProperties(&n, NULL) != VK_SUCCESS)
+        return 0;
+    VkLayerProperties *layers = malloc(sizeof(*layers) * (n ? n : 1));
+    if (!layers)
+        return 0;
+    int found = 0;
+    if (vkEnumerateInstanceLayerProperties(&n, layers) == VK_SUCCESS) {
+        for (uint32_t i = 0; i < n; i++) {
+            if (strcmp(layers[i].layerName, ACUDA_VALIDATION_LAYER) == 0) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    free(layers);
+    return found;
+}
+
+static VkResult create_messenger(acuda_context_t ctx) {
+    PFN_vkCreateDebugUtilsMessengerEXT fn =
+        (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+            ctx->instance, "vkCreateDebugUtilsMessengerEXT");
+    if (!fn)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkDebugUtilsMessengerCreateInfoEXT mci = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = validation_cb,
+        .pUserData = ctx,
+    };
+    return fn(ctx->instance, &mci, NULL, &ctx->messenger);
+}
+
+static void destroy_messenger(acuda_context_t ctx) {
+    if (ctx->messenger == VK_NULL_HANDLE)
+        return;
+    PFN_vkDestroyDebugUtilsMessengerEXT fn =
+        (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+            ctx->instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (fn)
+        fn(ctx->instance, ctx->messenger, NULL);
+    ctx->messenger = VK_NULL_HANDLE;
+}
+
+// Timestamp queries are optional; 0 valid bits means unsupported.
+static uint32_t timestamp_valid_bits(VkPhysicalDevice dev, uint32_t family) {
+    uint32_t n = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &n, NULL);
+    if (family >= n)
+        return 0;
+    VkQueueFamilyProperties *p = malloc(sizeof(*p) * (n ? n : 1));
+    if (!p)
+        return 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &n, p);
+    uint32_t bits = family < n ? p[family].timestampValidBits : 0;
+    free(p);
+    return bits;
+}
+
+static uint32_t find_compute_queue(VkPhysicalDevice dev) {
+    uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, NULL);
+    if (count == 0)
+        return UINT32_MAX;
+    VkQueueFamilyProperties *props = malloc(sizeof(*props) * count);
+    if (!props)
+        return UINT32_MAX;
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, props);
+    const char *wanted = getenv("ACUDA_QUEUE_FAMILY");
+    if (wanted && *wanted) {
+        int v = atoi(wanted);
+        if (v >= 0 && (uint32_t)v < count &&
+            (props[v].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+            free(props);
+            return (uint32_t)v;
+        }
+    }
+    uint32_t idx = UINT32_MAX;
+    for (uint32_t i = 0; i < count; i++) {
+        if (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx != UINT32_MAX) {
+        // Prefer a family that also supports graphics: depth-aspect
+        // image copies (depth-compare textures) are only legal on
+        // graphics queues without maintenance10.
+        for (uint32_t i = 0; i < count; i++) {
+            if ((props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+                (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                idx = i;
+                break;
+            }
+        }
+    }
+    free(props);
+    return idx;
+}
+
+static uint32_t find_host_memory(VkPhysicalDevice dev) {
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(dev, &mp);
+    const VkMemoryPropertyFlags want =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        if ((mp.memoryTypes[i].propertyFlags & want) == want)
+            return i;
+    }
+    return UINT32_MAX;
+}
+
+static uint32_t find_device_memory(VkPhysicalDevice dev, uint32_t host_type) {
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(dev, &mp);
+    uint32_t fallback = host_type;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        VkMemoryPropertyFlags f = mp.memoryTypes[i].propertyFlags;
+        if (!(f & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+            continue;
+        if (!(f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+            return i; // VRAM
+        fallback = i;
+    }
+    return fallback;
+}
+
+static int has_timeline(VkPhysicalDevice dev) {
+    VkPhysicalDeviceTimelineSemaphoreFeatures tf = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 f2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &tf,
+    };
+    vkGetPhysicalDeviceFeatures2(dev, &f2);
+    return tf.timelineSemaphore;
+}
+
+static int has_int64(VkPhysicalDevice dev) {
+    VkPhysicalDeviceFeatures feats;
+    vkGetPhysicalDeviceFeatures(dev, &feats);
+    return feats.shaderInt64;
+}
+
+static int has_float64(VkPhysicalDevice dev) {
+    VkPhysicalDeviceFeatures feats;
+    vkGetPhysicalDeviceFeatures(dev, &feats);
+    return feats.shaderFloat64;
+}
+
+static int has_device_ext(VkPhysicalDevice dev, const char *want) {
+    uint32_t n = 0;
+    if (vkEnumerateDeviceExtensionProperties(dev, NULL, &n, NULL) !=
+        VK_SUCCESS)
+        return 0;
+    VkExtensionProperties *props = malloc(sizeof(*props) * (n ? n : 1));
+    if (!props)
+        return 0;
+    int found = 0;
+    if (vkEnumerateDeviceExtensionProperties(dev, NULL, &n, props) ==
+        VK_SUCCESS) {
+        for (uint32_t i = 0; i < n; i++) {
+            if (strcmp(props[i].extensionName, want) == 0) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    free(props);
+    return found;
+}
+
+// Vulkan 1.3 core features this backend relies on. maintenance4
+// (LocalSizeId) and synchronization2 (the 1.3 barrier API) are
+// required; the integer dot product is optional and only enables the
+// native dp4a path.
+static void query_vk13(VkPhysicalDevice dev,
+                       VkPhysicalDeviceVulkan13Features *out) {
+    memset(out, 0, sizeof(*out));
+    out->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceFeatures2 f2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = out,
+    };
+    vkGetPhysicalDeviceFeatures2(dev, &f2);
+}
+
+static int device_is_dozen(VkPhysicalDevice dev) {
+    VkPhysicalDeviceProperties p;
+    vkGetPhysicalDeviceProperties(dev, &p);
+    return strstr(p.deviceName, "Direct3D12") != NULL ||
+           strstr(p.deviceName, "Dozen") != NULL;
+}
+
+static int has_vk13_core(VkPhysicalDevice dev) {
+    VkPhysicalDeviceProperties p;
+    vkGetPhysicalDeviceProperties(dev, &p);
+    if (p.apiVersion < VK_API_VERSION_1_3)
+        return 0;
+    VkPhysicalDeviceVulkan13Features f;
+    query_vk13(dev, &f);
+    return f.maintenance4 != VK_FALSE && f.synchronization2 != VK_FALSE;
+}
+
+// Guaranteed-fused OpFmaKHR for directed-rounding residuals. Optional:
+// devices without VK_KHR_shader_fma use the compiler's integer fallback.
+static int has_shader_fma(VkPhysicalDevice dev, int *f64_ok) {
+    *f64_ok = 0;
+    if (!has_device_ext(dev, VK_KHR_SHADER_FMA_EXTENSION_NAME))
+        return 0;
+    VkPhysicalDeviceShaderFmaFeaturesKHR fma = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR,
+    };
+    VkPhysicalDeviceFeatures2 f2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &fma,
+    };
+    vkGetPhysicalDeviceFeatures2(dev, &f2);
+    *f64_ok = fma.shaderFmaFloat64;
+    return fma.shaderFmaFloat32;
+}
+
+// Some drivers expose VK_KHR_shader_fma but still algebraically
+// simplify fma(1, -a, a+b) to b (observed on RADV), which would make
+// directed rounding wrong. Probe the actual pipeline once at init and
+// fall back to the compiler's integer path when the probe disagrees.
+static int probe_shader_fma(acuda_context_t ctx) {
+    static const char ptx[] =
+        ".version 6.5\n"
+        ".target sm_30\n"
+        ".address_size 64\n"
+        ".visible .entry __acuda_fma_probe(\n"
+        "    .param .u64 input,\n"
+        "    .param .u64 output\n"
+        ")\n"
+        "{\n"
+        "    .reg .u64 ia, oa;\n"
+        "    .reg .f32 a, b, r;\n"
+        "    ld.param.u64 ia, [input];\n"
+        "    ld.param.u64 oa, [output];\n"
+        "    ld.f32 a, [ia];\n"
+        "    ld.f32 b, [ia+4];\n"
+        "    add.rp.f32 r, a, b;\n"
+        "    st.f32 [oa], r;\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    int ok = 0;
+    acuda_compiler_caps_t caps;
+    acuda_compiler_caps_init(&caps);
+    acuda_compiler_set_shader_fma(&caps, 1);
+    if (acuda_compile_ptx(ptx, "__acuda_fma_probe", &k, err, sizeof(err), &caps) !=
+        ACUDA_SUCCESS)
+        return 0;
+    acuda_buffer_t in = NULL, out = NULL;
+    uint32_t inbits[2] = { 0x3f800000u, 0x33800000u }; // 1.0 + 2^-24
+    uint32_t got = 0;
+    if (acuda_malloc(ctx, &in, sizeof(inbits)) == ACUDA_SUCCESS &&
+        acuda_malloc(ctx, &out, 4) == ACUDA_SUCCESS &&
+        acuda_memcpy_h2d(ctx, in, inbits, sizeof(inbits), NULL) ==
+            ACUDA_SUCCESS) {
+        acuda_buffer_t bufs[2] = { in, out };
+        if (acuda_launch_kernel(ctx, k, bufs, 2, NULL, 0, 1, 1, NULL) ==
+                ACUDA_SUCCESS &&
+            acuda_stream_synchronize(ctx, NULL) == ACUDA_SUCCESS &&
+            acuda_memcpy_d2h(ctx, &got, out, sizeof(got), NULL) ==
+                ACUDA_SUCCESS &&
+            got == 0x3f800001u)
+            ok = 1;
+    }
+    if (in)
+        acuda_free(ctx, in);
+    if (out)
+        acuda_free(ctx, out);
+    acuda_kernel_free(k);
+    return ok;
+}
+
+static int probe_shader_fma64(acuda_context_t ctx) {
+    static const char ptx[] =
+        ".version 6.5\n"
+        ".target sm_30\n"
+        ".address_size 64\n"
+        ".visible .entry __acuda_fma64_probe(\n"
+        "    .param .u64 input,\n"
+        "    .param .u64 output\n"
+        ")\n"
+        "{\n"
+        "    .reg .u64 ia, oa;\n"
+        "    .reg .f64 a, b, r, f1, f2, f3;\n"
+        "    ld.param.u64 ia, [input];\n"
+        "    ld.param.u64 oa, [output];\n"
+        "    ld.f64 a, [ia];\n"
+        "    ld.f64 b, [ia+8];\n"
+        "    add.rp.f64 r, a, b;\n"
+        "    st.f64 [oa], r;\n"
+        "    ld.f64 f1, [ia+16];\n"
+        "    ld.f64 f2, [ia+24];\n"
+        "    ld.f64 f3, [ia+32];\n"
+        "    fma.rn.f64 r, f1, f2, f3;\n"
+        "    st.f64 [oa+8], r;\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    int ok = 0;
+    acuda_compiler_caps_t caps;
+    acuda_compiler_caps_init(&caps);
+    acuda_compiler_set_shader_fma_f64(&caps, 1);
+    if (acuda_compile_ptx(ptx, "__acuda_fma64_probe", &k, err,
+                          sizeof(err), &caps) != ACUDA_SUCCESS)
+        return 0;
+    acuda_buffer_t in = NULL, out = NULL;
+    uint64_t inbits[5] = {
+        0x3ff0000000000000ull, // 1.0 + 2^-53 -> 1 + 2^-52 under rp
+        0x3ca0000000000000ull,
+        0x3ff0000000000001ull, // 1 + 2^-52
+        0x3fefffffffffffffull, // 1 - 2^-52
+        0xbff0000000000000ull  // -1
+    };
+    uint64_t got[2] = { 0, 0 };
+    if (acuda_malloc(ctx, &in, sizeof(inbits)) == ACUDA_SUCCESS &&
+        acuda_malloc(ctx, &out, sizeof(got)) == ACUDA_SUCCESS &&
+        acuda_memcpy_h2d(ctx, in, inbits, sizeof(inbits), NULL) ==
+            ACUDA_SUCCESS) {
+        acuda_buffer_t bufs[2] = { in, out };
+        if (acuda_launch_kernel(ctx, k, bufs, 2, NULL, 0, 1, 1, NULL) ==
+                ACUDA_SUCCESS &&
+            acuda_stream_synchronize(ctx, NULL) == ACUDA_SUCCESS &&
+            acuda_memcpy_d2h(ctx, got, out, sizeof(got), NULL) ==
+                ACUDA_SUCCESS &&
+            got[0] == 0x3ff0000000000001ull &&
+            got[1] == 0x3c9ffffffffffffeull)
+            ok = 1;
+    }
+    if (in)
+        acuda_free(ctx, in);
+    if (out)
+        acuda_free(ctx, out);
+    acuda_kernel_free(k);
+    return ok;
+}
+
+// Native 16-bit float arithmetic is much faster than the f32 emulation
+// on devices with shaderFloat16, but not universally. Compile/run the
+// same small packed-f16 FMA kernel both ways and keep the faster path.
+static int probe_f16_native(acuda_context_t ctx) {
+    static const char ptx[] =
+        ".version 8.8\n"
+        ".target sm_120\n"
+        ".address_size 64\n"
+        ".visible .entry __acuda_f16_probe(.param .u64 p,"
+        " .param .u32 reps)\n"
+        "{\n"
+        "    .reg .u64 r; .reg .u32 n; .reg .pred q;\n"
+        "    .reg .b32 a0,a1,a2,a3,b0,b1,b2,b3;\n"
+        "    .reg .b32 c0,c1,c2,c3;\n"
+        "    ld.param.u64 r,[p];\n"
+        "    ld.param.u32 n,[reps];\n"
+        "    ld.global.b32 a0,[r]; ld.global.b32 a1,[r+4];\n"
+        "    ld.global.b32 a2,[r+8]; ld.global.b32 a3,[r+12];\n"
+        "    ld.global.b32 b0,[r+16]; ld.global.b32 b1,[r+20];\n"
+        "    ld.global.b32 b2,[r+24]; ld.global.b32 b3,[r+28];\n"
+        "    mov.b32 c0,0; mov.b32 c1,0; mov.b32 c2,0; mov.b32 c3,0;\n"
+        "L:\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    fma.rn.f16x2 c0,a0,b0,c0; fma.rn.f16x2 c1,a1,b1,c1;\n"
+        "    fma.rn.f16x2 c2,a2,b2,c2; fma.rn.f16x2 c3,a3,b3,c3;\n"
+        "    sub.u32 n,n,1; setp.ne.u32 q,n,0; @q bra L;\n"
+        "    add.f16x2 c0,c0,c1; add.f16x2 c0,c0,c2;\n"
+        "    add.f16x2 c0,c0,c3;\n"
+        "    st.global.b32 [r+64],c0;\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *kn = NULL, *ke = NULL;
+    acuda_compiler_caps_t caps_n, caps_e;
+    acuda_compiler_caps_init(&caps_n);
+    acuda_compiler_caps_init(&caps_e);
+    acuda_compiler_set_f16_native(&caps_n, 1);
+    acuda_compiler_set_f16_native(&caps_e, 0);
+    int ok = acuda_compile_ptx(ptx, "__acuda_f16_probe", &kn, NULL, 0, &caps_n) ==
+             ACUDA_SUCCESS;
+    ok = ok && acuda_compile_ptx(ptx, "__acuda_f16_probe", &ke, NULL, 0, &caps_e) ==
+                   ACUDA_SUCCESS;
+    if (!ok) {
+        acuda_kernel_free(kn);
+        acuda_kernel_free(ke);
+        return 0;
+    }
+    acuda_buffer_t in = NULL;
+    uint32_t vals[32];
+    for (int i = 0; i < 32; i++)
+        vals[i] = 0x3c003c00u;
+    if (acuda_malloc(ctx, &in, sizeof(vals)) != ACUDA_SUCCESS ||
+        acuda_memcpy_h2d(ctx, in, vals, sizeof(vals), NULL) !=
+            ACUDA_SUCCESS) {
+        if (in) acuda_free(ctx, in);
+        acuda_kernel_free(kn);
+        acuda_kernel_free(ke);
+        return 0;
+    }
+    uint32_t reps = 128;
+    double tn = 1e9, te = 1e9;
+    for (int round = 0; round < 2; round++) {
+        for (int pass = 0; pass < 2; pass++) {
+            acuda_kernel_t *k = pass == 0 ? kn : ke;
+            for (int i = 0; i < 2; i++)
+                acuda_launch_kernel(ctx, k, &in, 1, &reps, sizeof(reps),
+                                    128, 64, NULL);
+            uint64_t t0 = acuda_now_ns();
+            for (int i = 0; i < 2; i++)
+                acuda_launch_kernel(ctx, k, &in, 1, &reps, sizeof(reps),
+                                    128, 64, NULL);
+            acuda_stream_synchronize(ctx, NULL);
+            uint64_t t1 = acuda_now_ns();
+            double ms = (double)(t1 - t0) / 1e6;
+            if (pass == 0 && ms < tn)
+                tn = ms;
+            if (pass == 1 && ms < te)
+                te = ms;
+        }
+    }
+    int native = tn <= te;
+    if (getenv("ACUDA_DEBUG_F16"))
+        fprintf(stderr,
+                "ACuda: f16 probe native=%.3f ms emulated=%.3f ms -> %s\n",
+                tn, te, native ? "native" : "emulated");
+    acuda_free(ctx, in);
+    acuda_kernel_free(kn);
+    acuda_kernel_free(ke);
+    return native;
+}
+
+// Fused-op probe: 1+2^-23 times 1-2^-23 is 1-2^-46; adding -1
+// leaves -2^-46. A non-fused mul+add rounds the product to 1.0 first
+// and returns 0, so this distinguishes true fma from mul+add.
+static int probe_shader_fma_rn(acuda_context_t ctx) {
+    static const char ptx[] =
+        ".version 6.5\n"
+        ".target sm_30\n"
+        ".address_size 64\n"
+        ".visible .entry __acuda_fma_rn_probe(\n"
+        "    .param .u64 input,\n"
+        "    .param .u64 output\n"
+        ")\n"
+        "{\n"
+        "    .reg .u64 ia, oa;\n"
+        "    .reg .f32 a, b, c, r;\n"
+        "    ld.param.u64 ia, [input];\n"
+        "    ld.param.u64 oa, [output];\n"
+        "    ld.f32 a, [ia];\n"
+        "    ld.f32 b, [ia+4];\n"
+        "    ld.f32 c, [ia+8];\n"
+        "    fma.rn.f32 r, a, b, c;\n"
+        "    st.f32 [oa], r;\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    int ok = 0;
+    acuda_compiler_caps_t caps;
+    acuda_compiler_caps_init(&caps);
+    acuda_compiler_set_shader_fma(&caps, 1);
+    if (acuda_compile_ptx(ptx, "__acuda_fma_rn_probe", &k, err,
+                          sizeof(err), &caps) != ACUDA_SUCCESS)
+        return 0;
+    acuda_buffer_t in = NULL, out = NULL;
+    uint32_t inbits[3] = { 0x3f800001u, 0x3f7fffffu, 0xbf800000u };
+    uint32_t got = 0;
+    if (acuda_malloc(ctx, &in, sizeof(inbits)) == ACUDA_SUCCESS &&
+        acuda_malloc(ctx, &out, 4) == ACUDA_SUCCESS &&
+        acuda_memcpy_h2d(ctx, in, inbits, sizeof(inbits), NULL) ==
+            ACUDA_SUCCESS) {
+        acuda_buffer_t bufs[2] = { in, out };
+        if (acuda_launch_kernel(ctx, k, bufs, 2, NULL, 0, 1, 1, NULL) ==
+                ACUDA_SUCCESS &&
+            acuda_stream_synchronize(ctx, NULL) == ACUDA_SUCCESS &&
+            acuda_memcpy_d2h(ctx, &got, out, sizeof(got), NULL) ==
+                ACUDA_SUCCESS &&
+            got == 0xa8800000u)
+            ok = 1;
+    }
+    if (in)
+        acuda_free(ctx, in);
+    if (out)
+        acuda_free(ctx, out);
+    acuda_kernel_free(k);
+    return ok;
+}
+
+// ---- GPU clock-ramp helpers (ACUDA_HIGH_PERF / warm-up) ----
+static void acuda_warmup_gpu(acuda_context_t ctx) {
+    const char *ms_env = getenv("ACUDA_WARMUP_MS");
+    int ms = ms_env ? atoi(ms_env) : 2000;
+    if (ms < 0)
+        ms = 0;
+    if (ms == 0)
+        return;
+    if (!ctx || !ctx->device || ctx->queue == VK_NULL_HANDLE)
+        return;
+
+    static const char ramp_ptx[] =
+        ".version 8.0\n"
+        ".target sm_80\n"
+        ".address_size 64\n"
+        "\n"
+        ".visible .entry gpu_warmup(\n"
+        "    .param .u32 iterations\n"
+        ")\n"
+        "{\n"
+        "    .reg .pred %p<2>;\n"
+        "    .reg .u32 %r<3>;\n"
+        "    .reg .f32 %f<4>;\n"
+        "\n"
+        "    ld.param.u32 %r0, [iterations];\n"
+        "\n"
+        "    mov.u32 %r1, 0;\n"
+        "    mov.f32 %f0, 1.001;\n"
+        "    mov.f32 %f1, 1.002;\n"
+        "    mov.f32 %f2, 0.001;\n"
+        "\n"
+        "LOOP:\n"
+        "    fma.rn.f32 %f3, %f0, %f1, %f2;\n"
+        "    mov.f32 %f2, %f3;\n"
+        "\n"
+        "    add.u32 %r1, %r1, 1;\n"
+        "    setp.lt.u32 %p0, %r1, %r0;\n"
+        "    @%p0 bra LOOP;\n"
+        "\n"
+        "    ret;\n"
+        "}\n";
+
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    int compiled = (acuda_compile_ptx(ramp_ptx, "gpu_warmup", &k, err,
+                                      sizeof(err), &ctx->compiler_caps) == ACUDA_SUCCESS);
+    if (compiled) {
+        uint32_t reps = 1000000;
+        uint64_t deadline = acuda_now_ns() + (uint64_t)ms * 1000000ull;
+        while (acuda_now_ns() < deadline) {
+            acuda_launch_kernel(ctx, k, NULL, 0, &reps, sizeof(reps), 64,
+                                256, NULL);
+            acuda_stream_synchronize(ctx, NULL);
+        }
+        acuda_kernel_free(k);
+        return;
+    }
+
+    fprintf(stderr, "ACuda: ramp PTX compile failed (%s); using fill warm-up\n",
+            err);
+
+    VkBuffer vbuf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    VkBufferCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bci.size = 64ull * 1024 * 1024;
+    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (vkCreateBuffer(ctx->device, &bci, NULL, &vbuf) != VK_SUCCESS)
+        return;
+    VkMemoryRequirements mr;
+    vkGetBufferMemoryRequirements(ctx->device, vbuf, &mr);
+    uint32_t mt = (ctx->mem_type_dev != UINT32_MAX) ? ctx->mem_type_dev
+                                                     : ctx->mem_type;
+    VkMemoryAllocateInfo mai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    mai.allocationSize = mr.size;
+    mai.memoryTypeIndex = mt;
+    if (vkAllocateMemory(ctx->device, &mai, NULL, &mem) != VK_SUCCESS) {
+        vkDestroyBuffer(ctx->device, vbuf, NULL);
+        return;
+    }
+    vkBindBufferMemory(ctx->device, vbuf, mem, 0);
+    VkCommandPoolCreateInfo cpci = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+    cpci.queueFamilyIndex = ctx->queue_family;
+    cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    if (vkCreateCommandPool(ctx->device, &cpci, NULL, &pool) != VK_SUCCESS) {
+        vkFreeMemory(ctx->device, mem, NULL);
+        vkDestroyBuffer(ctx->device, vbuf, NULL);
+        return;
+    }
+    VkCommandBufferAllocateInfo cbai = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    cbai.commandPool = pool;
+    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(ctx->device, &cbai, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(ctx->device, pool, NULL);
+        vkFreeMemory(ctx->device, mem, NULL);
+        vkDestroyBuffer(ctx->device, vbuf, NULL);
+        return;
+    }
+    VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    if (vkCreateFence(ctx->device, &fci, NULL, &fence) != VK_SUCCESS) {
+        vkFreeCommandBuffers(ctx->device, pool, 1, &cmd);
+        vkDestroyCommandPool(ctx->device, pool, NULL);
+        vkFreeMemory(ctx->device, mem, NULL);
+        vkDestroyBuffer(ctx->device, vbuf, NULL);
+        return;
+    }
+    uint64_t deadline = acuda_now_ns() + (uint64_t)ms * 1000000ull;
+    while (acuda_now_ns() < deadline) {
+        VkCommandBufferBeginInfo bi = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        vkBeginCommandBuffer(cmd, &bi);
+        vkCmdFillBuffer(cmd, vbuf, 0, VK_WHOLE_SIZE, 0xABCD1234u);
+        vkEndCommandBuffer(cmd);
+        VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cmd;
+        vkQueueSubmit(ctx->queue, 1, &si, fence);
+        vkWaitForFences(ctx->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(ctx->device, 1, &fence);
+        vkResetCommandBuffer(cmd, 0);
+    }
+    vkDestroyFence(ctx->device, fence, NULL);
+    vkFreeCommandBuffers(ctx->device, pool, 1, &cmd);
+    vkDestroyCommandPool(ctx->device, pool, NULL);
+    vkFreeMemory(ctx->device, mem, NULL);
+    vkDestroyBuffer(ctx->device, vbuf, NULL);
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI acuda_bg_thread_proc(LPVOID arg)
+#else
+static void *acuda_bg_thread_proc(void *arg)
+#endif
+{
+    acuda_context_t ctx = (acuda_context_t)arg;
+    acuda_context_t work = (ctx && ctx->bg_ctx) ? ctx->bg_ctx : ctx;
+    if (work && work->bg_kernel && work->bg_stream) {
+        acuda_kernel_t *k = (acuda_kernel_t *)work->bg_kernel;
+        uint32_t reps = work->bg_reps;
+        while (work && !work->bg_stop) {
+            acuda_launch_kernel(work, k, NULL, 0, &reps, sizeof(reps), 64, 256,
+                                work->bg_stream);
+            acuda_stream_synchronize(work, work->bg_stream);
+        }
+    } else {
+        while (work && !work->bg_stop) {
+            if (work->bg_cmd == VK_NULL_HANDLE || work->bg_buffer == VK_NULL_HANDLE ||
+                work->bg_queue == VK_NULL_HANDLE)
+                break;
+            VkCommandBufferBeginInfo bi = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+            if (vkBeginCommandBuffer(work->bg_cmd, &bi) != VK_SUCCESS)
+                break;
+            vkCmdFillBuffer(work->bg_cmd, work->bg_buffer, 0, VK_WHOLE_SIZE,
+                            0xABCD1234u);
+            vkEndCommandBuffer(work->bg_cmd);
+            VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+            si.commandBufferCount = 1;
+            si.pCommandBuffers = &work->bg_cmd;
+            if (vkQueueSubmit(work->bg_queue, 1, &si, work->bg_fence) != VK_SUCCESS)
+                break;
+            vkWaitForFences(work->device, 1, &work->bg_fence, VK_TRUE, UINT64_MAX);
+            vkResetFences(work->device, 1, &work->bg_fence);
+            vkResetCommandBuffer(work->bg_cmd, 0);
+        }
+    }
+#if defined(_WIN32)
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+
+
+static int start_high_perf_isolated(acuda_context_t main) {
+    // Keep-busy runs on a second, unvalidated ACuda context pinned to the
+    // same physical GPU.  Sharing the validated VkInstance/device makes the
+    // validation layer see concurrent queue use and live keep-busy objects
+    // during teardown.
+    char *old_nv = NULL, *old_hp = NULL, *old_dev = NULL, *old_warm = NULL;
+    const char *v = getenv("ACUDA_NO_VALIDATION");
+    if (v) old_nv = acuda_strdup(v);
+    v = getenv("ACUDA_HIGH_PERF");
+    if (v) old_hp = acuda_strdup(v);
+    v = getenv("ACUDA_DEVICE");
+    if (v) old_dev = acuda_strdup(v);
+    v = getenv("ACUDA_WARMUP_MS");
+    if (v) old_warm = acuda_strdup(v);
+
+    acuda_setenv("ACUDA_NO_VALIDATION", "1");
+    acuda_setenv("ACUDA_HIGH_PERF", "0");
+    acuda_setenv("ACUDA_DEVICE", main->props.deviceName);
+    acuda_setenv("ACUDA_WARMUP_MS", "0");
+    acuda_context_t bg = NULL;
+    acuda_status_t st = acuda_init(&bg);
+    if (old_nv) { acuda_setenv("ACUDA_NO_VALIDATION", old_nv); free(old_nv); }
+    else acuda_unsetenv("ACUDA_NO_VALIDATION");
+    if (old_hp) { acuda_setenv("ACUDA_HIGH_PERF", old_hp); free(old_hp); }
+    else acuda_unsetenv("ACUDA_HIGH_PERF");
+    if (old_dev) { acuda_setenv("ACUDA_DEVICE", old_dev); free(old_dev); }
+    else acuda_unsetenv("ACUDA_DEVICE");
+    if (old_warm) { acuda_setenv("ACUDA_WARMUP_MS", old_warm); free(old_warm); }
+    else acuda_unsetenv("ACUDA_WARMUP_MS");
+    if (st != ACUDA_SUCCESS || !bg)
+        return 0;
+
+    static const char ramp_ptx[] =
+        ".version 8.0\n"
+        ".target sm_80\n"
+        ".address_size 64\n"
+        "\n"
+        ".visible .entry gpu_warmup(\n"
+        "    .param .u32 iterations\n"
+        ")\n"
+        "{\n"
+        "    .reg .pred %p<2>;\n"
+        "    .reg .u32 %r<3>;\n"
+        "    .reg .f32 %f<4>;\n"
+        "\n"
+        "    ld.param.u32 %r0, [iterations];\n"
+        "\n"
+        "    mov.u32 %r1, 0;\n"
+        "    mov.f32 %f0, 1.001;\n"
+        "    mov.f32 %f1, 1.002;\n"
+        "    mov.f32 %f2, 0.001;\n"
+        "\n"
+        "LOOP:\n"
+        "    fma.rn.f32 %f3, %f0, %f1, %f2;\n"
+        "    mov.f32 %f2, %f3;\n"
+        "\n"
+        "    add.u32 %r1, %r1, 1;\n"
+        "    setp.lt.u32 %p0, %r1, %r0;\n"
+        "    @%p0 bra LOOP;\n"
+        "\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    if (acuda_compile_ptx(ramp_ptx, "gpu_warmup", &k, err, sizeof(err), &bg->compiler_caps) !=
+        ACUDA_SUCCESS) {
+        acuda_shutdown(bg);
+        return 0;
+    }
+    acuda_stream_t st_stream = NULL;
+    if (acuda_stream_create(bg, &st_stream) != ACUDA_SUCCESS) {
+        acuda_kernel_free(k);
+        acuda_shutdown(bg);
+        return 0;
+    }
+    bg->bg_kernel = k;
+    bg->bg_stream = st_stream;
+    bg->bg_reps = 1000000;
+    bg->bg_stop = 0;
+    main->bg_ctx = bg;
+    main->bg_stop = 0;
+#if defined(_WIN32)
+    main->bg_thread = CreateThread(NULL, 0, acuda_bg_thread_proc, main, 0, NULL);
+    main->bg_thread_created = (main->bg_thread != NULL);
+#else
+    pthread_t *pt = (pthread_t *)malloc(sizeof(pthread_t));
+    if (pt && pthread_create(pt, NULL, acuda_bg_thread_proc, main) == 0) {
+        main->bg_thread = pt;
+        main->bg_thread_created = 1;
+    } else {
+        free(pt);
+        main->bg_thread = NULL;
+        main->bg_thread_created = 0;
+    }
+#endif
+    if (!main->bg_thread_created) {
+        main->bg_ctx = NULL;
+        acuda_kernel_free(k);
+        acuda_stream_destroy(bg, st_stream);
+        acuda_shutdown(bg);
+        return 0;
+    }
+    return 1;
+}
+
+static void acuda_start_high_perf(acuda_context_t ctx) {
+    const char *hp = getenv("ACUDA_HIGH_PERF");
+    const char *async = getenv("ACUDA_ASYNC_STREAMS");
+    // Keep-busy is OFF by default; only enabled when explicitly requested.
+    if (!ctx || !hp || strcmp(hp, "1") != 0 ||
+        (async && *async && atoi(async) == 0))
+        return;
+    if (ctx->validation_on) {
+        start_high_perf_isolated(ctx);
+        return;
+    }
+    if (getenv("ACUDA_DEBUG_HIGH_PERF"))
+        fprintf(stderr,
+                "ACuda high-perf: primary family %u, bg family %u, %s\n",
+                ctx->queue_family, ctx->bg_queue_family,
+                ctx->bg_queue == VK_NULL_HANDLE
+                    ? "no dedicated queue (disabled)"
+                    : "keep-busy enabled");
+    // The keep-busy loop submits from a background thread.  Without a
+    // dedicated secondary queue it shares the primary queue and races
+    // user submissions (Vulkan validation flags simultaneous
+    // vkQueueSubmit2 and the driver can crash).  Some devices expose only
+    // one queue in this family, so skip keep-busy there.
+    if (ctx->bg_queue == VK_NULL_HANDLE)
+        return;
+
+    // Prefer a PTX compute kernel for real core load.
+    static const char ramp_ptx[] =
+        ".version 8.0\n"
+        ".target sm_80\n"
+        ".address_size 64\n"
+        "\n"
+        ".visible .entry gpu_warmup(\n"
+        "    .param .u32 iterations\n"
+        ")\n"
+        "{\n"
+        "    .reg .pred %p<2>;\n"
+        "    .reg .u32 %r<3>;\n"
+        "    .reg .f32 %f<4>;\n"
+        "\n"
+        "    ld.param.u32 %r0, [iterations];\n"
+        "\n"
+        "    mov.u32 %r1, 0;\n"
+        "    mov.f32 %f0, 1.001;\n"
+        "    mov.f32 %f1, 1.002;\n"
+        "    mov.f32 %f2, 0.001;\n"
+        "\n"
+        "LOOP:\n"
+        "    fma.rn.f32 %f3, %f0, %f1, %f2;\n"
+        "    mov.f32 %f2, %f3;\n"
+        "\n"
+        "    add.u32 %r1, %r1, 1;\n"
+        "    setp.lt.u32 %p0, %r1, %r0;\n"
+        "    @%p0 bra LOOP;\n"
+        "\n"
+        "    ret;\n"
+        "}\n";
+    acuda_kernel_t *k = NULL;
+    char err[256];
+    if (acuda_compile_ptx(ramp_ptx, "gpu_warmup", &k, err, sizeof(err), &ctx->compiler_caps) ==
+        ACUDA_SUCCESS) {
+        acuda_stream_t st = NULL;
+        if (acuda_stream_create_on_queue(ctx, ctx->bg_queue,
+                                         ctx->bg_queue_family, &st) ==
+            ACUDA_SUCCESS) {
+            // The stream is bound to the dedicated keep-busy queue and its
+            // family, so its command pool is valid there. Sharing the
+            // primary queue races user submissions (Vulkan validation flags
+            // simultaneous vkQueueSubmit2 from two threads).
+            ctx->bg_kernel = k;
+            ctx->bg_buf = NULL;
+            ctx->bg_reps = 1000000;
+            ctx->bg_stream = st;
+                ctx->bg_stop = 0;
+                ctx->bg_high_perf = 1;
+#if defined(_WIN32)
+                ctx->bg_thread = CreateThread(NULL, 0, acuda_bg_thread_proc, ctx, 0, NULL);
+                ctx->bg_thread_created = (ctx->bg_thread != NULL);
+#else
+                pthread_t *pt = (pthread_t *)malloc(sizeof(pthread_t));
+                if (pt && pthread_create(pt, NULL, acuda_bg_thread_proc, ctx) == 0) {
+                    ctx->bg_thread = pt;
+                    ctx->bg_thread_created = 1;
+                } else {
+                    free(pt);
+                    ctx->bg_thread = NULL;
+                    ctx->bg_thread_created = 0;
+                }
+#endif
+                if (ctx->bg_thread_created)
+                    return;
+                // thread failed: fall through to fill path (clean up PTX)
+                ctx->bg_kernel = NULL;
+                ctx->bg_buf = NULL;
+                ctx->bg_stream = NULL;
+                acuda_stream_destroy(ctx, st);
+                acuda_kernel_free(k);
+            } else {
+                acuda_kernel_free(k);
+            }
+        } else {
+        }
+
+    // Fallback: Vulkan fill on a second queue (original behavior).
+    if (ctx->bg_queue == VK_NULL_HANDLE)
+        return;
+
+    VkBufferCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bci.size = 64ull * 1024 * 1024;
+    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (vkCreateBuffer(ctx->device, &bci, NULL, &ctx->bg_buffer) != VK_SUCCESS)
+        return;
+    VkMemoryRequirements mr;
+    vkGetBufferMemoryRequirements(ctx->device, ctx->bg_buffer, &mr);
+    uint32_t mt = (ctx->mem_type_dev != UINT32_MAX) ? ctx->mem_type_dev
+                                                     : ctx->mem_type;
+    VkMemoryAllocateInfo mai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    mai.allocationSize = mr.size;
+    mai.memoryTypeIndex = mt;
+    if (vkAllocateMemory(ctx->device, &mai, NULL, &ctx->bg_memory) != VK_SUCCESS) {
+        vkDestroyBuffer(ctx->device, ctx->bg_buffer, NULL);
+        ctx->bg_buffer = VK_NULL_HANDLE;
+        return;
+    }
+    vkBindBufferMemory(ctx->device, ctx->bg_buffer, ctx->bg_memory, 0);
+
+    VkCommandPoolCreateInfo cpci = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+    cpci.queueFamilyIndex = ctx->bg_queue_family;
+    cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    if (vkCreateCommandPool(ctx->device, &cpci, NULL, &ctx->bg_pool) != VK_SUCCESS) {
+        vkFreeMemory(ctx->device, ctx->bg_memory, NULL);
+        vkDestroyBuffer(ctx->device, ctx->bg_buffer, NULL);
+        ctx->bg_memory = VK_NULL_HANDLE;
+        ctx->bg_buffer = VK_NULL_HANDLE;
+        return;
+    }
+    VkCommandBufferAllocateInfo cbai = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    cbai.commandPool = ctx->bg_pool;
+    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(ctx->device, &cbai, &ctx->bg_cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(ctx->device, ctx->bg_pool, NULL);
+        vkFreeMemory(ctx->device, ctx->bg_memory, NULL);
+        vkDestroyBuffer(ctx->device, ctx->bg_buffer, NULL);
+        ctx->bg_pool = VK_NULL_HANDLE;
+        ctx->bg_memory = VK_NULL_HANDLE;
+        ctx->bg_buffer = VK_NULL_HANDLE;
+        return;
+    }
+    VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    if (vkCreateFence(ctx->device, &fci, NULL, &ctx->bg_fence) != VK_SUCCESS) {
+        vkFreeCommandBuffers(ctx->device, ctx->bg_pool, 1, &ctx->bg_cmd);
+        vkDestroyCommandPool(ctx->device, ctx->bg_pool, NULL);
+        vkFreeMemory(ctx->device, ctx->bg_memory, NULL);
+        vkDestroyBuffer(ctx->device, ctx->bg_buffer, NULL);
+        ctx->bg_cmd = VK_NULL_HANDLE;
+        ctx->bg_pool = VK_NULL_HANDLE;
+        ctx->bg_memory = VK_NULL_HANDLE;
+        ctx->bg_buffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    ctx->bg_stop = 0;
+    ctx->bg_high_perf = 1;
+#if defined(_WIN32)
+    ctx->bg_thread = CreateThread(NULL, 0, acuda_bg_thread_proc, ctx, 0, NULL);
+    ctx->bg_thread_created = (ctx->bg_thread != NULL);
+#else
+    pthread_t *pt = (pthread_t *)malloc(sizeof(pthread_t));
+    if (pt && pthread_create(pt, NULL, acuda_bg_thread_proc, ctx) == 0) {
+        ctx->bg_thread = pt;
+        ctx->bg_thread_created = 1;
+    } else {
+        free(pt);
+        ctx->bg_thread = NULL;
+        ctx->bg_thread_created = 0;
+    }
+#endif
+}
+
+static void acuda_stop_high_perf(acuda_context_t ctx) {
+    if (!ctx)
+        return;
+    acuda_context_t work = ctx->bg_ctx ? ctx->bg_ctx : ctx;
+    if (ctx->bg_thread_created) {
+        ctx->bg_stop = 1;
+        if (work)
+            work->bg_stop = 1;
+#if defined(_WIN32)
+        WaitForSingleObject((HANDLE)ctx->bg_thread, INFINITE);
+        CloseHandle((HANDLE)ctx->bg_thread);
+#else
+        pthread_join(*(pthread_t *)ctx->bg_thread, NULL);
+        free(ctx->bg_thread);
+#endif
+        ctx->bg_thread = NULL;
+        ctx->bg_thread_created = 0;
+    }
+    if (work->bg_kernel) {
+        acuda_kernel_free((acuda_kernel_t *)work->bg_kernel);
+        work->bg_kernel = NULL;
+    }
+    if (work->bg_buf) {
+        acuda_free(work, (acuda_buffer_t)work->bg_buf);
+        work->bg_buf = NULL;
+    }
+    if (work->bg_stream) {
+        if (work->device)
+            vkDeviceWaitIdle(work->device);
+        acuda_stream_destroy(work, work->bg_stream);
+        work->bg_stream = NULL;
+    }
+    if (work->bg_fence != VK_NULL_HANDLE) {
+        vkDestroyFence(work->device, work->bg_fence, NULL);
+        work->bg_fence = VK_NULL_HANDLE;
+    }
+    if (work->bg_cmd != VK_NULL_HANDLE && work->bg_pool != VK_NULL_HANDLE) {
+        vkFreeCommandBuffers(work->device, work->bg_pool, 1, &work->bg_cmd);
+        work->bg_cmd = VK_NULL_HANDLE;
+    }
+    if (work->bg_pool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(work->device, work->bg_pool, NULL);
+        work->bg_pool = VK_NULL_HANDLE;
+    }
+    if (work->bg_memory != VK_NULL_HANDLE) {
+        vkFreeMemory(work->device, work->bg_memory, NULL);
+        work->bg_memory = VK_NULL_HANDLE;
+    }
+    if (work->bg_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(work->device, work->bg_buffer, NULL);
+        work->bg_buffer = VK_NULL_HANDLE;
+    }
+    // The isolated keep-busy context owns a second VkDevice.  Destroying
+    // that device at process exit crashes inside the Vulkan driver, so leave
+    // it for the OS to reclaim.  The validated main context is untouched.
+    if (ctx->bg_ctx)
+        ctx->bg_ctx = NULL;
+}
+
+void acuda_high_perf_shutdown(acuda_context_t ctx) {
+    acuda_stop_high_perf(ctx);
+}
+
+static void query_pci_info(VkPhysicalDevice dev, uint32_t *domain,
+                           uint32_t *bus, uint32_t *device,
+                           uint32_t *function);
+
+acuda_status_t acuda_init(acuda_context_t *out_ctx) {
+    if (!out_ctx)
+        return ACUDA_ERROR_INVALID_VALUE;
+    *out_ctx = NULL;
+
+    acuda_context_t ctx = calloc(1, sizeof(*ctx));
+    if (!ctx)
+        return ACUDA_ERROR_OUT_OF_MEMORY;
+    acuda_compiler_caps_init(&ctx->compiler_caps);
+
+    VkApplicationInfo app = {
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pApplicationName = "acuda",
+        .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
+        .apiVersion = VK_API_VERSION_1_3,
+    };
+    const char *layer = ACUDA_VALIDATION_LAYER;
+    const char *ext = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+    VkInstanceCreateInfo ici = {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pApplicationInfo = &app,
+    };
+    VkResult vr;
+    ctx->validation_on = has_validation_layer();
+    if (ctx->validation_on) {
+        ici.enabledLayerCount = 1;
+        ici.ppEnabledLayerNames = &layer;
+        ici.enabledExtensionCount = 1;
+        ici.ppEnabledExtensionNames = &ext;
+        vr = vkCreateInstance(&ici, NULL, &ctx->instance);
+        if (vr != VK_SUCCESS) {
+            // Fall back to a plain instance if validation breaks creation.
+            ctx->validation_on = 0;
+            memset(&ici, 0, sizeof(ici));
+            ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            ici.pApplicationInfo = &app;
+        }
+    }
+    if (!ctx->validation_on)
+        vr = vkCreateInstance(&ici, NULL, &ctx->instance);
+    if (vr != VK_SUCCESS) {
+        if (vr == VK_ERROR_INCOMPATIBLE_DRIVER)
+            fprintf(stderr,
+                    "ACuda: Vulkan 1.3 is required, but the loader/driver "
+                    "refused the instance\n");
+        free(ctx);
+        return acuda_from_vk(vr);
+    }
+    if (ctx->validation_on && create_messenger(ctx) != VK_SUCCESS)
+        ctx->validation_on = 0; // keep going without the callback
+
+    uint32_t total = 0;
+    vr = vkEnumeratePhysicalDevices(ctx->instance, &total, NULL);
+    if (vr != VK_SUCCESS || total == 0) {
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return vr == VK_SUCCESS ? ACUDA_ERROR_NO_DEVICE : acuda_from_vk(vr);
+    }
+    ctx->devices = malloc(sizeof(*ctx->devices) * total);
+    if (!ctx->devices) {
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return ACUDA_ERROR_OUT_OF_MEMORY;
+    }
+    ctx->device_total = total;
+    vr = vkEnumeratePhysicalDevices(ctx->instance, &total, ctx->devices);
+    if (vr != VK_SUCCESS && vr != VK_INCOMPLETE) {
+        free(ctx->devices);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return acuda_from_vk(vr);
+    }
+    ctx->device_total = total;
+    ctx->device_original = malloc(sizeof(*ctx->device_original) * total);
+    if (!ctx->device_original) {
+        free(ctx->devices);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return ACUDA_ERROR_OUT_OF_MEMORY;
+    }
+    for (uint32_t i = 0; i < total; i++)
+        ctx->device_original[i] = i;
+
+    // Allow forcing a specific GPU: ACUDA_DEVICE / ACUDA_GPU can be an
+    // index ("0", "1", ...) or a substring matched against the device name
+    // or vendor ("nvidia", "amd", "intel").
+    const char *devsel = getenv("ACUDA_DEVICE");
+    if (!devsel)
+        devsel = getenv("ACUDA_GPU");
+    int force_index = -1;
+    char devsel_lower[256] = { 0 };
+    if (devsel) {
+        int all_digits = 1;
+        for (const char *c = devsel; *c; c++) {
+            if (*c < '0' || *c > '9') { all_digits = 0; break; }
+        }
+        if (all_digits && *devsel)
+            force_index = atoi(devsel);
+        else {
+            size_t n = strlen(devsel);
+            if (n >= sizeof(devsel_lower)) n = sizeof(devsel_lower) - 1;
+            for (size_t k = 0; k < n; k++)
+                devsel_lower[k] = (char)tolower((unsigned char)devsel[k]);
+            devsel_lower[n] = '\0';
+        }
+    }
+
+    if (getenv("ACUDA_LIST_DEVICES")) {
+        fprintf(stderr, "ACuda: %u Vulkan device(s) found:\n", total);
+        for (uint32_t i = 0; i < total; i++) {
+            VkPhysicalDeviceProperties pp;
+            vkGetPhysicalDeviceProperties(ctx->devices[i], &pp);
+            fprintf(stderr, "  [%u] %s (vendor 0x%04x, type %d)\n",
+                    i, pp.deviceName, pp.vendorID, (int)pp.deviceType);
+        }
+    }
+
+    // Prefer a discrete GPU with compute + timeline support.
+    int found = 0;
+    for (uint32_t pass = 0; pass < 2 && !found; pass++) {
+        for (uint32_t i = 0; i < total; i++) {
+            VkPhysicalDeviceProperties p;
+            vkGetPhysicalDeviceProperties(ctx->devices[i], &p);
+            if (force_index >= 0) {
+                if ((int)i != force_index)
+                    continue;
+            } else if (devsel_lower[0]) {
+                // match vendor or name substring
+                int match = 0;
+                char name_lower[256];
+                size_t nn = strlen(p.deviceName);
+                if (nn >= sizeof(name_lower)) nn = sizeof(name_lower) - 1;
+                for (size_t k = 0; k < nn; k++)
+                    name_lower[k] = (char)tolower((unsigned char)p.deviceName[k]);
+                name_lower[nn] = '\0';
+                if (strstr(name_lower, devsel_lower))
+                    match = 1;
+                if (!match && strstr(devsel_lower, "nvidia") &&
+                    p.vendorID == 0x10DE)
+                    match = 1;
+                if (!match && strstr(devsel_lower, "amd") &&
+                    p.vendorID == 0x1002)
+                    match = 1;
+                if (!match && strstr(devsel_lower, "intel") &&
+                    p.vendorID == 0x8086)
+                    match = 1;
+                if (!match)
+                    continue;
+            } else {
+                if (pass == 0 && p.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+                    continue;
+            }
+            if (find_compute_queue(ctx->devices[i]) == UINT32_MAX)
+                continue;
+            if (!has_timeline(ctx->devices[i]))
+                continue;
+            if (!has_int64(ctx->devices[i]))
+                continue;
+            if (!has_vk13_core(ctx->devices[i]))
+                continue;
+            // NOTE: shaderFloat64 is NOT required for selection: f32-only
+            // devices must still init (f64 kernels fail cleanly at launch
+            // when the feature is missing; see ctx->f64_ok).
+            fprintf(stderr, "ACuda: selected device [%u] %s\n",
+                    i, p.deviceName);
+            // Make the selected (discrete) device ordinal 0 so that
+            // cuDeviceGet(0) / cudaSetDevice(0) target it by default.
+            if (i != 0) {
+                VkPhysicalDevice tmp = ctx->devices[0];
+                ctx->devices[0] = ctx->devices[i];
+                ctx->devices[i] = tmp;
+                uint32_t ti = ctx->device_original[0];
+                ctx->device_original[0] = ctx->device_original[i];
+                ctx->device_original[i] = ti;
+            }
+            ctx->selected = 0;
+            ctx->phys = ctx->devices[0];
+            ctx->props = p;
+            query_pci_info(ctx->phys, &ctx->pci_domain, &ctx->pci_bus,
+                           &ctx->pci_device, &ctx->pci_function);
+            found = 1;
+            break;
+        }
+    }
+    if (!found) {
+        fprintf(stderr,
+                "ACuda: no Vulkan 1.3 compute device with maintenance4 + "
+                "synchronization2 support found\n");
+        free(ctx->devices);
+        free(ctx->device_original);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return ACUDA_ERROR_NO_DEVICE;
+    }
+    ctx->dozen = device_is_dozen(ctx->phys);
+    ctx->max_block_x = ctx->props.limits.maxComputeWorkGroupSize[0];
+    if (ctx->dozen) {
+#ifndef _WIN32
+        setenv("ACUDA_DZN", "1", 1);
+#endif
+        fprintf(stderr,
+                "ACuda: maintenance4 unavailable; using per-launch "
+                "LocalSize fallback\n");
+    }
+    ctx->queue_family = find_compute_queue(ctx->phys);
+    ctx->timestamp_bits = timestamp_valid_bits(ctx->phys, ctx->queue_family);
+    ctx->mem_type = find_host_memory(ctx->phys);
+    ctx->mem_type_dev = ctx->mem_type == UINT32_MAX
+                            ? UINT32_MAX
+                            : find_device_memory(ctx->phys, ctx->mem_type);
+    if (ctx->mem_type == UINT32_MAX) {
+        free(ctx->devices);
+        free(ctx->device_original);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return ACUDA_ERROR_NOT_SUPPORTED;
+    }
+
+    VkPhysicalDeviceFeatures2 f2en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+    };
+    vkGetPhysicalDeviceFeatures(ctx->phys, &f2en.features);
+    f2en.features.shaderInt64 = VK_TRUE;
+    VkPhysicalDeviceVulkan11Features v11q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+    };
+    VkPhysicalDeviceVulkan12Features v12q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &v11q,
+    };
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pexecq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+    };
+    v11q.pNext = &pexecq;
+    VkPhysicalDeviceVulkan13Features v13q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .pNext = &v12q,
+    };
+    VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT i64imgq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,
+        .pNext = &v13q,
+    };
+    VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT af2q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT,
+        .pNext = &i64imgq,
+    };
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT afq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
+        .pNext = &af2q,
+    };
+    VkPhysicalDeviceShaderBfloat16FeaturesKHR bf16q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+        .pNext = &afq,
+    };
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR cmq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+        .pNext = &bf16q,
+    };
+    acuda_mfdp_features_t mfq = { .sType = ACUDA_ST_MFDP };
+    mfq.pNext = &cmq;
+    VkPhysicalDeviceFeatures2 f2q = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &mfq,
+    };
+    vkGetPhysicalDeviceFeatures2(ctx->phys, &f2q);
+    ctx->maintenance4_ok = v13q.maintenance4 != VK_FALSE;
+    if (getenv("ACUDA_NO_MAINTENANCE4"))
+        ctx->maintenance4_ok = 0;
+    // VK_EXT_shader_atomic_float gates native OpAtomicFAddEXT on shared
+    // f32 accumulators. Only the shared feature is usable here: the
+    // compiler's storage buffers are u32-word views and cannot expose a
+    // typed float pointer for the buffer form.
+    int atomic_float_ext =
+        has_device_ext(ctx->phys, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+    int atomic_float2_ext =
+        has_device_ext(ctx->phys, VK_EXT_SHADER_ATOMIC_FLOAT_2_EXTENSION_NAME);
+    unsigned atomic_mask = 0;
+    if (atomic_float_ext) {
+        if (afq.shaderSharedFloat32AtomicAdd)
+            atomic_mask |= ACUDA_ATOMIC_F32_SHARED;
+        if (afq.shaderBufferFloat32AtomicAdd)
+            atomic_mask |= ACUDA_ATOMIC_F32_BUFFER;
+        if (afq.shaderSharedFloat64AtomicAdd)
+            atomic_mask |= ACUDA_ATOMIC_F64_SHARED;
+        if (afq.shaderBufferFloat64AtomicAdd)
+            atomic_mask |= ACUDA_ATOMIC_F64_BUFFER;
+        if (afq.shaderImageFloat32AtomicAdd)
+            atomic_mask |= ACUDA_ATOMIC_IMAGE_F32_ADD;
+        if (atomic_float2_ext && af2q.shaderImageFloat32AtomicMinMax)
+            atomic_mask |= ACUDA_ATOMIC_IMAGE_F32_MINMAX;
+    }
+    if (getenv("ACUDA_PTX_NO_ATOMIC_FLOAT") ||
+        getenv("ACUDA_PTX_NO_ATOMIC_F32_ADD"))
+        atomic_mask = 0;
+    if (getenv("ACUDA_DEBUG_ATOMIC"))
+        fprintf(stderr, "ACuda: atomic float features=0x%x\n", atomic_mask);
+    int mfdot_ok =
+        mfq.shaderMixedFloatDotProductFloat16AccFloat32 != VK_FALSE &&
+        has_device_ext(ctx->phys, ACUDA_MFDP_EXT);
+    if (getenv("ACUDA_NO_FDOT2"))
+        mfdot_ok = 0;
+    // The installed validation layer predates the extension's feature
+    // structure; only enable it when validation is off (or forced).
+    if (ctx->validation_on && !getenv("ACUDA_FDOT2"))
+        mfdot_ok = 0;
+    int cm_ext = has_device_ext(ctx->phys,
+                                VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+    int bf16_ext = has_device_ext(ctx->phys,
+                                  VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+    int cm_f16 = 0, cm_bf16 = 0;
+    if (cm_ext && !getenv("ACUDA_NO_COOPMAT")) {
+        PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR cmget =
+            (PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
+                vkGetInstanceProcAddr(ctx->instance,
+                    "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR");
+        if (cmget) {
+            uint32_t pc = 0;
+            if (cmget(ctx->phys, &pc, NULL) == VK_SUCCESS && pc > 0) {
+                VkCooperativeMatrixPropertiesKHR *cp =
+                    calloc(pc, sizeof(*cp));
+                if (cp) {
+                    for (uint32_t i = 0; i < pc; i++)
+                        cp[i].sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+                    if (cmget(ctx->phys, &pc, cp) == VK_SUCCESS) {
+                        for (uint32_t i = 0; i < pc; i++) {
+                            if (cp[i].MSize != 16 || cp[i].NSize != 16 ||
+                                cp[i].KSize != 16 ||
+                                cp[i].CType != VK_COMPONENT_TYPE_FLOAT32_KHR ||
+                                cp[i].ResultType != VK_COMPONENT_TYPE_FLOAT32_KHR)
+                                continue;
+                            if (cp[i].AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+                                cp[i].BType == VK_COMPONENT_TYPE_FLOAT16_KHR)
+                                cm_f16 = 1;
+                            if (bf16_ext && bf16q.shaderBFloat16CooperativeMatrix &&
+                                cp[i].AType == VK_COMPONENT_TYPE_BFLOAT16_KHR &&
+                                cp[i].BType == VK_COMPONENT_TYPE_BFLOAT16_KHR)
+                                cm_bf16 = 1;
+                        }
+                    }
+                    free(cp);
+                }
+            }
+        }
+    }
+    if (getenv("ACUDA_NO_COOPMAT")) {
+        cm_f16 = 0;
+        cm_bf16 = 0;
+    }
+    // The installed validation layer predates cooperative matrix and
+    // rejects its memory operands. Keep the validated path on the scalar
+    // fallback unless the user explicitly forces the extension.
+    if (ctx->validation_on && !getenv("ACUDA_COOPMAT")) {
+        cm_f16 = 0;
+        cm_bf16 = 0;
+    }
+    acuda_compiler_set_cooperative_matrix(&ctx->compiler_caps, cm_f16, cm_bf16);
+    if (getenv("ACUDA_DEBUG_COOPMAT"))
+        fprintf(stderr,
+                "ACuda: cooperative matrix ext=%d bf16ext=%d f16=%d bf16=%d\n",
+                cm_ext, bf16_ext, cm_f16, cm_bf16);
+    VkPhysicalDeviceSubgroupProperties subprops = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+    };
+    VkPhysicalDeviceSubgroupSizeControlProperties scprops = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES,
+        .pNext = &subprops,
+    };
+    VkPhysicalDeviceFloatControlsProperties fcprops = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES,
+        .pNext = &scprops,
+    };
+    VkPhysicalDeviceShaderIntegerDotProductProperties dprops = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES,
+        .pNext = &fcprops,
+    };
+    VkPhysicalDeviceVulkan13Properties v13props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
+        .pNext = &dprops,
+    };
+    VkPhysicalDeviceProperties2 p2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &v13props,
+    };
+    vkGetPhysicalDeviceProperties2(ctx->phys, &p2);
+    ctx->subgroup_size = (int)subprops.subgroupSize;
+    ctx->max_workgroup_subgroups = v13props.maxComputeWorkgroupSubgroups;
+    ctx->max_buffer_size = v13props.maxBufferSize;
+    ctx->max_image_dimension1d = ctx->props.limits.maxImageDimension1D;
+    ctx->max_image_dimension2d = ctx->props.limits.maxImageDimension2D;
+    // The only graphics path (the MSAA fill) prefers dynamic rendering.
+    // It is optional: when absent the fill keeps using its render pass.
+    ctx->dynamic_rendering_ok = v13q.dynamicRendering != VK_FALSE;
+    if (getenv("ACUDA_PTX_NO_DYNAMIC_RENDERING"))
+        ctx->dynamic_rendering_ok = 0;
+    // computeFullSubgroups lets a pipeline promise subgroup-multiple
+    // workgroups. Launches stay arbitrary-sized, so the flag is only set
+    // per pipeline when blockDim.x is already a multiple of the subgroup.
+    ctx->full_subgroups_ok = v13q.computeFullSubgroups != VK_FALSE;
+    if (getenv("ACUDA_PTX_NO_FULL_SUBGROUPS"))
+        ctx->full_subgroups_ok = 0;
+    // Optional ISA introspection hook (ACUDA_DUMP_ISA).
+    ctx->pipe_exec_ok =
+        has_device_ext(ctx->phys,
+                       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) &&
+        pexecq.pipelineExecutableInfo != VK_FALSE;
+    ctx->subgroup_min = scprops.minSubgroupSize;
+    ctx->subgroup_max = scprops.maxSubgroupSize;
+    ctx->subgroup32_ok =
+        v13q.subgroupSizeControl &&
+        (scprops.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        scprops.minSubgroupSize <= 32 && scprops.maxSubgroupSize >= 32;
+    // Optional occupancy experiment: force a subgroup size for kernels
+    // that do not need PTX's 32-lane warp semantics.
+    if (getenv("ACUDA_SUBGROUP_SIZE")) {
+        unsigned v = (unsigned)strtoul(getenv("ACUDA_SUBGROUP_SIZE"),
+                                       NULL, 10);
+        if (v13q.subgroupSizeControl &&
+            (scprops.requiredSubgroupSizeStages &
+             VK_SHADER_STAGE_COMPUTE_BIT) &&
+            v >= scprops.minSubgroupSize && v <= scprops.maxSubgroupSize)
+            ctx->pref_subgroup_size = v;
+        else
+            fprintf(stderr,
+                    "ACuda: ignoring ACUDA_SUBGROUP_SIZE=%u (outside "
+                    "device range %u..%u)\n",
+                    v, scprops.minSubgroupSize, scprops.maxSubgroupSize);
+    }
+    if (getenv("ACUDA_PTX_NO_SUBGROUP32"))
+        ctx->subgroup32_ok = 0;
+    if (getenv("ACUDA_DEBUG_SUBGROUP"))
+        fprintf(stderr,
+                "ACuda: subgroup default=%d control=%d range=[%u,%u] "
+                "require32=%d pref=%u\n",
+                ctx->subgroup_size, (int)v13q.subgroupSizeControl,
+                scprops.minSubgroupSize, scprops.maxSubgroupSize,
+                ctx->subgroup32_ok, ctx->pref_subgroup_size);
+    ctx->i64_atomics_ok = v12q.shaderBufferInt64Atomics &&
+                          v12q.shaderSharedInt64Atomics;
+    int int64_image_ok =
+        ctx->i64_atomics_ok &&
+        has_device_ext(ctx->phys,
+                       VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME) &&
+        i64imgq.shaderImageInt64Atomics;
+    if (getenv("ACUDA_PTX_NO_INT64_IMAGE"))
+        int64_image_ok = 0;
+    if (getenv("ACUDA_DEBUG_ATOMIC"))
+        fprintf(stderr, "ACuda: image int64 atomics=%d\n", int64_image_ok);
+    ctx->desc_idx_ok =
+        v12q.runtimeDescriptorArray &&
+        v12q.shaderStorageImageArrayNonUniformIndexing &&
+        v12q.descriptorBindingVariableDescriptorCount &&
+        f2q.features.shaderStorageImageArrayDynamicIndexing;
+    VkPhysicalDeviceVulkan11Features v11en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &f2en,
+    };
+    VkPhysicalDeviceVulkan12Features v12en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .timelineSemaphore = VK_TRUE,
+        .pNext = &v11en,
+    };
+    VkPhysicalDeviceVulkan13Features v13en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .maintenance4 = ctx->maintenance4_ok ? VK_TRUE : VK_FALSE,
+        .synchronization2 = VK_TRUE,
+        .pNext = &v12en,
+    };
+    if (v13q.subgroupSizeControl)
+        v13en.subgroupSizeControl = VK_TRUE;
+    if (ctx->dynamic_rendering_ok)
+        v13en.dynamicRendering = VK_TRUE;
+    if (ctx->full_subgroups_ok)
+        v13en.computeFullSubgroups = VK_TRUE;
+    if (v13q.shaderZeroInitializeWorkgroupMemory)
+        v13en.shaderZeroInitializeWorkgroupMemory = VK_TRUE;
+    if (ctx->i64_atomics_ok) {
+        v12en.shaderBufferInt64Atomics = VK_TRUE;
+        v12en.shaderSharedInt64Atomics = VK_TRUE;
+    }
+    if (ctx->desc_idx_ok) {
+        v12en.runtimeDescriptorArray = VK_TRUE;
+        v12en.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
+        v12en.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        f2en.features.shaderStorageImageArrayDynamicIndexing = VK_TRUE;
+    }
+    // Optional 1.2 features. 8-bit storage enables the native byte SSBO
+    // path; bufferDeviceAddress is enabled as groundwork for the
+    // raw-pointer work (the compiler still uses binding+offset
+    // addressing). The Vulkan memory model is deliberately not enabled
+    // until the shader side adopts the capability: turning it on
+    // without vulkanMemoryModelDeviceScope makes the validator reject
+    // the existing Device-scope atomics/barriers.
+    int ssbo8_ok = v12q.storageBuffer8BitAccess != VK_FALSE;
+    if (getenv("ACUDA_PTX_NO_SSBO8"))
+        ssbo8_ok = 0;
+    if (ssbo8_ok)
+        v12en.storageBuffer8BitAccess = VK_TRUE;
+    // 16-bit storage types also need the Int16 capability, which the
+    // Vulkan environment gates on the shaderInt16 feature.
+    int int16_ok = f2q.features.shaderInt16 != VK_FALSE;
+    if (int16_ok)
+        f2en.features.shaderInt16 = VK_TRUE;
+    int f16_ok = v12q.shaderFloat16 != VK_FALSE;
+    if (f16_ok)
+        v12en.shaderFloat16 = VK_TRUE;
+    int ssbo16_ok = v11q.storageBuffer16BitAccess != VK_FALSE && int16_ok;
+    if (getenv("ACUDA_PTX_NO_SSBO16"))
+        ssbo16_ok = 0;
+    if (ssbo16_ok)
+        v11en.storageBuffer16BitAccess = VK_TRUE;
+    ctx->bda_ok = v12q.bufferDeviceAddress != VK_FALSE;
+    if (ctx->bda_ok)
+        v12en.bufferDeviceAddress = VK_TRUE;
+    // Vulkan memory model: the compiler declares the capability and
+    // uses explicit scopes/semantics on atomics and barriers. Device
+    // scope additionally requires vulkanMemoryModelDeviceScope.
+    int vmm_ok = v12q.vulkanMemoryModel && v12q.vulkanMemoryModelDeviceScope;
+    if (getenv("ACUDA_PTX_NO_VMM"))
+        vmm_ok = 0;
+    if (vmm_ok) {
+        v12en.vulkanMemoryModel = VK_TRUE;
+        v12en.vulkanMemoryModelDeviceScope = VK_TRUE;
+    }
+    // Enable Float64 only where the device has it; f64 kernels check
+    // ctx->f64_ok at launch and fail cleanly otherwise.
+    ctx->f64_ok = has_float64(ctx->phys);
+    if (ctx->f64_ok)
+        f2en.features.shaderFloat64 = VK_TRUE;
+    // Float controls (Vulkan 1.2 core): preserve denormals and the
+    // signed-zero/Inf/NaN rules instead of accepting the driver's
+    // default (RADV historically flushes f32 denormal *results* on
+    // add). Declaring the modes requires both feature bits.
+    int fc32_ok = fcprops.shaderDenormPreserveFloat32 &&
+                  fcprops.shaderSignedZeroInfNanPreserveFloat32;
+    int fc64_ok = ctx->f64_ok && fcprops.shaderDenormPreserveFloat64 &&
+                  fcprops.shaderSignedZeroInfNanPreserveFloat64;
+    if (getenv("ACUDA_PTX_NO_FLOAT_CONTROLS")) {
+        fc32_ok = 0;
+        fc64_ok = 0;
+    }
+    // Float controls are properties, not enableable feature bits: the
+    // shader declares the execution modes and the implementation must
+    // report support here.
+    if (getenv("ACUDA_DEBUG_FLOAT"))
+        fprintf(stderr,
+                "ACuda: float controls 32=%d 64=%d (denorm preserve "
+                "%d/%d, signed-zero/NaN %d/%d)\n",
+                fc32_ok, fc64_ok,
+                (int)fcprops.shaderDenormPreserveFloat32,
+                (int)fcprops.shaderDenormPreserveFloat64,
+                (int)fcprops.shaderSignedZeroInfNanPreserveFloat32,
+                (int)fcprops.shaderSignedZeroInfNanPreserveFloat64);
+    int fma64_ok = 0;
+    int fma_ok = has_shader_fma(ctx->phys, &fma64_ok);
+    if (getenv("ACUDA_PTX_NO_FMA")) {
+        fma_ok = 0;
+        fma64_ok = 0;
+    }
+    VkPhysicalDeviceShaderFmaFeaturesKHR fmaf = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR,
+    };
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT afen = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
+    };
+    VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT af2en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT,
+    };
+    VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT i64imgen = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,
+    };
+    // shaderIntegerDotProduct is optional in Vulkan 1.3. It only
+    // selects the native dp4a lowering; the compiler keeps the exact
+    // fallback when it is absent (or disabled by the env knob).
+    int dot_ok = v13q.shaderIntegerDotProduct != VK_FALSE;
+    int dot_signed = dot_ok &&
+        dprops.integerDotProduct4x8BitPackedSignedAccelerated;
+    int dot_unsigned = dot_ok &&
+        dprops.integerDotProduct4x8BitPackedUnsignedAccelerated;
+    int dot_mixed = dot_ok &&
+        dprops.integerDotProduct4x8BitPackedMixedSignednessAccelerated;
+    if (getenv("ACUDA_PTX_NO_DOT_ACCEL"))
+        dot_signed = dot_unsigned = dot_mixed = 0;
+    if (getenv("ACUDA_PTX_NO_DOT_PRODUCT"))
+        dot_ok = 0;
+    if (!dot_ok)
+        dot_signed = dot_unsigned = dot_mixed = 0;
+    if (dot_ok)
+        v13en.shaderIntegerDotProduct = VK_TRUE;
+    if (getenv("ACUDA_DEBUG_DOT"))
+        fprintf(stderr,
+                "ACuda: integer dot feature=%d packed S=%d U=%d SU=%d\n",
+                dot_ok, dot_signed, dot_unsigned, dot_mixed);
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pexecen = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+        .pipelineExecutableInfo = VK_TRUE,
+    };
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR cmen = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+    };
+    VkPhysicalDeviceShaderBfloat16FeaturesKHR bf16en = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+    };
+    void *chain = &v13en;
+    acuda_mfdp_features_t mfen = { .sType = ACUDA_ST_MFDP };
+    if (mfdot_ok) {
+        mfen.shaderMixedFloatDotProductFloat16AccFloat32 = VK_TRUE;
+        mfen.pNext = chain;
+        chain = &mfen;
+    }
+    if (cm_f16 || cm_bf16) {
+        cmen.cooperativeMatrix = VK_TRUE;
+        cmen.pNext = chain;
+        chain = &cmen;
+    }
+    if (cm_bf16) {
+        bf16en.shaderBFloat16Type = VK_TRUE;
+        bf16en.shaderBFloat16CooperativeMatrix = VK_TRUE;
+        bf16en.pNext = chain;
+        chain = &bf16en;
+    }
+    if (ctx->pipe_exec_ok) {
+        pexecen.pNext = chain;
+        chain = &pexecen;
+    }
+    if (fma_ok || fma64_ok) {
+        fmaf.shaderFmaFloat32 = fma_ok ? VK_TRUE : VK_FALSE;
+        fmaf.shaderFmaFloat64 = fma64_ok ? VK_TRUE : VK_FALSE;
+        fmaf.pNext = chain;
+        chain = &fmaf;
+    }
+    if (atomic_mask) {
+        afen.shaderSharedFloat32AtomicAdd =
+            (atomic_mask & ACUDA_ATOMIC_F32_SHARED) ? VK_TRUE : VK_FALSE;
+        afen.shaderBufferFloat32AtomicAdd =
+            (atomic_mask & ACUDA_ATOMIC_F32_BUFFER) ? VK_TRUE : VK_FALSE;
+        afen.shaderSharedFloat64AtomicAdd =
+            (atomic_mask & ACUDA_ATOMIC_F64_SHARED) ? VK_TRUE : VK_FALSE;
+        afen.shaderBufferFloat64AtomicAdd =
+            (atomic_mask & ACUDA_ATOMIC_F64_BUFFER) ? VK_TRUE : VK_FALSE;
+        afen.shaderImageFloat32AtomicAdd =
+            (atomic_mask & ACUDA_ATOMIC_IMAGE_F32_ADD) ? VK_TRUE : VK_FALSE;
+        afen.pNext = chain;
+        chain = &afen;
+    }
+    if (atomic_mask & ACUDA_ATOMIC_IMAGE_F32_MINMAX) {
+        af2en.shaderImageFloat32AtomicMinMax = VK_TRUE;
+        af2en.pNext = chain;
+        chain = &af2en;
+    }
+    if (int64_image_ok) {
+        i64imgen.shaderImageInt64Atomics = VK_TRUE;
+        i64imgen.pNext = chain;
+        chain = &i64imgen;
+    }
+    // Request a second queue from the same family when ACUDA_HIGH_PERF is set,
+    // so the keep-busy thread can submit without racing user submissions.
+    // Queue priorities are hints only; the real clock ramp comes from sustained
+    // load. Always ask for at least one queue.
+    int high_perf = 1;
+    int high_perf_forced = 0;
+    {
+        const char *hp = getenv("ACUDA_HIGH_PERF");
+        if (hp) {
+            if (strcmp(hp, "0") == 0)
+                high_perf = 0;
+            else
+                high_perf_forced = 1;
+        }
+    }
+    uint32_t nqf = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(ctx->phys, &nqf, NULL);
+    VkQueueFamilyProperties *qfps = nqf ? calloc(nqf, sizeof(*qfps)) : NULL;
+    if (qfps) {
+        vkGetPhysicalDeviceQueueFamilyProperties(ctx->phys, &nqf, qfps);
+        if (getenv("ACUDA_DEBUG_STREAMS")) {
+            for (uint32_t i = 0; i < nqf; i++)
+                fprintf(stderr,
+                        "ACuda queue family %u: flags=0x%x queues=%u "
+                        "timestamp=%u\n",
+                        i, qfps[i].queueFlags, qfps[i].queueCount,
+                        qfps[i].timestampValidBits);
+        }
+    }
+    uint32_t avail_q = 1;
+    if (qfps && ctx->queue_family < nqf)
+        avail_q = qfps[ctx->queue_family].queueCount;
+    if (avail_q < 1)
+        avail_q = 1;
+    // Async multi-queue is the default.  Set ACUDA_ASYNC_STREAMS=0 to opt
+    // back into one serialized Vulkan queue (the legacy behavior).
+    int async_streams = 1;
+    {
+        const char *as = getenv("ACUDA_ASYNC_STREAMS");
+        if (as && *as && atoi(as) == 0)
+            async_streams = 0;
+    }
+    // Reserve queue 0 for the default stream and use the remaining queues
+    // from the same family for user streams.  Same-family queues avoid
+    // Vulkan ownership transfers while allowing independent submissions.
+    uint32_t want_users = 0;
+    const char *stream_q = getenv("ACUDA_STREAM_QUEUES");
+    if (!async_streams) {
+        want_users = 0;
+    } else if (stream_q && *stream_q) {
+        int v = atoi(stream_q);
+        if (v < 0)
+            v = 0;
+        if (v > ACUDA_MAX_USER_QUEUES)
+            v = ACUDA_MAX_USER_QUEUES;
+        want_users = (uint32_t)v;
+    } else if (avail_q > 1) {
+        want_users = avail_q - 1;
+        if (want_users > 4)
+            want_users = 4;
+    }
+    uint32_t nqueues = 1 + want_users;
+    if (nqueues > avail_q)
+        nqueues = avail_q;
+    // Keep-busy only gets a queue when the user did not ask for all of
+    // them; stream concurrency has priority over the clock-ramp hack.
+    uint32_t bg_index = UINT32_MAX;
+    if (async_streams && high_perf && avail_q > nqueues) {
+        bg_index = nqueues;
+        nqueues++;
+    }
+    (void)high_perf_forced;
+    free(qfps);
+    float prios[ACUDA_MAX_USER_QUEUES + 2];
+    for (uint32_t i = 0; i < nqueues; i++)
+        prios[i] = 1.0f;
+    VkDeviceQueueCreateInfo qci = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = ctx->queue_family,
+        .queueCount = nqueues,
+        .pQueuePriorities = prios,
+    };
+    uint32_t nqci = 1;
+    const char *dev_exts[8] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
+    uint32_t ndev_exts = 0;
+    if (fma_ok || fma64_ok)
+        dev_exts[ndev_exts++] = VK_KHR_SHADER_FMA_EXTENSION_NAME;
+    if (ctx->pipe_exec_ok)
+        dev_exts[ndev_exts++] =
+            VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME;
+    if (mfdot_ok)
+        dev_exts[ndev_exts++] = ACUDA_MFDP_EXT;
+    if (atomic_mask)
+        dev_exts[ndev_exts++] = VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME;
+    if (atomic_mask & ACUDA_ATOMIC_IMAGE_F32_MINMAX)
+        dev_exts[ndev_exts++] =
+            VK_EXT_SHADER_ATOMIC_FLOAT_2_EXTENSION_NAME;
+    if (int64_image_ok)
+        dev_exts[ndev_exts++] =
+            VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME;
+    if (cm_f16 || cm_bf16)
+        dev_exts[ndev_exts++] =
+            VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME;
+    if (cm_bf16)
+        dev_exts[ndev_exts++] =
+            VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME;
+    VkDeviceCreateInfo dci = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = chain,
+        .queueCreateInfoCount = nqci,
+        .pQueueCreateInfos = &qci,
+        .enabledExtensionCount = ndev_exts,
+        .ppEnabledExtensionNames = dev_exts,
+    };
+    vr = vkCreateDevice(ctx->phys, &dci, NULL, &ctx->device);
+    if (vr != VK_SUCCESS) {
+        free(ctx->devices);
+        free(ctx->device_original);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return acuda_from_vk(vr);
+    }
+    vkGetDeviceQueue(ctx->device, ctx->queue_family, 0, &ctx->queue);
+    ctx->bg_queue = VK_NULL_HANDLE;
+    ctx->bg_queue_family = ctx->queue_family;
+    ctx->nuser_queues = 0;
+    ctx->next_user_queue = 0;
+    for (uint32_t i = 1; i < nqueues; i++) {
+        VkQueue q = VK_NULL_HANDLE;
+        vkGetDeviceQueue(ctx->device, ctx->queue_family, i, &q);
+        if (i == bg_index) {
+            ctx->bg_queue = q;
+        } else if (ctx->nuser_queues < ACUDA_MAX_USER_QUEUES) {
+            ctx->user_queues[ctx->nuser_queues++] = q;
+        }
+    }
+    if (getenv("ACUDA_DEBUG_STREAMS"))
+        fprintf(stderr,
+                "ACuda streams: primary family %u, %u user queues, "
+                "keep-busy queue %s\n",
+                ctx->queue_family, ctx->nuser_queues,
+                ctx->bg_queue ? "enabled" : "disabled");
+    if (ctx->pipe_exec_ok) {
+        ctx->get_pipe_exec_props =
+            (PFN_vkGetPipelineExecutablePropertiesKHR)vkGetDeviceProcAddr(
+                ctx->device, "vkGetPipelineExecutablePropertiesKHR");
+        ctx->get_pipe_exec_reprs =
+            (PFN_vkGetPipelineExecutableInternalRepresentationsKHR)
+                vkGetDeviceProcAddr(
+                    ctx->device,
+                    "vkGetPipelineExecutableInternalRepresentationsKHR");
+        if (!ctx->get_pipe_exec_props || !ctx->get_pipe_exec_reprs)
+            ctx->pipe_exec_ok = 0;
+    }
+
+    acuda_status_t status =
+        acuda_stream_create_primary(ctx, &ctx->default_stream);
+    if (status != ACUDA_SUCCESS) {
+        vkDestroyDevice(ctx->device, NULL);
+        free(ctx->devices);
+        free(ctx->device_original);
+        vkDestroyInstance(ctx->instance, NULL);
+        free(ctx);
+        return status;
+    }
+    // Nudge the GPU into its boosted clock state (cheap, ~50ms by default).
+    acuda_warmup_gpu(ctx);
+    // Optional sustained keep-busy (opt-in via ACUDA_HIGH_PERF=1).
+    acuda_start_high_perf(ctx);
+    int had_fma = fma_ok;
+    if (fma_ok && !probe_shader_fma(ctx)) {
+        fma_ok = 0;
+        acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
+    }
+    if (fma_ok && !probe_shader_fma_rn(ctx)) {
+        fma_ok = 0;
+        acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
+    }
+    if (had_fma && !fma_ok)
+        fprintf(stderr,
+                "ACuda: VK_KHR_shader_fma miscompiles fused f32 "
+                "rounding here; using the portable fallback\n");
+    int had_fma64 = fma64_ok;
+    if (fma64_ok && (!fma_ok || !ctx->f64_ok || !probe_shader_fma64(ctx))) {
+        fma64_ok = 0;
+        acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, 0);
+    }
+    if (had_fma64 && !fma64_ok && fma_ok)
+        fprintf(stderr,
+                "ACuda: VK_KHR_shader_fma f64 miscompiles directed f64 "
+                "rounding here; f64 uses the portable fallback\n");
+    // Tell the compiler which directed-rounding path this device needs.
+    acuda_compiler_set_shader_fma(&ctx->compiler_caps, fma_ok);
+    acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, fma64_ok);
+    acuda_compiler_set_soft_fma(&ctx->compiler_caps, getenv("ACUDA_PTX_NO_FMA") != NULL);
+    {
+        int f16_native = f16_ok;
+        if (getenv("ACUDA_F16_EMULATED"))
+            f16_native = 0;
+        else if (f16_ok && !getenv("ACUDA_F16_PROBE_OFF"))
+            f16_native = probe_f16_native(ctx);
+        acuda_compiler_set_f16_native(&ctx->compiler_caps, f16_native);
+        acuda_compiler_set_mixed_fdot(&ctx->compiler_caps, mfdot_ok);
+        if (getenv("ACUDA_DEBUG_FDOT2"))
+            fprintf(stderr, "ACuda: mixed f16 dot (VALVE) = %d\n",
+                    mfdot_ok);
+    }
+    acuda_compiler_set_dot_product(&ctx->compiler_caps, dot_ok);
+    acuda_compiler_set_dot_product_forms(&ctx->compiler_caps, dot_signed, dot_unsigned,
+                                         dot_mixed);
+    acuda_compiler_set_zero_init_workgroup(&ctx->compiler_caps,
+        v13q.shaderZeroInitializeWorkgroupMemory != VK_FALSE);
+    if (getenv("ACUDA_PTX_NO_ZERO_INIT_WG"))
+        acuda_compiler_set_zero_init_workgroup(&ctx->compiler_caps, 0);
+    acuda_compiler_set_ssbo8(&ctx->compiler_caps, ssbo8_ok);
+    acuda_compiler_set_ssbo16(&ctx->compiler_caps, ssbo16_ok);
+    acuda_compiler_set_float_controls(&ctx->compiler_caps, fc32_ok, fc64_ok);
+    acuda_compiler_set_vulkan_memory_model(&ctx->compiler_caps, vmm_ok);
+    int bda_use = ctx->bda_ok;
+    if (getenv("ACUDA_PTX_NO_BDA"))
+        bda_use = 0;
+    acuda_compiler_set_bda(&ctx->compiler_caps, bda_use);
+    acuda_compiler_set_atomic_float(&ctx->compiler_caps, atomic_mask);
+    int alias_ok = acuda_surface_alias_supported(ctx);
+    if (getenv("ACUDA_NO_SURF_ALIAS"))
+        alias_ok = 0;
+    acuda_compiler_set_surface_alias(&ctx->compiler_caps, alias_ok);
+    if (getenv("ACUDA_DEBUG_ATOMIC"))
+        fprintf(stderr, "ACuda: surface uint alias view=%d\n", alias_ok);
+    acuda_compiler_set_int64_image(&ctx->compiler_caps, int64_image_ok);
+    if (getenv("ACUDA_DEBUG_BDA"))
+        fprintf(stderr, "ACuda: bufferDeviceAddress=%d shader_bda=%d\n",
+                ctx->bda_ok, bda_use);
+
+    *out_ctx = ctx;
+    return ACUDA_SUCCESS;
+}
+
+acuda_status_t acuda_shutdown(acuda_context_t ctx) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    // Stop the keep-busy thread first: it owns a live stream whose command
+    // buffer must not be touched by the shutdown path on this thread.
+    acuda_stop_high_perf(ctx);
+    acuda_stream_flush_all(ctx);
+    if (ctx->lock_buf)
+        acuda_free(ctx, ctx->lock_buf);
+    if (ctx->default_stream)
+        acuda_stream_destroy(ctx, ctx->default_stream);
+    acuda_launch_cache_clear_ctx(ctx);
+    if (ctx->device)
+        vkDestroyDevice(ctx->device, NULL);
+    free(ctx->devices);
+    free(ctx->device_original);
+    if (ctx->instance)
+        destroy_messenger(ctx);
+    if (ctx->instance)
+        vkDestroyInstance(ctx->instance, NULL);
+    free(ctx->buffers);
+    free(ctx);
+    return ACUDA_SUCCESS;
+}
+
+acuda_status_t acuda_device_count(acuda_context_t ctx, uint32_t *out_count) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    if (!out_count)
+        return ACUDA_ERROR_INVALID_VALUE;
+    *out_count = ctx->device_total;
+    return ACUDA_SUCCESS;
+}
+
+static uint64_t device_local_memory_bytes(VkPhysicalDevice dev) {
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(dev, &mp);
+    uint64_t best = 0;
+    for (uint32_t i = 0; i < mp.memoryHeapCount; i++) {
+        if (mp.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+            if (mp.memoryHeaps[i].size > best)
+                best = mp.memoryHeaps[i].size;
+        }
+    }
+    if (best == 0) {
+        for (uint32_t i = 0; i < mp.memoryHeapCount; i++) {
+            if (mp.memoryHeaps[i].size > best)
+                best = mp.memoryHeaps[i].size;
+        }
+    }
+    return best;
+}
+
+static void query_pci_info(VkPhysicalDevice dev, uint32_t *domain,
+                           uint32_t *bus, uint32_t *device,
+                           uint32_t *function) {
+    VkPhysicalDevicePCIBusInfoPropertiesEXT pci = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT,
+    };
+    VkPhysicalDeviceProperties2 p2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &pci,
+    };
+    vkGetPhysicalDeviceProperties2(dev, &p2);
+    *domain = pci.pciDomain;
+    *bus = pci.pciBus;
+    *device = pci.pciDevice;
+    *function = pci.pciFunction;
+}
+
+static void fill_info(VkPhysicalDevice dev, acuda_device_info_t *out) {
+    VkPhysicalDeviceProperties p;
+    vkGetPhysicalDeviceProperties(dev, &p);
+    memset(out, 0, sizeof(*out));
+    memcpy(out->name, p.deviceName, ACUDA_DEVICE_NAME_MAX - 1);
+    out->name[ACUDA_DEVICE_NAME_MAX - 1] = '\0';
+    out->vendor_id = p.vendorID;
+    out->device_id = p.deviceID;
+    out->is_discrete_gpu = (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
+    out->api_major = VK_VERSION_MAJOR(p.apiVersion);
+    out->api_minor = VK_VERSION_MINOR(p.apiVersion);
+    out->api_patch = VK_VERSION_PATCH(p.apiVersion);
+    query_pci_info(dev, &out->pci_domain, &out->pci_bus, &out->pci_device,
+                   &out->pci_function);
+    out->memory_bytes = device_local_memory_bytes(dev);
+}
+
+acuda_status_t acuda_device_get(acuda_context_t ctx, uint32_t index,
+                                acuda_device_info_t *out_info) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    if (!out_info || index >= ctx->device_total)
+        return ACUDA_ERROR_INVALID_VALUE;
+    fill_info(ctx->devices[index], out_info);
+    return ACUDA_SUCCESS;
+}
+
+acuda_status_t acuda_device_vulkan_index(acuda_context_t ctx, uint32_t index,
+                                         uint32_t *out_index) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    if (!out_index || index >= ctx->device_total ||
+        !ctx->device_original)
+        return ACUDA_ERROR_INVALID_VALUE;
+    *out_index = ctx->device_original[index];
+    return ACUDA_SUCCESS;
+}
+
+acuda_status_t acuda_device_selected(acuda_context_t ctx, uint32_t *out_index) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    if (!out_index)
+        return ACUDA_ERROR_INVALID_VALUE;
+    *out_index = ctx->selected;
+    return ACUDA_SUCCESS;
+}
+
+acuda_status_t acuda_validation_errors(acuda_context_t ctx, uint32_t *out_count) {
+    if (!ctx)
+        return ACUDA_ERROR_INVALID_HANDLE;
+    if (!out_count)
+        return ACUDA_ERROR_INVALID_VALUE;
+    *out_count = ctx->validation_errors;
+    return ACUDA_SUCCESS;
+}
+
+
+const acuda_compiler_caps_t *acuda_context_get_compiler_caps(acuda_context_t ctx) {
+    return ctx ? &ctx->compiler_caps : NULL;
+}
