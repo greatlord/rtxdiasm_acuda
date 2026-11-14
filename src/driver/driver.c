@@ -2812,6 +2812,13 @@ CUresult ACUDA_CUDAAPI cuFuncGetAttribute(int *pi, int attrib, CUfunction hfunc)
             *pi = 1;
         else if (attrib == CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES)
             *pi = hfunc->maxdyn_set ? (int)hfunc->maxdyn : 0;
+        else if (attrib == CU_FUNC_ATTRIBUTE_PTX_VERSION ||
+                 attrib == CU_FUNC_ATTRIBUTE_BINARY_VERSION)
+            // cudart validates a library kernel's PTX/binary version
+            // before launching; answering 0 makes it report
+            // cudaErrorInvalidDeviceFunction (e.g. for CUB's
+            // runtime-API kernels).
+            *pi = cc_major() * 10 + cc_minor();
         ACUDA_DEBUG_PRINT("acuda-trace .. cuFuncGetAttribute -> %d\n", *pi);
         return CUDA_SUCCESS;
     }
