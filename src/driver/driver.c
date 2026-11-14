@@ -1858,7 +1858,7 @@ static void acuda_cache_mkdir(const char *dir) {
 
 static uint64_t acuda_cache_hash(const char *ptx, const char *entry) {
     uint64_t h = 1469598103934665603ull;
-    const char *tag = "acuda-kernel-cache-v21";
+    const char *tag = "acuda-kernel-cache-v23";
     const unsigned char *s;
     for (s = (const unsigned char *)tag; *s; s++) {
         h ^= *s;
