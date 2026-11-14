@@ -274,6 +274,7 @@ static int has_vk13_core(VkPhysicalDevice dev) {
 // devices without VK_KHR_shader_fma use the compiler's integer fallback.
 static int has_shader_fma(VkPhysicalDevice dev, int *f64_ok) {
     *f64_ok = 0;
+#if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)
     if (!has_device_ext(dev, VK_KHR_SHADER_FMA_EXTENSION_NAME))
         return 0;
     VkPhysicalDeviceShaderFmaFeaturesKHR fma = {
@@ -286,6 +287,10 @@ static int has_shader_fma(VkPhysicalDevice dev, int *f64_ok) {
     vkGetPhysicalDeviceFeatures2(dev, &f2);
     *f64_ok = fma.shaderFmaFloat64;
     return fma.shaderFmaFloat32;
+#else
+    (void)dev;
+    return 0;
+#endif
 }
 
 // Some drivers expose VK_KHR_shader_fma but still algebraically
@@ -1354,6 +1359,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
         .pNext = &af2q,
     };
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     VkPhysicalDeviceShaderBfloat16FeaturesKHR bf16q = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
         .pNext = &afq,
@@ -1362,6 +1368,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
         .pNext = &bf16q,
     };
+#else
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR cmq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
+        .pNext = &afq,
+    };
+#endif
     acuda_mfdp_features_t mfq = { .sType = ACUDA_ST_MFDP };
     mfq.pNext = &cmq;
     VkPhysicalDeviceFeatures2 f2q = {
@@ -1411,8 +1423,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         mfdot_ok = 0;
     int cm_ext = has_device_ext(ctx->phys,
                                 VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     int bf16_ext = has_device_ext(ctx->phys,
                                   VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+#else
+    int bf16_ext = 0;
+#endif
     int cm_f16 = 0, cm_bf16 = 0;
     if (cm_ext && !getenv("ACUDA_NO_COOPMAT")) {
         PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR cmget =
@@ -1437,10 +1453,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
                             if (cp[i].AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
                                 cp[i].BType == VK_COMPONENT_TYPE_FLOAT16_KHR)
                                 cm_f16 = 1;
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR) && defined(VK_COMPONENT_TYPE_BFLOAT16_KHR)
                             if (bf16_ext && bf16q.shaderBFloat16CooperativeMatrix &&
                                 cp[i].AType == VK_COMPONENT_TYPE_BFLOAT16_KHR &&
                                 cp[i].BType == VK_COMPONENT_TYPE_BFLOAT16_KHR)
                                 cm_bf16 = 1;
+#endif
                         }
                     }
                     free(cp);
@@ -1662,9 +1680,11 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         fma_ok = 0;
         fma64_ok = 0;
     }
+#if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)
     VkPhysicalDeviceShaderFmaFeaturesKHR fmaf = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR,
     };
+#endif
     VkPhysicalDeviceShaderAtomicFloatFeaturesEXT afen = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
     };
@@ -1703,9 +1723,11 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR cmen = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
     };
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     VkPhysicalDeviceShaderBfloat16FeaturesKHR bf16en = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
     };
+#endif
     void *chain = &v13en;
     acuda_mfdp_features_t mfen = { .sType = ACUDA_ST_MFDP };
     if (mfdot_ok) {
@@ -1718,22 +1740,26 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         cmen.pNext = chain;
         chain = &cmen;
     }
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     if (cm_bf16) {
         bf16en.shaderBFloat16Type = VK_TRUE;
         bf16en.shaderBFloat16CooperativeMatrix = VK_TRUE;
         bf16en.pNext = chain;
         chain = &bf16en;
     }
+#endif
     if (ctx->pipe_exec_ok) {
         pexecen.pNext = chain;
         chain = &pexecen;
     }
+#if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)
     if (fma_ok || fma64_ok) {
         fmaf.shaderFmaFloat32 = fma_ok ? VK_TRUE : VK_FALSE;
         fmaf.shaderFmaFloat64 = fma64_ok ? VK_TRUE : VK_FALSE;
         fmaf.pNext = chain;
         chain = &fmaf;
     }
+#endif
     if (atomic_mask) {
         afen.shaderSharedFloat32AtomicAdd =
             (atomic_mask & ACUDA_ATOMIC_F32_SHARED) ? VK_TRUE : VK_FALSE;
@@ -1843,8 +1869,10 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     uint32_t nqci = 1;
     const char *dev_exts[8] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
     uint32_t ndev_exts = 0;
+#if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)
     if (fma_ok || fma64_ok)
         dev_exts[ndev_exts++] = VK_KHR_SHADER_FMA_EXTENSION_NAME;
+#endif
     if (ctx->pipe_exec_ok)
         dev_exts[ndev_exts++] =
             VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME;
@@ -1861,9 +1889,11 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     if (cm_f16 || cm_bf16)
         dev_exts[ndev_exts++] =
             VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME;
+#if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     if (cm_bf16)
         dev_exts[ndev_exts++] =
             VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME;
+#endif
     VkDeviceCreateInfo dci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = chain,
