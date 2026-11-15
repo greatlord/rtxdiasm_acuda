@@ -735,6 +735,7 @@ CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelClamp();
 CUresult ACUDA_CUDAAPI cuTexRefSetMipmappedArray();
 CUresult ACUDA_CUDAAPI cuWGLGetDevice();
 static CUresult need_actx(void) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuTexRefSetMipmapFilterMode\n");
     CUresult r = need_init();
     if (r != CUDA_SUCCESS)
         return r;
@@ -868,6 +869,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGet(CUdevice *device, int ordinal) {
 }
 
 CUresult ACUDA_CUDAAPI cuDeviceGetName(char *name, int len, CUdevice dev) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuDeviceGetName\n");
     if (!name || len <= 0)
         return CUDA_ERROR_INVALID_VALUE;
     CUresult r = need_actx();
@@ -1307,6 +1309,7 @@ CUresult ACUDA_CUDAAPI cuCtxCreate(CUcontext *pctx, unsigned int flags, CUdevice
 }
 
 CUresult ACUDA_CUDAAPI cuCtxDestroy_v2(CUcontext ctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxDestroy_v2\n");
     if (!ctx)
         return CUDA_ERROR_INVALID_CONTEXT;
     if (need_init() != CUDA_SUCCESS)
@@ -1328,6 +1331,7 @@ CUresult ACUDA_CUDAAPI cuCtxDestroy(CUcontext ctx) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxPushCurrent_v2(CUcontext ctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxPushCurrent_v2\n");
     if (!ctx)
         return CUDA_ERROR_INVALID_CONTEXT;
     if (need_init() != CUDA_SUCCESS)
@@ -1340,6 +1344,7 @@ CUresult ACUDA_CUDAAPI cuCtxPushCurrent(CUcontext ctx) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxPopCurrent_v2(CUcontext *pctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxPopCurrent_v2\n");
     if (!pctx)
         return CUDA_ERROR_INVALID_VALUE;
     *pctx = NULL;
@@ -1404,6 +1409,7 @@ CUresult ACUDA_CUDAAPI cuMemAlloc(CUdeviceptr *dptr, size_t bytesize) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemFree_v2(CUdeviceptr dptr) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMemFree_v2\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
@@ -2217,6 +2223,7 @@ static CUresult load_sass_image(CUmodule *module, const unsigned char *data,
 CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
                             unsigned int numOptions, CUjit_option *options,
                             void **optionValues) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuModuleLoadDataEx\n");
     (void)numOptions;
     (void)options;
     (void)optionValues;
@@ -2448,6 +2455,7 @@ CUresult ACUDA_CUDAAPI cuModuleLoadFatBinary(CUmodule *module, const void *fatCu
 }
 
 CUresult ACUDA_CUDAAPI cuModuleUnload(CUmodule module) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuModuleUnload\n");
     if (!module)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
@@ -2939,6 +2947,7 @@ CUresult ACUDA_CUDAAPI cuFuncGetAttribute(int *pi, int attrib, CUfunction hfunc)
 }
 
 CUresult ACUDA_CUDAAPI cuFuncSetAttribute(CUfunction hfunc, int attrib, int value) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuFuncSetAttribute\n");
     if (!hfunc)
         return CUDA_ERROR_INVALID_HANDLE;
     {
@@ -2981,6 +2990,7 @@ CUresult ACUDA_CUDAAPI cuFuncSetAttribute(CUfunction hfunc, int attrib, int valu
 // Plain configs forward to cuLaunchKernel (same 1D/sharedMem=0 rules).
 CUresult ACUDA_CUDAAPI cuLaunchKernelEx(const void *config, CUfunction f,
                           void **kernelParams, void **extra) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuLaunchKernelEx\n");
     if (!config || !f)
         return CUDA_ERROR_INVALID_VALUE;
     uint32_t grid[3], block[3], shm = 0, nattr = 0;
@@ -3862,6 +3872,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
 }
 
 CUresult ACUDA_CUDAAPI cuStreamCreate(CUstream *phStream, unsigned int flags) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamCreate\n");
     if (!phStream)
         return CUDA_ERROR_INVALID_VALUE;
     *phStream = NULL;
@@ -3903,6 +3914,7 @@ CUresult ACUDA_CUDAAPI cuStreamDestroy(CUstream hStream) {
 }
 
 CUresult ACUDA_CUDAAPI cuStreamSynchronize(CUstream hStream) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamSynchronize\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -3917,6 +3929,7 @@ CUresult ACUDA_CUDAAPI cuStreamSynchronize(CUstream hStream) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventCreate\n");
     if (!phEvent)
         return CUDA_ERROR_INVALID_VALUE;
     *phEvent = NULL;
@@ -3958,6 +3971,7 @@ CUresult ACUDA_CUDAAPI cuEventDestroy(CUevent hEvent) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventRecord\n");
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     CUcontext c = NULL;
@@ -3976,6 +3990,7 @@ CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventSynchronize(CUevent hEvent) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventSynchronize\n");
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
@@ -3987,6 +4002,7 @@ CUresult ACUDA_CUDAAPI cuEventSynchronize(CUevent hEvent) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventQuery(CUevent hEvent) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventQuery\n");
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
@@ -3998,6 +4014,7 @@ CUresult ACUDA_CUDAAPI cuEventQuery(CUevent hEvent) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventElapsedTime(float *pMilliseconds, CUevent hStart, CUevent hEnd) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventElapsedTime\n");
     if (!pMilliseconds)
         return CUDA_ERROR_INVALID_VALUE;
     if (!hStart || !hEnd)
@@ -4022,6 +4039,7 @@ CUresult ACUDA_CUDAAPI cuEventElapsedTime(float *pMilliseconds, CUevent hStart, 
 // hands the text to cuModuleLoadData as the "cubin". No SASS involved.
 CUresult ACUDA_CUDAAPI cuLinkCreate_v2(unsigned int numOptions, CUjit_option *options,
                          void **optionValues, CUlinkState *stateOut) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuLinkCreate_v2\n");
     (void)numOptions;
     (void)options;
     (void)optionValues;
@@ -4046,6 +4064,7 @@ CUresult ACUDA_CUDAAPI cuLinkAddData_v2(CUlinkState state, CUjitInputType type, 
                           size_t size, const char *name,
                           unsigned int numOptions, CUjit_option *options,
                           void **optionValues) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuLinkAddData_v2\n");
     (void)name;
     (void)numOptions;
     (void)options;
@@ -4103,6 +4122,7 @@ CUresult ACUDA_CUDAAPI cuLinkAddData(CUlinkState state, CUjitInputType type, voi
 CUresult ACUDA_CUDAAPI cuLinkAddFile_v2(CUlinkState state, CUjitInputType type,
                           const char *path, unsigned int numOptions,
                           CUjit_option *options, void **optionValues) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuLinkAddFile_v2\n");
     if (!state)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
@@ -4135,6 +4155,7 @@ CUresult ACUDA_CUDAAPI cuLinkAddFile(CUlinkState state, CUjitInputType type,
 }
 
 CUresult ACUDA_CUDAAPI cuLinkComplete(CUlinkState state, void **cubinOut, size_t *sizeOut) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuLinkComplete\n");
     if (!state)
         return CUDA_ERROR_INVALID_HANDLE;
     if (!cubinOut || !sizeOut)
@@ -4727,6 +4748,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetPCIBusId(char *pciBusId, int len, CUdevice dev
 }
 
 CUresult ACUDA_CUDAAPI cuDeviceGetByPCIBusId(CUdevice *device, const char *pciBusId) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuDeviceGetByPCIBusId\n");
     if (!device || !pciBusId)
         return CUDA_ERROR_INVALID_VALUE;
     CUresult r = need_init();
@@ -4800,6 +4822,7 @@ CUresult ACUDA_CUDAAPI cuDeviceCanAccessPeer(int *canAccessPeer, CUdevice dev,
 }
 
 CUresult ACUDA_CUDAAPI cuFlushGPUDirectRDMAWrites(int target, int scope) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuFlushGPUDirectRDMAWrites\n");
     (void)target;
     (void)scope;
     if (need_init() != CUDA_SUCCESS)
@@ -4837,6 +4860,7 @@ CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRetain(CUcontext *pctx, CUdevice dev) {
 }
 
 CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRelease(CUdevice dev) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuDevicePrimaryCtxRelease\n");
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
     if (dev < 0 || dev >= ACUDA_MAX_DEVICES || !primary_ctx[dev])
@@ -4922,6 +4946,7 @@ CUresult ACUDA_CUDAAPI cuCtxGetDevice(CUdevice *device) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxGetApiVersion(CUcontext ctx, unsigned int *version) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxGetApiVersion\n");
     (void)ctx;
     if (!version)
         return CUDA_ERROR_INVALID_VALUE;
@@ -4932,6 +4957,7 @@ CUresult ACUDA_CUDAAPI cuCtxGetApiVersion(CUcontext ctx, unsigned int *version) 
 }
 
 CUresult ACUDA_CUDAAPI cuCtxGetLimit(size_t *pvalue, int limit) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxGetLimit\n");
     (void)limit;
     if (!pvalue)
         return CUDA_ERROR_INVALID_VALUE;
@@ -4942,6 +4968,7 @@ CUresult ACUDA_CUDAAPI cuCtxGetLimit(size_t *pvalue, int limit) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxSetLimit(int limit, size_t value) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxSetLimit\n");
     (void)limit;
     (void)value;
     if (need_init() != CUDA_SUCCESS)
@@ -4950,6 +4977,7 @@ CUresult ACUDA_CUDAAPI cuCtxSetLimit(int limit, size_t value) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxSetCacheConfig(int config) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxSetCacheConfig\n");
     (void)config;
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
@@ -4957,6 +4985,7 @@ CUresult ACUDA_CUDAAPI cuCtxSetCacheConfig(int config) {
 }
 
 CUresult ACUDA_CUDAAPI cuCtxGetCacheConfig(int *config) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuCtxGetCacheConfig\n");
     if (!config)
         return CUDA_ERROR_INVALID_VALUE;
     if (need_init() != CUDA_SUCCESS)
@@ -5014,6 +5043,7 @@ CUresult ACUDA_CUDAAPI cuDeviceSetMemPool(CUdevice dev, CUmemPool pool) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemPoolTrimTo(CUmemPool pool, size_t minBytesToKeep) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMemPoolTrimTo\n");
     (void)minBytesToKeep;
     if (!pool)
         return CUDA_ERROR_INVALID_HANDLE;
@@ -5023,6 +5053,7 @@ CUresult ACUDA_CUDAAPI cuMemPoolTrimTo(CUmemPool pool, size_t minBytesToKeep) {
 }
 
 CUresult ACUDA_CUDAAPI cuStreamQuery(CUstream hStream) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamQuery\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -5042,6 +5073,7 @@ CUresult ACUDA_CUDAAPI cuStreamQuery(CUstream hStream) {
 
 CUresult ACUDA_CUDAAPI cuStreamWaitEvent(CUstream hStream, CUevent hEvent,
                            unsigned int flags) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamWaitEvent\n");
     (void)flags;
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
@@ -5061,6 +5093,7 @@ CUresult ACUDA_CUDAAPI cuStreamWaitEvent(CUstream hStream, CUevent hEvent,
 }
 
 CUresult ACUDA_CUDAAPI cuStreamGetFlags(CUstream hStream, unsigned int *flags) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamGetFlags\n");
     (void)hStream;
     if (!flags)
         return CUDA_ERROR_INVALID_VALUE;
@@ -5071,6 +5104,7 @@ CUresult ACUDA_CUDAAPI cuStreamGetFlags(CUstream hStream, unsigned int *flags) {
 }
 
 CUresult ACUDA_CUDAAPI cuStreamGetPriority(CUstream hStream, int *priority) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamGetPriority\n");
     (void)hStream;
     if (!priority)
         return CUDA_ERROR_INVALID_VALUE;
@@ -5424,6 +5458,7 @@ CUresult ACUDA_CUDAAPI cuMemHostUnregister(void *p) {
 }
 
 CUresult ACUDA_CUDAAPI cuStreamGetCtx(CUstream hStream, CUcontext *pctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamGetCtx\n");
     if (!pctx)
         return CUDA_ERROR_INVALID_VALUE;
     if (hStream) {
@@ -5442,6 +5477,7 @@ CUresult ACUDA_CUDAAPI cuStreamGetCtx_v2(CUstream hStream, CUcontext *pctx,
 }
 
 CUresult ACUDA_CUDAAPI cuStreamGetDevice(CUstream hStream, CUdevice *device) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuStreamGetDevice\n");
     (void)hStream;
     if (!device)
         return CUDA_ERROR_INVALID_VALUE;
@@ -6324,6 +6360,7 @@ static CUresult driver_array_alloc(CUarray *out,
 
 CUresult ACUDA_CUDAAPI cuArrayCreate_v2(CUarray *pHandle,
                           const CUDA_ARRAY_DESCRIPTOR *pAllocateArray) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuArrayCreate_v2\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -6348,6 +6385,7 @@ CUresult ACUDA_CUDAAPI cuArrayCreate(CUarray *pHandle,
 
 CUresult ACUDA_CUDAAPI cuArray3DCreate_v2(CUarray *pHandle,
                             const CUDA_ARRAY3D_DESCRIPTOR *pAllocateArray) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuArray3DCreate_v2\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -6389,6 +6427,7 @@ CUresult ACUDA_CUDAAPI cuMipmappedArrayCreate(
     CUmipmappedArray *pHandle,
     const CUDA_ARRAY3D_DESCRIPTOR *pMipmappedArrayDesc,
     unsigned int numMipmapLevels) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMipmappedArrayCreate\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -6461,6 +6500,7 @@ CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject,
                            const CUDA_RESOURCE_DESC *pResDesc,
                            const CUDA_TEXTURE_DESC *pTexDesc,
                            const CUDA_RESOURCE_VIEW_DESC *pResViewDesc) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuTexObjectCreate\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -6944,6 +6984,7 @@ CUresult ACUDA_CUDAAPI cuTexRefGetMaxAnisotropy(int *pmaxAniso,
 
 CUresult ACUDA_CUDAAPI cuSurfObjectCreate(CUsurfObject *pSurfObject,
                             const CUDA_RESOURCE_DESC *pResDesc) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuSurfObjectCreate\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -7157,6 +7198,7 @@ static CUresult driver_memcpy_common(size_t src_xb, size_t src_y, size_t src_z,
 }
 
 CUresult ACUDA_CUDAAPI cuMemcpy2D(const void *pCopy) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMemcpy2D\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
@@ -7177,6 +7219,7 @@ CUresult ACUDA_CUDAAPI cuMemcpy2DAsync(const void *pCopy, CUstream hStream) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemcpy3D(const void *pCopy) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMemcpy3D\n");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
