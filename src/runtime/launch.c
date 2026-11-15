@@ -464,6 +464,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
             bindings[i].pImmutableSamplers = NULL;
         }
+        ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: bind loop done\n");
         uint32_t extra = full_ptrs;
         if (info->surf_table) {
             VkDescriptorSetLayoutBinding *mb = &bindings[extra++];
@@ -482,12 +483,14 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             lb->pImmutableSamplers = NULL;
         }
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre dsl create dev=%p nbind=%u bindings=%p\n", (void*)ctx->device, nbind, (void*)bindings);
     VkDescriptorSetLayoutCreateInfo dlci = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .bindingCount = nbind,
         .pBindings = bindings,
     };
     vr = vkCreateDescriptorSetLayout(ctx->device, &dlci, NULL, &e->dsl);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post dsl create vr=%d\n", (int)vr);
     free(bindings);
     if (vr != VK_SUCCESS) {
         cache_destroy_entry(ctx, e);
