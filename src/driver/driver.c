@@ -4971,6 +4971,7 @@ CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemGetInfo\n");
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
     if (totalBytes)
@@ -5080,6 +5081,7 @@ CUresult ACUDA_CUDAAPI cuStreamGetPriority(CUstream hStream, int *priority) {
 }
 
 CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdeviceptr ptr) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuPointerGetAttribute(attr=%d ptr=%llx)\n", attribute, (unsigned long long)ptr);
     if (!data)
         return CUDA_ERROR_INVALID_VALUE;
     size_t cap = 0;
@@ -5132,6 +5134,7 @@ CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdevice
 CUresult ACUDA_CUDAAPI cuPointerGetAttributes(unsigned int numAttributes,
                                 int *attributes, void **data,
                                 CUdeviceptr ptr) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuPointerGetAttributes(n=%u ptr=%llx)\n", numAttributes, (unsigned long long)ptr);
     if (numAttributes && (!attributes || !data))
         return CUDA_ERROR_INVALID_VALUE;
     for (unsigned int i = 0; i < numAttributes; i++) {
@@ -6841,6 +6844,8 @@ CUresult ACUDA_CUDAAPI cuTexRefSetFormat(CUtexref hTexRef, CUarray_format fmt,
 }
 
 CUresult ACUDA_CUDAAPI cuTexRefSetFlags(CUtexref hTexRef, unsigned int Flags) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuTexRefSetFlags(%s flags=%u)\n",
+                hTexRef ? hTexRef->name : "(null)", Flags);
     if (!hTexRef)
         return CUDA_ERROR_INVALID_HANDLE;
     hTexRef->flags = Flags;
@@ -6849,6 +6854,8 @@ CUresult ACUDA_CUDAAPI cuTexRefSetFlags(CUtexref hTexRef, unsigned int Flags) {
 
 CUresult ACUDA_CUDAAPI cuTexRefSetFilterMode(CUtexref hTexRef,
                                              CUfilter_mode fm) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuTexRefSetFilterMode(%s fm=%d)\n",
+                hTexRef ? hTexRef->name : "(null)", (int)fm);
     if (!hTexRef || (fm != CU_TR_FILTER_MODE_POINT &&
                      fm != CU_TR_FILTER_MODE_LINEAR))
         return CUDA_ERROR_INVALID_VALUE;
@@ -6858,6 +6865,8 @@ CUresult ACUDA_CUDAAPI cuTexRefSetFilterMode(CUtexref hTexRef,
 
 CUresult ACUDA_CUDAAPI cuTexRefSetAddressMode(CUtexref hTexRef, int dim,
                                               CUaddress_mode am) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuTexRefSetAddressMode(%s dim=%d am=%d)\n",
+                hTexRef ? hTexRef->name : "(null)", dim, (int)am);
     if (!hTexRef || dim < 0 || dim > 2 || am > CU_TR_ADDRESS_MODE_BORDER)
         return CUDA_ERROR_INVALID_VALUE;
     hTexRef->address_mode[dim] = am;
