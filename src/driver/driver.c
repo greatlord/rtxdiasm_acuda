@@ -2602,7 +2602,19 @@ static acuda_status_t acuda_compile_via_host(const char *ptx, const char *entry,
     ACUDA_DEBUG_PRINT("acuda-trace .. compile_host deserialize_file=%d\n", (int)st);
     /* deserialize_file removes AKB when not used as SPIR-V backing; if used as
      * backing, kernel owns the file and will remove it on free. */
-    if (st != ACUDA_SUCCESS) DeleteFileA(outpath);
+    if (st != ACUDA_SUCCESS) {
+        const char *dump_dir = getenv("ACUDA_DUMP_PTX_DIR");
+        if (dump_dir && *dump_dir) {
+            static unsigned long dump_akb_serial;
+            char akbpath[1024];
+            snprintf(akbpath, sizeof(akbpath), "%s/compile_host_fail_%lu.akb",
+                     dump_dir, ++dump_akb_serial);
+            if (!MoveFileA(outpath, akbpath))
+                CopyFileA(outpath, akbpath, FALSE);
+            ACUDA_DEBUG_PRINT("acuda-trace .. kept failed compile_host akb -> %s\n", akbpath);
+        }
+        DeleteFileA(outpath);
+    }
     if (st != ACUDA_SUCCESS && err && errlen) snprintf(err,errlen,"compile_host deserialize_file status %d", (int)st);
     return st;
 }
