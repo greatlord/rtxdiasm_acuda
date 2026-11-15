@@ -384,7 +384,9 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
 
     const uint32_t *words = NULL;
     size_t nwords = 0;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre spirv k=%p\n", (void*)k);
     acuda_status_t st = acuda_kernel_spirv(k, &words, &nwords);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post spirv st=%d words=%p nwords=%zu\n", (int)st, (const void*)words, nwords);
     if (st != ACUDA_SUCCESS)
         return st;
     // Drivers without maintenance4 cannot consume OpExecutionModeId
@@ -393,6 +395,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     // block_x, so no fixed workgroup size is assumed.
     uint32_t *patched_words = NULL;
     const uint32_t *shader_words = words;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre patch maint4=%d api=%u\n", ctx->maintenance4_ok, (unsigned)ctx->props.apiVersion);
     if (!ctx->maintenance4_ok ||
         ctx->props.apiVersion < VK_API_VERSION_1_3) {
         patched_words = malloc(nwords * sizeof(uint32_t));
@@ -422,12 +425,14 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         }
         shader_words = patched_words;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre shader module\n");
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = nwords * 4,
         .pCode = shader_words,
     };
     VkResult vr = vkCreateShaderModule(ctx->device, &smci, NULL, &e->mod);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post shader module vr=%d\n", (int)vr);
     free(patched_words);
     acuda_kernel_release_spirv((acuda_kernel_t *)k);
     if (vr != VK_SUCCESS)
