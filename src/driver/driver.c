@@ -5364,21 +5364,31 @@ static int acuda_host_heap_init(size_t need) {
     }
     if (!g_host_base) {
         void *high = acuda_host_heap_find_high(reserve, 0);
-        if (high) {
+        /* In 32-bit, a very low heap reservation can destabilize the process.
+         * If that's the only option, skip heap and rely on direct per-allocation
+         * VirtualAlloc (which can prefer above 2GB for large allocs). */
+        if (high && (uintptr_t)high >= (uintptr_t)0x40000000u) {
             g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
                                                         MEM_RESERVE,
                                                         PAGE_NOACCESS);
             if (g_host_base && getenv("ACUDA_TRACE"))
-                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high(low-ok) at %p\n",
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high(low-last) at %p\n",
                         reserve, (void *)g_host_base);
         }
     }
     if (!g_host_base && !grew_for_need) {
-        g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
-                                                    PAGE_NOACCESS);
-        if (g_host_base && getenv("ACUDA_TRACE"))
-            fprintf(stderr, "acuda-trace .. host_heap reserve %zu anywhere at %p\n",
-                    reserve, (void *)g_host_base);
+        void *p = VirtualAlloc(NULL, reserve, MEM_RESERVE, PAGE_NOACCESS);
+        if (p && (uintptr_t)p >= (uintptr_t)0x40000000u) {
+            g_host_base = (unsigned char *)p;
+            if (getenv("ACUDA_TRACE"))
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu anywhere at %p\n",
+                        reserve, (void *)g_host_base);
+        } else if (p) {
+            VirtualFree(p, 0, MEM_RELEASE);
+            if (getenv("ACUDA_TRACE"))
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu anywhere got low %p, skipped\n",
+                        reserve, p);
+        }
     }
 #else
     if (!g_host_base) {
