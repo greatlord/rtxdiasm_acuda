@@ -1366,16 +1366,29 @@ CUresult ACUDA_CUDAAPI cuCtxPopCurrent(CUcontext *pctx) {
 
 CUresult ACUDA_CUDAAPI cuCtxSynchronize(void) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSynchronize\n");
+#if defined(_WIN32)
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
+        fprintf(stderr, "acuda-trace !! HEAP CORRUPT at cuCtxSynchronize entry\n");
+#endif
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
     if (r != CUDA_SUCCESS)
         return r;
-    return map_status(acuda_stream_synchronize(g_actx, NULL));
+    r = map_status(acuda_stream_synchronize(g_actx, NULL));
+#if defined(_WIN32)
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
+        fprintf(stderr, "acuda-trace !! HEAP CORRUPT at cuCtxSynchronize exit\n");
+#endif
+    return r;
 }
 
 static CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu)\n", bytesize);
+#if defined(_WIN32)
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
+        fprintf(stderr, "acuda-trace !! HEAP CORRUPT at cuMemAlloc entry bytes=%zu\n", bytesize);
+#endif
     if (!dptr)
         return CUDA_ERROR_INVALID_VALUE;
     *dptr = 0;
@@ -1401,6 +1414,10 @@ static CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
         acuda_trace_va("cuMemAlloc");
 #endif
     }
+#if defined(_WIN32)
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
+        fprintf(stderr, "acuda-trace !! HEAP CORRUPT at cuMemAlloc exit bytes=%zu ptr=0x%llx\n", bytesize, (unsigned long long)virt);
+#endif
     return CUDA_SUCCESS;
 }
 
