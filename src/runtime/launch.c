@@ -286,8 +286,14 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
                                    uint32_t block_dim_x, uint32_t block_dim_y,
                                    uint32_t block_dim_z, uint32_t dyn_words,
                                    launch_cache_t **out) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: entry ctx=%p k=%p info=%p cache=%p count=%zu\n",
+                      (void*)ctx, (void*)k, (void*)info, (void*)cache, cache_count);
     cache_lock_acquire();
     for (size_t i = 0; i < cache_count; i++) {
+        if (!cache[i]) {
+            ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: NULL entry at %zu\n", i);
+            continue;
+        }
         if (cache[i]->kernel == k && cache[i]->serial == info->serial &&
             cache[i]->ctx == ctx && cache[i]->block_x == block_dim_x &&
             cache[i]->block_y == block_dim_y &&
