@@ -657,7 +657,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         cpci.flags |=
             VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
 #if defined(_WIN32)
-    if (getenv("ACUDA_TRACE") && !HeapValidate(GetProcessHeap(), 0, NULL))
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
         ACUDA_DEBUG_PRINT("acuda-trace !! HEAP CORRUPT before create pipeline\n");
 #endif
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline dev=%p mod=%p pl=%p entry=%p(%s) stageNext=%p stageFlags=0x%x cpciFlags=0x%x specN=%u specSize=%zu specData=%p[%u,%u,%u,%u] specMap=%p\n",

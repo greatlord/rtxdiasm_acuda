@@ -888,6 +888,10 @@ acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event)
     if (!ctx || !out_event)
         return ACUDA_ERROR_INVALID_HANDLE;
     *out_event = NULL;
+#if defined(_WIN32)
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
+        ACUDA_DEBUG_PRINT("acuda-trace !! HEAP CORRUPT at acuda_event_create entry\n");
+#endif
     acuda_event_t e = calloc(1, sizeof(*e));
     if (!e)
         return ACUDA_ERROR_OUT_OF_MEMORY;

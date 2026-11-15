@@ -3981,7 +3981,7 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
     }
     *phEvent = e;
 #if defined(_WIN32)
-    if (getenv("ACUDA_TRACE") && !HeapValidate(GetProcessHeap(), 0, NULL))
+    if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
         fprintf(stderr, "acuda-trace !! HEAP CORRUPT after cuEventCreate e=%p\n", (void *)e);
 #endif
     ACUDA_DEBUG_PRINT("acuda-trace << cuEventCreate ok e=%p\n", (void *)e);
