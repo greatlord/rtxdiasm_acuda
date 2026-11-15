@@ -499,6 +499,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
 
     uint32_t max_slots = surf_max_slots(ctx, info->surf_table_count);
     uint32_t nsets = 1;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre surf layouts max_slots=%u st=%u stc=%u\n", max_slots, info->surf_table, info->surf_table_count);
     if (info->surf_table && info->surf_table_count > 0) {
         e->surf_dsl = calloc(info->surf_table_count, sizeof(*e->surf_dsl));
         if (!e->surf_dsl) {
@@ -536,8 +537,10 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         }
         nsets += info->surf_table_count;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post surf layouts nsets=%u\n", nsets);
     uint32_t addr_base = (info->push_bytes + info->tex_meta_bytes + 7u) & ~7u;
     uint32_t push_total = addr_base + info->addr_push_bytes;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: push_total=%u max=%u\n", push_total, ctx->props.limits.maxPushConstantsSize);
     if (push_total > ctx->props.limits.maxPushConstantsSize) {
         cache_destroy_entry(ctx, e);
         return ACUDA_ERROR_NOT_SUPPORTED;
@@ -562,13 +565,16 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         .pushConstantRangeCount = push_total > 0 ? 1u : 0u,
         .pPushConstantRanges = push_total > 0 ? &pcr : NULL,
     };
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre pipeline layout\n");
     vr = vkCreatePipelineLayout(ctx->device, &plci, NULL, &e->pl);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post pipeline layout vr=%d\n", (int)vr);
     free(sls);
     if (vr != VK_SUCCESS) {
         cache_destroy_entry(ctx, e);
         return acuda_from_vk(vr);
     }
 
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre pipeline create entry=%s\n", info->entry);
     VkPipelineShaderStageCreateInfo stage = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage = VK_SHADER_STAGE_COMPUTE_BIT,
