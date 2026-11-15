@@ -962,6 +962,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
     ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: pre ptr_params\n");
     if (num_bufs != acuda_kernel_launch_ptr_params(kernel))
         return ACUDA_ERROR_INVALID_VALUE;
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post ptr_params\n");
     if (num_bufs > 0 && (!bufs || !offsets || !ranges))
         return ACUDA_ERROR_INVALID_VALUE;
     if (push_bytes != info->push_bytes ||
@@ -975,6 +976,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         grid_dim_y > ctx->props.limits.maxComputeWorkGroupCount[1] ||
         grid_dim_z > ctx->props.limits.maxComputeWorkGroupCount[2])
         return ACUDA_ERROR_NOT_SUPPORTED;
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post dim checks\n");
     uint64_t shared_needed =
         (uint64_t)info->shared_bytes +
         (info->has_extern ? (uint64_t)dyn_shared_bytes : 0);
@@ -998,6 +1000,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
             (uint64_t)ranges[i] > ctx->props.limits.maxStorageBufferRange)
             return ACUDA_ERROR_NOT_SUPPORTED;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post buf validation\n");
 
     // f64 kernels need shaderFloat64: fail cleanly here, never garbage.
     if (info->requires_float64 == 2) {
