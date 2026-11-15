@@ -445,20 +445,21 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post launch_ptr_params full_ptrs=%u\n", full_ptrs);
     uint32_t nbind = full_ptrs + (info->surf_table ? 1u : 0u) +
                      (info->surf_lock ? 1u : 0u);
-    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: nbind=%u surf_table=%u surf_lock=%u surf_count=%u\n",
-                      nbind, info ? info->surf_table : 0u, info ? info->surf_lock : 0u, info ? info->surf_table_count : 0u);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: nbind=%u surf_table=%u surf_lock=%u surf_count=%u info=%p\n",
+                      nbind, info ? info->surf_table : 0u, info ? info->surf_lock : 0u, info ? info->surf_table_count : 0u, (void*)info);
     VkDescriptorSetLayoutBinding *bindings = NULL;
     if (nbind > 0) {
         bindings = calloc(nbind, sizeof(*bindings));
-        ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: bindings=%p\n", (void*)bindings);
+        ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: bindings=%p full_ptrs=%u\n", (void*)bindings, full_ptrs);
         if (!bindings) {
             cache_destroy_entry(ctx, e);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
         for (uint32_t i = 0; i < full_ptrs; i++) {
+            ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: bind i=%u kind_ptr=%p\n", i, (void*)(info ? info->binding_kind : NULL));
+            uint32_t kind = info->binding_kind ? info->binding_kind[i] : 0u;
             bindings[i].binding = i;
-            bindings[i].descriptorType =
-                binding_vktype(info->binding_kind[i]);
+            bindings[i].descriptorType = binding_vktype(kind);
             bindings[i].descriptorCount = 1;
             bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
             bindings[i].pImmutableSamplers = NULL;
