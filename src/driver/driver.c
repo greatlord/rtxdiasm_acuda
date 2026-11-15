@@ -3936,15 +3936,15 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
         return CUDA_ERROR_INVALID_VALUE;
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: need_ctx=%d\n", (int)r);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: need_ctx=%d c=%p g_actx=%p\n", (int)r, (void *)c, (void *)g_actx);
     if (r != CUDA_SUCCESS)
         return r;
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: calloc sizeof=%zu\n", sizeof(*e));
     CUevent e = calloc(1, sizeof(*e));
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: calloc e=%p sizeof=%zu\n", (void *)e, sizeof(*e));
     if (!e)
         return CUDA_ERROR_OUT_OF_MEMORY;
     e->ctx = c;
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: acuda_event_create g_actx=%p\n", (void *)g_actx);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: calling acuda_event_create\n");
     acuda_status_t st = acuda_event_create(g_actx, &e->e);
     ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: acuda_event_create st=%d\n", (int)st);
     if (st != ACUDA_SUCCESS) {
