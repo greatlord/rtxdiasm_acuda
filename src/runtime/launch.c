@@ -2091,8 +2091,10 @@ acuda_status_t acuda_launch_raw_ex(acuda_context_t ctx,
                                    uint32_t block_dim_z,
                                    uint32_t dyn_shared_bytes,
                                    acuda_stream_t stream) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. acuda_launch_raw_ex: entry k=%p\n", (void *)kernel);
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(kernel);
     int have_info = info != NULL;
+    ACUDA_DEBUG_PRINT("acuda-trace .. acuda_launch_raw_ex: info=%p have=%d\n", (void *)info, have_info);
     if (have_info && info->host_segment_count > 0) {
         uint32_t user = num_bufs;
         if (num_bufs == acuda_kernel_launch_ptr_params(kernel))
@@ -2110,11 +2112,13 @@ acuda_status_t acuda_launch_raw_ex(acuda_context_t ctx,
         // slots so barrier emission skips them. Storage-buffer handles
         // (including large by-value parameter buffers) keep their
         // VkBuffer while still participating in barrier tracking.
+        ACUDA_DEBUG_PRINT("acuda-trace .. acuda_launch_raw_ex: tex_handles loop n=%u\n", num_bufs);
         for (uint32_t i = 0; i < num_bufs; i++)
             if (tex_handles[i] &&
                 (!have_info || info->binding_kind[i] != 0))
                 bufs[i] = VK_NULL_HANDLE;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. acuda_launch_raw_ex: calling launch_raw_once\n");
     return launch_raw_once(ctx, kernel, bufs, offsets, ranges, num_bufs,
                            tex_handles, surf_table, nsurf_table, surf_slots,
                            surf_meta,

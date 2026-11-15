@@ -3835,7 +3835,15 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             return map_status(mst);
         }
     }
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuLaunchKernel %s: calling raw_ex k=%p g_actx=%p\n", f->name, (void *)f->k, (void *)g_actx);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuLaunchKernel %s: calling raw_ex k=%p g_actx=%p info=%p\n", f->name, (void *)f->k, (void *)g_actx, (void *)info);
+    if (!f->k || !info) {
+        ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel %s: null kernel/info\n", f->name);
+        free(tables);
+        if (smeta) acuda_free(g_actx, smeta);
+        free(vkb); free(offs); free(ranges); free(hostbufs); free(texh); free(words);
+        release_param_buffers(owned, ACUDA_MAX_PARAMS);
+        return CUDA_ERROR_INVALID_HANDLE;
+    }
     acuda_status_t st =
         acuda_launch_raw_ex(g_actx, f->k, vkb, offs, ranges, nptr,
                             hostbufs, texh, tables,
