@@ -569,7 +569,8 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         .pushConstantRangeCount = push_total > 0 ? 1u : 0u,
         .pPushConstantRanges = push_total > 0 ? &pcr : NULL,
     };
-    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre pipeline layout\n");
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre pipeline layout ctx=%p dev=%p plci=%p sls=%p nsets=%u pcr=%u\n",
+                      (void*)ctx, (void*)(ctx ? ctx->device : VK_NULL_HANDLE), (void*)&plci, (void*)sls, nsets, push_total);
     vr = vkCreatePipelineLayout(ctx->device, &plci, NULL, &e->pl);
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post pipeline layout vr=%d\n", (int)vr);
     free(sls);
