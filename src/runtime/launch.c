@@ -643,7 +643,10 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     if (ctx->pipe_exec_ok && getenv("ACUDA_DUMP_ISA"))
         cpci.flags |=
             VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
-    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline\n");
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline dev=%p mod=%p pl=%p entry=%p(%s) stageNext=%p specN=%u specData=%p specMap=%p\n",
+                      (void*)ctx->device, (void*)(uintptr_t)stage.module, (void*)(uintptr_t)cpci.layout,
+                      (void*)stage.pName, stage.pName ? stage.pName : "(null)",
+                      stage.pNext, spec_info.mapEntryCount, spec_info.pData, (void*)spec_info.pMapEntries);
     vr = vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1, &cpci, NULL,
                                   &e->pipe);
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post create pipeline vr=%d pipe=%p\n", (int)vr, (void*)(uintptr_t)e->pipe);
