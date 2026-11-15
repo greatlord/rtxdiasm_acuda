@@ -5370,8 +5370,11 @@ static int acuda_host_heap_init(size_t need) {
         g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
                                                     PAGE_NOACCESS);
 #endif
-    if (!g_host_base)
+    if (!g_host_base) {
+        if (getenv("ACUDA_TRACE"))
+            fprintf(stderr, "acuda-trace .. host_heap reserve %zu failed\n", reserve);
         return 0;
+    }
     g_host_size = reserve;
     g_host_desc[0].off = 0;
     g_host_desc[0].size = reserve;
