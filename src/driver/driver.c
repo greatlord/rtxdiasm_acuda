@@ -1523,6 +1523,8 @@ CUresult ACUDA_CUDAAPI cuMemcpyDtoD(CUdeviceptr dst, CUdeviceptr src, size_t byt
 // Dispatch on which side is arena-backed; host/host stays a plain copy.
 static CUresult memcpy_generic(CUdeviceptr dst, CUdeviceptr src,
                                size_t bytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpy(dst=%llx src=%llx bytes=%zu)\n",
+                (unsigned long long)dst, (unsigned long long)src, bytes);
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
@@ -1566,6 +1568,8 @@ CUresult ACUDA_CUDAAPI cuMemcpyWithAttributesAsync(CUdeviceptr dst, CUdeviceptr 
 
 static CUresult memset_d(CUdeviceptr dst, unsigned long long value, size_t count,
                          int is32) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemsetD%s(dst=%llx value=%llu count=%zu)\n",
+                is32 ? "32" : "8", (unsigned long long)dst, value, count);
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
