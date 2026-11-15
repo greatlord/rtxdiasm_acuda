@@ -5342,6 +5342,19 @@ static int acuda_host_heap_init(size_t need) {
      * arbitrary low placements (can land at 0x10020000 and fragment/crash).
      * Prefer above-2GB or highest-below-2GB; otherwise skip heap init so
      * the caller can try a direct per-allocation VirtualAlloc. */
+    if (!g_host_base) {
+        void *high = acuda_host_heap_find_high(reserve, 0);
+        /* Avoid very low placements (< 0x40000000) which destabilize 32-bit
+         * processes (CRT/PhysX/nvogl). Prefer fixed base in that case. */
+        if (high && (uintptr_t)high >= (uintptr_t)0x40000000u) {
+            g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
+                                                        MEM_RESERVE,
+                                                        PAGE_NOACCESS);
+            if (g_host_base && getenv("ACUDA_TRACE"))
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high at %p\n",
+                        reserve, (void *)g_host_base);
+        }
+    }
     if (!g_host_base && !grew_for_need) {
         g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
                                                     MEM_RESERVE, PAGE_NOACCESS);
@@ -5356,7 +5369,7 @@ static int acuda_host_heap_init(size_t need) {
                                                         MEM_RESERVE,
                                                         PAGE_NOACCESS);
             if (g_host_base && getenv("ACUDA_TRACE"))
-                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high at %p\n",
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high(low-ok) at %p\n",
                         reserve, (void *)g_host_base);
         }
     }
