@@ -884,6 +884,7 @@ acuda_status_t acuda_stream_synchronize(acuda_context_t ctx, acuda_stream_t stre
 }
 
 acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. acuda_event_create(ctx=%p)\n", (void *)ctx);
     if (!ctx || !out_event)
         return ACUDA_ERROR_INVALID_HANDLE;
     *out_event = NULL;
@@ -899,6 +900,7 @@ acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event)
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext = &tci,
     };
+    ACUDA_DEBUG_PRINT("acuda-trace .. acuda_event_create: vkCreateSemaphore dev=%p\n", (void *)ctx->device);
     VkResult vr = vkCreateSemaphore(ctx->device, &sci, NULL, &e->timeline);
     if (vr != VK_SUCCESS) {
         free(e);
