@@ -3980,6 +3980,10 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
         return map_status(st);
     }
     *phEvent = e;
+#if defined(_WIN32)
+    if (getenv("ACUDA_TRACE") && !HeapValidate(GetProcessHeap(), 0, NULL))
+        fprintf(stderr, "acuda-trace !! HEAP CORRUPT after cuEventCreate e=%p\n", (void *)e);
+#endif
     ACUDA_DEBUG_PRINT("acuda-trace << cuEventCreate ok e=%p\n", (void *)e);
     return CUDA_SUCCESS;
 }
