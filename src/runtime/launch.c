@@ -289,22 +289,27 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: entry ctx=%p k=%p info=%p cache=%p count=%zu\n",
                       (void*)ctx, (void*)k, (void*)info, (void*)cache, cache_count);
     cache_lock_acquire();
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: locked cache=%p count=%zu\n", (void*)cache, cache_count);
     for (size_t i = 0; i < cache_count; i++) {
-        if (!cache[i]) {
+        launch_cache_t *ce = cache ? cache[i] : NULL;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: i=%zu ce=%p\n", i, (void*)ce);
+        if (!ce) {
             ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: NULL entry at %zu\n", i);
             continue;
         }
-        if (cache[i]->kernel == k && cache[i]->serial == info->serial &&
-            cache[i]->ctx == ctx && cache[i]->block_x == block_dim_x &&
-            cache[i]->block_y == block_dim_y &&
-            cache[i]->block_z == block_dim_z &&
-            cache[i]->dyn_words == dyn_words) {
-            *out = cache[i];
+        if (ce->kernel == k && ce->serial == info->serial &&
+            ce->ctx == ctx && ce->block_x == block_dim_x &&
+            ce->block_y == block_dim_y &&
+            ce->block_z == block_dim_z &&
+            ce->dyn_words == dyn_words) {
+            ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: hit i=%zu\n", i);
+            *out = ce;
             cache_lock_release();
             return ACUDA_SUCCESS;
         }
     }
     cache_lock_release();
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: miss\n");
     uint64_t invocations = (uint64_t)block_dim_x * block_dim_y * block_dim_z;
     if (invocations == 0 ||
         invocations > ctx->props.limits.maxComputeWorkGroupInvocations ||
