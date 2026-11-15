@@ -3973,6 +3973,7 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
 }
 
 static CUresult event_free(CUevent hEvent) {
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventDestroy e=%p\n", (void *)hEvent);
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
