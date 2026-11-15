@@ -5299,10 +5299,11 @@ static int acuda_host_heap_init(size_t need) {
             return 0;
     }
     /* In 32-bit, growing the upfront reserved host heap to satisfy a single
-     * large request can consume/fragment scarce low VA (especially when the
-     * reservation falls back to low addresses) and destabilize the process.
-     * If the user capped the heap, respect it and let oversized allocations
-     * fall back to per-allocation VirtualAlloc. */
+     * large request can consume/fragment scarce low VA. If the user capped
+     * the heap, respect it. Even when growing, avoid low-address fallbacks
+     * (fixed base / low "anywhere") that destabilize the process - prefer
+     * above-2GB or let oversized allocs use per-allocation VirtualAlloc. */
+    int grew_for_need = 0;
     if (need > reserve) {
 #if defined(_WIN32) && !defined(_WIN64)
         if (heap_mb && *heap_mb) {
@@ -5312,9 +5313,13 @@ static int acuda_host_heap_init(size_t need) {
                         need, reserve);
             /* keep reserve as capped; alloc will return NULL and caller can
              * fall back to per-allocation VirtualAlloc */
-        } else
+        } else {
 #endif
-        reserve = ((need + 0xFFFFu) & ~(size_t)0xFFFFu) + (16u << 20);
+            reserve = ((need + 0xFFFFu) & ~(size_t)0xFFFFu) + (16u << 20);
+            grew_for_need = 1;
+#if defined(_WIN32) && !defined(_WIN64)
+        }
+#endif
     }
     /* Prefer the LAA region above 2 GiB so the low 2 GiB stays contiguous
      * for the NVIDIA driver and PhysX.  Fall back to the previous order
@@ -5332,6 +5337,25 @@ static int acuda_host_heap_init(size_t need) {
                         reserve, (void *)g_host_base);
         }
     }
+#if defined(_WIN32) && !defined(_WIN64)
+    /* For oversized-growth reservations in 32-bit, avoid low fixed-base or
+     * arbitrary low placements (can land at 0x10020000 and fragment/crash).
+     * Prefer above-2GB or highest-below-2GB; otherwise skip heap init so
+     * the caller can try a direct per-allocation VirtualAlloc. */
+    if (!g_host_base && !grew_for_need)
+        g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
+                                                    MEM_RESERVE, PAGE_NOACCESS);
+    if (!g_host_base) {
+        void *high = acuda_host_heap_find_high(reserve, 0);
+        if (high)
+            g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
+                                                        MEM_RESERVE,
+                                                        PAGE_NOACCESS);
+    }
+    if (!g_host_base && !grew_for_need)
+        g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
+                                                    PAGE_NOACCESS);
+#else
     if (!g_host_base)
         g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
                                                     MEM_RESERVE, PAGE_NOACCESS);
@@ -5345,6 +5369,7 @@ static int acuda_host_heap_init(size_t need) {
     if (!g_host_base)
         g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
                                                     PAGE_NOACCESS);
+#endif
     if (!g_host_base)
         return 0;
     g_host_size = reserve;
@@ -5443,9 +5468,22 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int f
     // into unchecked-NULL crashes inside PhysXCore.
 #if defined(_WIN32)
     void *p = acuda_host_heap_alloc(bytesize);
-    if (!p)
+    if (!p) {
+#if defined(_WIN32) && !defined(_WIN64)
+        /* In 32-bit LAA processes, prefer placing large standalone pinned
+         * allocations above 2 GiB to preserve low VA for app/driver/CRT. */
+        {
+            size_t need = (bytesize + 0xFFFFu) & ~(size_t)0xFFFFu;
+            void *high = acuda_host_heap_find_high(need, 1);
+            if (high)
+                p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
+                                 PAGE_READWRITE);
+        }
+        if (!p)
+#endif
         p = VirtualAlloc(NULL, bytesize, MEM_COMMIT | MEM_RESERVE,
                          PAGE_READWRITE);
+    }
 #else
     void *p = malloc(bytesize);
 #endif
