@@ -2263,7 +2263,7 @@ CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
         if (acuda_ptx_validate(text, err, sizeof(err)) != ACUDA_SUCCESS) {
             /* 32-bit large modules: full parse can OOM during validation; store
              * text and let cuModuleGetFunction/compile handle per-function. */
-            if (!(err[0] && strstr(err, "out of memory")))
+            if (!(err[0] && (strstr(err, "out of memory") || strstr(err, "(no detail)"))))
                 return CUDA_ERROR_INVALID_IMAGE;
             ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleLoadDataEx: validate OOM, storing ptx text (%zu)\n", tlen);
 #if defined(_WIN32) && !defined(_WIN64)
@@ -2327,7 +2327,7 @@ static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
         err[0] = '\0';
         if (acuda_ptx_validate(ptx, err, sizeof(err)) == ACUDA_SUCCESS)
             return ptx;
-        if (!err[0] || strstr(err, "out of memory")) {
+        if (!err[0] || strstr(err, "out of memory") || strstr(err, "(no detail)")) {
             ACUDA_DEBUG_PRINT("acuda-trace .. extracted ptx validate OOM/internal, accepting as ptx (%zu bytes)\n", ptx_len);
             return ptx;
         }
