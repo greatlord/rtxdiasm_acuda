@@ -3984,10 +3984,14 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: need_ctx=%d c=%p g_actx=%p\n", (int)r, (void *)c, (void *)g_actx);
     if (r != CUDA_SUCCESS)
         return r;
-    CUevent e = calloc(1, sizeof(*e));
+    CUevent e = calloc(1, sizeof(*e) + 16);
     ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: calloc e=%p sizeof=%zu\n", (void *)e, sizeof(*e));
     if (!e)
         return CUDA_ERROR_OUT_OF_MEMORY;
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)e + sizeof(*e));
+        canary[0] = 0xD1CECAFEu; canary[1] = 0xBADC0DEu;
+    }
     e->ctx = c;
     ACUDA_DEBUG_PRINT("acuda-trace .. cuEventCreate: calling acuda_event_create\n");
     acuda_status_t st = acuda_event_create(g_actx, &e->e);
@@ -3995,6 +3999,13 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
     if (st != ACUDA_SUCCESS) {
         free(e);
         return map_status(st);
+    }
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)e + sizeof(*e));
+        if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) &&
+            (canary[0] != 0xD1CECAFEu || canary[1] != 0xBADC0DEu))
+            fprintf(stderr, "acuda-trace !! CUevent CANARY CORRUPT before return e=%p [%08x %08x]\n",
+                    (void *)e, canary[0], canary[1]);
     }
     *phEvent = e;
 #if defined(_WIN32)
@@ -4011,6 +4022,13 @@ static CUresult event_free(CUevent hEvent) {
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)hEvent + sizeof(*hEvent));
+        if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) &&
+            (canary[0] != 0xD1CECAFEu || canary[1] != 0xBADC0DEu))
+            fprintf(stderr, "acuda-trace !! CUevent CANARY CORRUPT destroy e=%p [%08x %08x]\n",
+                    (void *)hEvent, canary[0], canary[1]);
+    }
     acuda_status_t st = acuda_event_destroy(g_actx, hEvent->e);
     free(hEvent);
     return map_status(st);
