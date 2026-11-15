@@ -443,6 +443,10 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre launch_ptr_params k=%p\n", (void*)k);
     uint32_t full_ptrs = acuda_kernel_launch_ptr_params(k);
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post launch_ptr_params full_ptrs=%u\n", full_ptrs);
+    if (full_ptrs > ACUDA_MAX_PARAMS) {
+        cache_destroy_entry(ctx, e);
+        return ACUDA_ERROR_NOT_SUPPORTED;
+    }
     uint32_t nbind = full_ptrs + (info->surf_table ? 1u : 0u) +
                      (info->surf_lock ? 1u : 0u);
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: nbind=%u surf_table=%u surf_lock=%u surf_count=%u info=%p\n",
@@ -705,7 +709,8 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             cache_destroy_entry(ctx, e);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(nc, cache, sizeof(*nc) * cache_count);
+        if (cache_count > 0)
+            memcpy(nc, cache, sizeof(*nc) * cache_count);
         free(cache);
         cache = nc;
         cache_cap = ncap;
@@ -1033,6 +1038,8 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
     if (num_bufs != acuda_kernel_launch_ptr_params(kernel))
         return ACUDA_ERROR_INVALID_VALUE;
     ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post ptr_params\n");
+    if (num_bufs > ACUDA_MAX_PARAMS)
+        return ACUDA_ERROR_NOT_SUPPORTED;
     if (num_bufs > 0 && (!bufs || !offsets || !ranges))
         return ACUDA_ERROR_INVALID_VALUE;
     if (push_bytes != info->push_bytes ||

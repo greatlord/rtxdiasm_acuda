@@ -587,7 +587,7 @@ acuda_status_t acuda_stream_submit_cached(acuda_context_t ctx,
         .signalSemaphoreInfoCount = 1,
         .pSignalSemaphoreInfos = &sinfo,
     };
-    VkResult vr = vkQueueSubmit2(stream->queue ? stream->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
+    VkResult vr = vkQueueSubmit2(s->queue ? s->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
     free(winfos);
     s->wait_count = 0;
     if (vr != VK_SUCCESS)
