@@ -1001,6 +1001,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
             return ACUDA_ERROR_NOT_SUPPORTED;
     }
     ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post buf validation\n");
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: pre f64 req=%d ctx=%p info=%p k=%p\n", info ? (int)info->requires_float64 : -1, (void *)ctx, (void *)info, (void *)kernel);
 
     // f64 kernels need shaderFloat64: fail cleanly here, never garbage.
     if (info->requires_float64 == 2) {
@@ -1008,9 +1009,11 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
             return ACUDA_ERROR_NOT_SUPPORTED;
     } else if (info->requires_float64 == 0) {
         /* old blob: scan SPIR-V */
+        ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: f64 scan spirv k=%p\n", (void *)kernel);
         const uint32_t *words = NULL;
         size_t nwords = 0;
         st = acuda_kernel_spirv(kernel, &words, &nwords);
+        ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: spirv st=%d words=%p nwords=%zu\n", (int)st, (const void *)words, nwords);
         if (st != ACUDA_SUCCESS)
             return st;
         int need_f64 = 0;
@@ -1025,6 +1028,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         if (need_f64 && !ctx->f64_ok)
             return ACUDA_ERROR_NOT_SUPPORTED;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: pre cache_lookup dyn_shared=%zu\n", dyn_shared_bytes);
 
     launch_cache_t *e = NULL;
     // Dynamic words specialize the extern array (min 1: zero-length
@@ -1034,6 +1038,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         dyn_words = 1;
     st = cache_lookup(ctx, kernel, info, block_dim_x, block_dim_y,
                       block_dim_z, dyn_words, &e);
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: post cache_lookup st=%d e=%p\n", (int)st, (void *)e);
     if (st != ACUDA_SUCCESS)
         return st;
     ACUDA_DEBUG_PRINT("acuda-trace .. launch cache_lookup ok pipe=%p layout=%p\n",
