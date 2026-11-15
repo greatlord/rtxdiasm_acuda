@@ -599,6 +599,8 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             ctx->subgroup_size >= 8)
             req_sg = (uint32_t)ctx->subgroup_size;
     }
+    if (getenv("ACUDA_NO_SUBGROUP_REQ"))
+        req_sg = 0;
     if (req_sg) {
         subgroup_req.requiredSubgroupSize = req_sg;
         stage.pNext = &subgroup_req;
@@ -628,10 +630,16 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         { .constantID = 2, .offset = 8, .size = sizeof(uint32_t) },
         { .constantID = 3, .offset = 12, .size = sizeof(uint32_t) },
     };
+    uint32_t spec_n = info->has_extern ? 4u : 3u;
+    size_t spec_sz = info->has_extern ? sizeof(spec_data) : 3 * sizeof(uint32_t);
+    if (getenv("ACUDA_NO_EXTERN_SPEC")) {
+        spec_n = 3u;
+        spec_sz = 3 * sizeof(uint32_t);
+    }
     VkSpecializationInfo spec_info = {
-        .mapEntryCount = info->has_extern ? 4u : 3u,
+        .mapEntryCount = spec_n,
         .pMapEntries = spec_map,
-        .dataSize = info->has_extern ? sizeof(spec_data) : 3 * sizeof(uint32_t),
+        .dataSize = spec_sz,
         .pData = spec_data,
     };
     stage.pSpecializationInfo = &spec_info;
