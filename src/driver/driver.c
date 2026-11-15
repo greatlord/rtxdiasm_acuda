@@ -3968,6 +3968,7 @@ CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
         return map_status(st);
     }
     *phEvent = e;
+    ACUDA_DEBUG_PRINT("acuda-trace << cuEventCreate ok e=%p\n", (void *)e);
     return CUDA_SUCCESS;
 }
 
@@ -3990,7 +3991,7 @@ CUresult ACUDA_CUDAAPI cuEventDestroy(CUevent hEvent) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
-    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventRecord\n");
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuEventRecord e=%p s=%p\n", (void *)hEvent, (void *)hStream);
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     CUcontext c = NULL;
