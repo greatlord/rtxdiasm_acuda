@@ -5282,8 +5282,12 @@ static int acuda_host_heap_init(size_t need) {
     size_t reserve;
     const char *noheap;
     const char *heap_mb;
-    if (g_host_init_done)
-        return g_host_base != NULL;
+    /* If we previously failed to reserve a heap, allow retry on later demand
+     * (VA layout may have changed; a specific large need may be satisfiable). */
+    if (g_host_init_done && g_host_base)
+        return 1;
+    if (g_host_init_done && !g_host_base)
+        g_host_init_done = 0;
     g_host_init_done = 1;
     /* Diagnostics: a lower/no reservation leaves more of the 32-bit
      * address space to the NVIDIA OpenGL driver (depth FBOs). */
@@ -5522,13 +5526,25 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int f
     if (!p) {
 #if defined(_WIN32) && !defined(_WIN64)
         /* In 32-bit LAA processes, prefer placing large standalone pinned
-         * allocations above 2 GiB to preserve low VA for app/driver/CRT. */
-        {
+         * allocations above 2 GiB to preserve low VA for app/driver/CRT.
+         * Try heap init again on-demand, then try above-2GB and below-2GB-high. */
+        if (!g_host_base) {
+            (void)acuda_host_heap_init(bytesize);
+            p = acuda_host_heap_alloc(bytesize);
+        }
+        if (!p) {
             size_t need = (bytesize + 0xFFFFu) & ~(size_t)0xFFFFu;
             void *high = acuda_host_heap_find_high(need, 1);
             if (high)
                 p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
                                  PAGE_READWRITE);
+            if (!p) {
+                /* try highest free below 2GB (>= 0x40000000 preferred) */
+                high = acuda_host_heap_find_high(need, 0);
+                if (high && (uintptr_t)high >= (uintptr_t)0x40000000u)
+                    p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
+                                     PAGE_READWRITE);
+            }
         }
         if (!p)
 #endif
