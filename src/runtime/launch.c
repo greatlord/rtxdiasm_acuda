@@ -647,10 +647,11 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     if (getenv("ACUDA_TRACE") && !HeapValidate(GetProcessHeap(), 0, NULL))
         ACUDA_DEBUG_PRINT("acuda-trace !! HEAP CORRUPT before create pipeline\n");
 #endif
-    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline dev=%p mod=%p pl=%p entry=%p(%s) stageNext=%p specN=%u specSize=%zu specData=%p[%u,%u,%u,%u] specMap=%p\n",
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline dev=%p mod=%p pl=%p entry=%p(%s) stageNext=%p stageFlags=0x%x cpciFlags=0x%x specN=%u specSize=%zu specData=%p[%u,%u,%u,%u] specMap=%p\n",
                       (void*)ctx->device, (void*)(uintptr_t)stage.module, (void*)(uintptr_t)cpci.layout,
                       (void*)stage.pName, stage.pName ? stage.pName : "(null)",
-                      stage.pNext, spec_info.mapEntryCount, spec_info.dataSize, spec_info.pData,
+                      stage.pNext, (unsigned)stage.flags, (unsigned)cpci.flags,
+                      spec_info.mapEntryCount, spec_info.dataSize, spec_info.pData,
                       spec_data[0], spec_data[1], spec_data[2], spec_data[3],
                       (void*)spec_info.pMapEntries);
     if (getenv("ACUDA_TRACE")) {
