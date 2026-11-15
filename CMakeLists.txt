@@ -144,6 +144,15 @@ if(NOT TARGET cuda)
   add_library(cuda ALIAS acuda_driver)
 endif()
 
+# --- 64-bit PTX->SPIR-V compile helper for the 32-bit driver ---
+# The 32-bit driver cannot parse large PTX modules without exhausting its own
+# address space, so it spawns this executable. It must live next to the driver
+# because the driver names it, and it must keep accepting the same
+# --cap.<name>=<value> arguments the driver passes.
+add_executable(acuda_compile_host src/driver/compile_host.c)
+target_link_libraries(acuda_compile_host PRIVATE acuda_compiler)
+target_compile_options(acuda_compile_host PRIVATE ${ACUDA_WARNINGS})
+
 # Expose resolved trace source path for sibling modules (e.g. cudart) if needed.
 if(ACUDA_TRACE_SOURCE_INTERNAL)
   get_filename_component(_acuda_trace_abs "${CMAKE_CURRENT_SOURCE_DIR}/${ACUDA_TRACE_SOURCE_INTERNAL}" ABSOLUTE)
