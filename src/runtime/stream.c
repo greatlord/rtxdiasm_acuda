@@ -892,9 +892,14 @@ acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event)
     if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
         ACUDA_DEBUG_PRINT("acuda-trace !! HEAP CORRUPT at acuda_event_create entry\n");
 #endif
-    acuda_event_t e = calloc(1, sizeof(*e));
+    acuda_event_t e = calloc(1, sizeof(*e) + 16);
     if (!e)
         return ACUDA_ERROR_OUT_OF_MEMORY;
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)e + sizeof(*e));
+        canary[0] = 0xC0DEF00Du;
+        canary[1] = 0xDEADBEEFu;
+    }
     e->ctx = ctx;
     VkSemaphoreTypeCreateInfo tci = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -923,6 +928,13 @@ acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event)
             return acuda_from_vk(vr);
         }
     }
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)e + sizeof(*e));
+        if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) &&
+            (canary[0] != 0xC0DEF00Du || canary[1] != 0xDEADBEEFu))
+            ACUDA_DEBUG_PRINT("acuda-trace !! EVENT CANARY CORRUPT before return e=%p [%08x %08x]\n",
+                              (void *)e, canary[0], canary[1]);
+    }
     *out_event = e;
     return ACUDA_SUCCESS;
 }
@@ -930,6 +942,13 @@ acuda_status_t acuda_event_create(acuda_context_t ctx, acuda_event_t *out_event)
 acuda_status_t acuda_event_destroy(acuda_context_t ctx, acuda_event_t event) {
     if (!ctx || !event)
         return ACUDA_ERROR_INVALID_HANDLE;
+    {
+        uint32_t *canary = (uint32_t *)((uint8_t *)event + sizeof(*event));
+        if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) &&
+            (canary[0] != 0xC0DEF00Du || canary[1] != 0xDEADBEEFu))
+            ACUDA_DEBUG_PRINT("acuda-trace !! EVENT CANARY CORRUPT destroy e=%p [%08x %08x]\n",
+                              (void *)event, canary[0], canary[1]);
+    }
     if (event->ts_pool)
         vkDestroyQueryPool(ctx->device, event->ts_pool, NULL);
     vkDestroySemaphore(ctx->device, event->timeline, NULL);
