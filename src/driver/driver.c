@@ -7025,16 +7025,22 @@ CUresult ACUDA_CUDAAPI cuTexRefSetAddress_v2(size_t *ByteOffset,
         *ByteOffset = 0;
     if (bytes == 0 && dptr != 0) {
         // cudart's texture bind path passes size 0; real CUDA binds to the
-        // end of the allocation. Probe the arena for the same extent, but
-        // cap the snapshot: PhysX sub-allocates particle buffers from one
-        // 256 MiB heap, so the raw remainder would build a ~250 MiB image
-        // per texture and exhaust device memory. 16 MiB covers ~1M float4
-        // particles, far above FluidMark's range.
+        // end of the allocation. Probe the arena for the same extent.
+        // Cap the snapshot to avoid exhausting device memory when PhysX
+        // sub-allocates from a large heap, but allow override/increase.
         size_t cap = 0;
         if (acuda_arena_capacity((uint64_t)dptr, &cap) == 0 && cap != 0) {
-            size_t want = cap > (16u << 20) ? (16u << 20) : cap;
-            ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexRefSetAddress(%s) size0 -> cap=%zu use=%zu\n",
-                        hTexRef->name, cap, want);
+            size_t lim = (size_t)256u << 20;
+            const char *env = getenv("ACUDA_TEXREF_LINEAR_CAP_MB");
+            if (env && *env) {
+                char *end = NULL;
+                unsigned long mb = strtoul(env, &end, 10);
+                if (end != env && mb > 0)
+                    lim = (size_t)mb << 20;
+            }
+            size_t want = cap > lim ? lim : cap;
+            ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexRefSetAddress(%s) size0 -> cap=%zu use=%zu lim=%zu\n",
+                        hTexRef->name, cap, want, lim);
             bytes = want;
         }
     }
