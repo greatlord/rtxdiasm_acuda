@@ -2595,9 +2595,21 @@ static acuda_status_t acuda_compile_via_host(const char *ptx, const char *entry,
     BOOL ok = CreateProcessA(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     if (lh != INVALID_HANDLE_VALUE) CloseHandle(lh);
     if (!ok) { DeleteFileA(inpath); if(err&&errlen) snprintf(err,errlen,"cannot start compiler host executable"); return ACUDA_ERROR_NOT_SUPPORTED; }
-    WaitForSingleObject(pi.hProcess, 120000);
-    DWORD ec=1; GetExitCodeProcess(pi.hProcess, &ec);
+    DWORD w = WaitForSingleObject(pi.hProcess, 120000);
+    DWORD ec=1;
+    if (w == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 2000);
+        ec = 0xC000013A;
+    } else {
+        GetExitCodeProcess(pi.hProcess, &ec);
+    }
     CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    if (w == WAIT_TIMEOUT) {
+        DeleteFileA(inpath); DeleteFileA(outpath); DeleteFileA(logpath);
+        if (err && errlen) snprintf(err, errlen, "compiler host timeout");
+        return ACUDA_ERROR_NOT_SUPPORTED;
+    }
     DeleteFileA(inpath);
     ACUDA_DEBUG_PRINT("acuda-trace .. compile_host ec=%lu in=%s out=%s exists=%d\n",
                 (unsigned long)ec, inpath, outpath, (int)(GetFileAttributesA(outpath)!=INVALID_FILE_ATTRIBUTES));
