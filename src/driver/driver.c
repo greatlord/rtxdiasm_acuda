@@ -2285,6 +2285,8 @@ CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
     }
     strcpy(m->ptx, text);
     *module = m;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleLoadDataEx PTX ok mod=%p len=%zu ptx_oom=%d\n",
+                      (void *)m, tlen, ptx_oom);
     return CUDA_SUCCESS;
 }
 
@@ -2378,6 +2380,7 @@ static CUresult load_fatbin_member(CUmodule *module,
     free(ptx);
     if (r == CUDA_SUCCESS && module && *module)
         attach_sass_image(*module, data, size);
+    ACUDA_DEBUG_PRINT("acuda-trace .. load_fatbin_member -> %d\n", (int)r);
     return r;
 }
 
