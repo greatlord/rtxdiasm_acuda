@@ -3732,10 +3732,12 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             }
         }
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuLaunchKernel %s: post-bind\n", f->name);
     acuda_buffer_t *tables = NULL;
     acuda_buffer_t smeta = NULL;
     uint32_t surf_slots = 0;
     if (info->surf_table) {
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuLaunchKernel %s: surf_table setup\n", f->name);
         acuda_buffer_t fallback = NULL;
         for (uint32_t i = 1; i < g_surf_slot_cap; i++)
             if (g_surf_slots[i]) {
@@ -3833,6 +3835,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             return map_status(mst);
         }
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuLaunchKernel %s: calling raw_ex k=%p g_actx=%p\n", f->name, (void *)f->k, (void *)g_actx);
     acuda_status_t st =
         acuda_launch_raw_ex(g_actx, f->k, vkb, offs, ranges, nptr,
                             hostbufs, texh, tables,
