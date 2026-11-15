@@ -643,15 +643,20 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     if (ctx->pipe_exec_ok && getenv("ACUDA_DUMP_ISA"))
         cpci.flags |=
             VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre create pipeline\n");
     vr = vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1, &cpci, NULL,
                                   &e->pipe);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post create pipeline vr=%d pipe=%p\n", (int)vr, (void*)(uintptr_t)e->pipe);
     if (vr != VK_SUCCESS) {
         cache_destroy_entry(ctx, e);
         return acuda_from_vk(vr);
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre dump isa\n");
     dump_pipeline_isa(ctx, e->pipe, info->entry);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post dump isa\n");
     // Publish the fully built entry. Another thread may have created the
     // same one while we were building; keep theirs and drop ours.
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre publish lock\n");
     cache_lock_acquire();
     for (size_t i = 0; i < cache_count; i++) {
         if (cache[i]->kernel == k && cache[i]->serial == info->serial &&
@@ -680,6 +685,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     }
     cache[cache_count++] = e;
     cache_lock_release();
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: published e=%p count=%zu\n", (void*)e, cache_count);
     *out = e;
     return ACUDA_SUCCESS;
 }
