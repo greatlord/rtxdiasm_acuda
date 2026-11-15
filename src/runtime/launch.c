@@ -616,7 +616,8 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
                                  ? (uint32_t)ctx->subgroup_size
                                  : 1u);
     if (ctx->full_subgroups_ok && block_dim_x % esg == 0 &&
-        ctx->props.apiVersion >= VK_API_VERSION_1_3)
+        ctx->props.apiVersion >= VK_API_VERSION_1_3 &&
+        !getenv("ACUDA_NO_FULL_SUBGROUPS"))
         stage.flags |=
             VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
     // Specialize the workgroup-size spec constants (0, 1, 2) so any
