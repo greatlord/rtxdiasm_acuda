@@ -432,18 +432,25 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         .pCode = shader_words,
     };
     VkResult vr = vkCreateShaderModule(ctx->device, &smci, NULL, &e->mod);
-    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post shader module vr=%d\n", (int)vr);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post shader module vr=%d mod=%p\n", (int)vr, (void*)(uintptr_t)e->mod);
     free(patched_words);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre release_spirv\n");
     acuda_kernel_release_spirv((acuda_kernel_t *)k);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post release_spirv\n");
     if (vr != VK_SUCCESS)
         return acuda_from_vk(vr);
 
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre launch_ptr_params k=%p\n", (void*)k);
     uint32_t full_ptrs = acuda_kernel_launch_ptr_params(k);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post launch_ptr_params full_ptrs=%u\n", full_ptrs);
     uint32_t nbind = full_ptrs + (info->surf_table ? 1u : 0u) +
                      (info->surf_lock ? 1u : 0u);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: nbind=%u surf_table=%u surf_lock=%u surf_count=%u\n",
+                      nbind, info ? info->surf_table : 0u, info ? info->surf_lock : 0u, info ? info->surf_table_count : 0u);
     VkDescriptorSetLayoutBinding *bindings = NULL;
     if (nbind > 0) {
         bindings = calloc(nbind, sizeof(*bindings));
+        ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: bindings=%p\n", (void*)bindings);
         if (!bindings) {
             cache_destroy_entry(ctx, e);
             return ACUDA_ERROR_OUT_OF_MEMORY;
