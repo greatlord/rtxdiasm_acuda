@@ -310,6 +310,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     }
     cache_lock_release();
     ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: miss\n");
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: miss post-release ctx=%p info=%p\n", (void*)ctx, (void*)info);
     uint64_t invocations = (uint64_t)block_dim_x * block_dim_y * block_dim_z;
     if (invocations == 0 ||
         invocations > ctx->props.limits.maxComputeWorkGroupInvocations ||
@@ -367,7 +368,9 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             }
         }
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: pre calloc\n");
     launch_cache_t *e = calloc(1, sizeof(*e));
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: post calloc e=%p\n", (void*)e);
     if (!e)
         return ACUDA_ERROR_OUT_OF_MEMORY;
     e->kernel = k;
@@ -377,6 +380,7 @@ static acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     e->block_y = block_dim_y;
     e->block_z = block_dim_z;
     e->dyn_words = dyn_words;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cache_lookup: entry initialized\n");
 
     const uint32_t *words = NULL;
     size_t nwords = 0;
