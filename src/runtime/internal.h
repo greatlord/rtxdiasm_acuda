@@ -13,18 +13,24 @@
 // `if (getenv("ACUDA_TRACE")) fprintf(stderr, ...)` at every site.
 #define ACUDA_DEBUG_PRINT(...) \
     do { \
-        if (getenv("ACUDA_TRACE")) \
+        if (getenv("ACUDA_TRACE")) { \
             fprintf(stderr, __VA_ARGS__); \
+            fflush(stderr); \
+        } \
     } while (0)
 #define ACUDA_DEBUG_PRINT_PARAMS(...) \
     do { \
-        if (getenv("ACUDA_TRACE_PARAMS")) \
+        if (getenv("ACUDA_TRACE_PARAMS")) { \
             fprintf(stderr, __VA_ARGS__); \
+            fflush(stderr); \
+        } \
     } while (0)
 #define ACUDA_DEBUG_PRINT_PROC(...) \
     do { \
-        if (getenv("ACUDA_TRACE_PROC")) \
+        if (getenv("ACUDA_TRACE_PROC")) { \
             fprintf(stderr, __VA_ARGS__); \
+            fflush(stderr); \
+        } \
     } while (0)
 
 // Opaque kernel handle (defined in the compiler library).
