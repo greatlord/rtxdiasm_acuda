@@ -917,8 +917,10 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
                                uint32_t block_dim_y, uint32_t block_dim_z,
                                uint32_t dyn_shared_bytes,
                                acuda_stream_t stream) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: entry ctx=%p k=%p nb=%u\n", (void*)ctx, (void*)kernel, num_bufs);
     acuda_stream_t s = NULL;
     acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: resolve st=%d s=%p\n", (int)st, (void*)s);
     if (st != ACUDA_SUCCESS)
         return st;
     if (lprof_on < 0) {
@@ -930,10 +932,12 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
     if (!kernel)
         return ACUDA_ERROR_INVALID_VALUE;
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(kernel);
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: info=%p surf_table=%u surf_lock=%u\n", (void*)info, info ? info->surf_table : 0u, info ? info->surf_lock : 0u);
     if (!info)
         return ACUDA_ERROR_INTERNAL;
     if (info->surf_table && (!surf_table || !surf_meta))
         return ACUDA_ERROR_NOT_SUPPORTED;
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: check lock_buf ctx=%p\n", (void*)ctx);
     if (info->surf_lock && !ctx->lock_buf) {
         st = acuda_malloc(ctx, &ctx->lock_buf, ACUDA_SURF_LOCK_BYTES);
         if (st != ACUDA_SUCCESS)
@@ -946,6 +950,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         memset(p, 0, ACUDA_SURF_LOCK_BYTES);
         vkUnmapMemory(ctx->device, ctx->lock_buf->memory);
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: surf checks done\n");
     if (info->surf_table) {
         if (!ctx->desc_idx_ok)
             return ACUDA_ERROR_NOT_SUPPORTED;
@@ -954,6 +959,7 @@ static acuda_status_t launch_raw_once(acuda_context_t ctx,
         if (surf_slots > surf_max_slots(ctx, info->surf_table_count))
             return ACUDA_ERROR_NOT_SUPPORTED;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. launch_raw_once: pre ptr_params\n");
     if (num_bufs != acuda_kernel_launch_ptr_params(kernel))
         return ACUDA_ERROR_INVALID_VALUE;
     if (num_bufs > 0 && (!bufs || !offsets || !ranges))
