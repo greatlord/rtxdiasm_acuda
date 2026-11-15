@@ -735,7 +735,6 @@ CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelClamp();
 CUresult ACUDA_CUDAAPI cuTexRefSetMipmappedArray();
 CUresult ACUDA_CUDAAPI cuWGLGetDevice();
 static CUresult need_actx(void) {
-    ACUDA_DEBUG_PRINT("acuda-trace >> cuTexRefSetMipmapFilterMode\n");
     CUresult r = need_init();
     if (r != CUDA_SUCCESS)
         return r;
