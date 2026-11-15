@@ -131,7 +131,8 @@ static int acuda_can_read(const void *p, size_t n) {
 static LONG CALLBACK acuda_veh(EXCEPTION_POINTERS *ep) {
     if (!g_veh_log || g_veh_log == INVALID_HANDLE_VALUE)
         return EXCEPTION_CONTINUE_SEARCH;
-    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION && code != 0xC0000409 /* STATUS_STACK_BUFFER_OVERRUN */)
         return EXCEPTION_CONTINUE_SEARCH;
     unsigned long fn = 0;
     unsigned long modbase = 0;
@@ -171,15 +172,19 @@ static LONG CALLBACK acuda_veh(EXCEPTION_POINTERS *ep) {
     ms.dwLength = sizeof(ms);
     GlobalMemoryStatusEx(&ms);
     char buf[512];
+    ULONG_PTR info0 = ep->ExceptionRecord->NumberParameters > 0 ? ep->ExceptionRecord->ExceptionInformation[0] : 0;
+    ULONG_PTR info1 = ep->ExceptionRecord->NumberParameters > 1 ? ep->ExceptionRecord->ExceptionInformation[1] : 0;
     int n = _snprintf(
         buf, sizeof(buf),
-        "acuda-veh AV at %p op=%llu addr=%p eax=%08lx ecx=%08lx "
+        "acuda-veh %s(0x%08lx) at %p op=%llu addr=%p eax=%08lx ecx=%08lx "
         "esi=%08lx edi=%08lx ebp=%08lx esp=%08lx eip=%08lx "
         "mod=%08lx fn4048=%08lx cnt2b4=%u availcommit=%llu\r\n"
         "acuda-veh stack: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\r\n",
+        code == EXCEPTION_ACCESS_VIOLATION ? "AV" : "EXC",
+        (unsigned long)code,
         ep->ExceptionRecord->ExceptionAddress,
-        (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0],
-        (void *)ep->ExceptionRecord->ExceptionInformation[1],
+        (unsigned long long)info0,
+        (void *)info1,
         (unsigned long)ep->ContextRecord->Eax,
         (unsigned long)ep->ContextRecord->Ecx,
         (unsigned long)ep->ContextRecord->Esi,
