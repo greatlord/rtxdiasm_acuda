@@ -2330,6 +2330,21 @@ static char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
             return ptx;
         }
         ACUDA_DEBUG_PRINT("acuda-trace .. extracted ptx validate failed: %s\n", err);
+        {
+            const char *dump_dir = getenv("ACUDA_DUMP_PTX_DIR");
+            if (dump_dir && *dump_dir) {
+                static unsigned long long dump_serial;
+                char path[1024];
+                snprintf(path, sizeof(path), "%s/extracted_invalid_%llu.ptx",
+                         dump_dir, ++dump_serial);
+                FILE *dfp = fopen(path, "wb");
+                if (dfp) {
+                    fwrite(ptx, 1, ptx_len, dfp);
+                    fclose(dfp);
+                    ACUDA_DEBUG_PRINT("acuda-trace .. dumped invalid extracted ptx to %s\n", path);
+                }
+            }
+        }
     }
     free(ptx);
     return NULL;
