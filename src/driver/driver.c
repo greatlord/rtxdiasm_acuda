@@ -5298,8 +5298,24 @@ static int acuda_host_heap_init(size_t need) {
         if (!reserve)
             return 0;
     }
-    if (need > reserve)
+    /* In 32-bit, growing the upfront reserved host heap to satisfy a single
+     * large request can consume/fragment scarce low VA (especially when the
+     * reservation falls back to low addresses) and destabilize the process.
+     * If the user capped the heap, respect it and let oversized allocations
+     * fall back to per-allocation VirtualAlloc. */
+    if (need > reserve) {
+#if defined(_WIN32) && !defined(_WIN64)
+        if (heap_mb && *heap_mb) {
+            if (getenv("ACUDA_TRACE"))
+                fprintf(stderr,
+                        "acuda-trace .. host_heap: need=%zu exceeds cap=%zu, no grow\n",
+                        need, reserve);
+            /* keep reserve as capped; alloc will return NULL and caller can
+             * fall back to per-allocation VirtualAlloc */
+        } else
+#endif
         reserve = ((need + 0xFFFFu) & ~(size_t)0xFFFFu) + (16u << 20);
+    }
     /* Prefer the LAA region above 2 GiB so the low 2 GiB stays contiguous
      * for the NVIDIA driver and PhysX.  Fall back to the previous order
      * (fixed base, highest free below 2 GiB, anywhere) on failure or on
