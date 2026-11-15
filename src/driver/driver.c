@@ -5342,33 +5342,57 @@ static int acuda_host_heap_init(size_t need) {
      * arbitrary low placements (can land at 0x10020000 and fragment/crash).
      * Prefer above-2GB or highest-below-2GB; otherwise skip heap init so
      * the caller can try a direct per-allocation VirtualAlloc. */
-    if (!g_host_base && !grew_for_need)
+    if (!g_host_base && !grew_for_need) {
         g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
                                                     MEM_RESERVE, PAGE_NOACCESS);
+        if (g_host_base && getenv("ACUDA_TRACE"))
+            fprintf(stderr, "acuda-trace .. host_heap reserve %zu fixed-base at %p\n",
+                    reserve, (void *)g_host_base);
+    }
     if (!g_host_base) {
         void *high = acuda_host_heap_find_high(reserve, 0);
-        if (high)
+        if (high) {
             g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
                                                         MEM_RESERVE,
                                                         PAGE_NOACCESS);
+            if (g_host_base && getenv("ACUDA_TRACE"))
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high at %p\n",
+                        reserve, (void *)g_host_base);
+        }
     }
-    if (!g_host_base && !grew_for_need)
+    if (!g_host_base && !grew_for_need) {
         g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
                                                     PAGE_NOACCESS);
+        if (g_host_base && getenv("ACUDA_TRACE"))
+            fprintf(stderr, "acuda-trace .. host_heap reserve %zu anywhere at %p\n",
+                    reserve, (void *)g_host_base);
+    }
 #else
-    if (!g_host_base)
+    if (!g_host_base) {
         g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
                                                     MEM_RESERVE, PAGE_NOACCESS);
+        if (g_host_base && getenv("ACUDA_TRACE"))
+            fprintf(stderr, "acuda-trace .. host_heap reserve %zu fixed-base at %p\n",
+                    reserve, (void *)g_host_base);
+    }
     if (!g_host_base) {
         void *high = acuda_host_heap_find_high(reserve, 0);
-        if (high)
+        if (high) {
             g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
                                                         MEM_RESERVE,
                                                         PAGE_NOACCESS);
+            if (g_host_base && getenv("ACUDA_TRACE"))
+                fprintf(stderr, "acuda-trace .. host_heap reserve %zu below-2GiB-high at %p\n",
+                        reserve, (void *)g_host_base);
+        }
     }
-    if (!g_host_base)
+    if (!g_host_base) {
         g_host_base = (unsigned char *)VirtualAlloc(NULL, reserve, MEM_RESERVE,
                                                     PAGE_NOACCESS);
+        if (g_host_base && getenv("ACUDA_TRACE"))
+            fprintf(stderr, "acuda-trace .. host_heap reserve %zu anywhere at %p\n",
+                    reserve, (void *)g_host_base);
+    }
 #endif
     if (!g_host_base) {
         if (getenv("ACUDA_TRACE"))
