@@ -5321,6 +5321,7 @@ static int acuda_host_heap_init(size_t need) {
         }
 #endif
     }
+
     /* Prefer the LAA region above 2 GiB so the low 2 GiB stays contiguous
      * for the NVIDIA driver and PhysX.  Fall back to the previous order
      * (fixed base, highest free below 2 GiB, anywhere) on failure or on
