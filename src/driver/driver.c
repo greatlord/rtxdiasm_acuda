@@ -7123,17 +7123,28 @@ static CUresult texref_rebuild(CUtexref h, int force) {
     td.mipmapFilterMode = CU_TR_FILTER_MODE_POINT;
     td.borderColor[0] = td.borderColor[1] = td.borderColor[2] = td.borderColor[3] = 0.0f;
 
-    // Fast path: reuse existing linear snapshot image allocation (and
-    // reupload contents). Recreate tex/sampler to reflect current flags.
+    // Fast path: reuse existing linear snapshot image allocation.
+    // Reupload contents unless only bind-unchanged properties changed
+    // (sampler/flags tweaks) — avoids expensive 256MB reuploads per tweak.
     if (!h->is_array && h->obj && h->bytes != 0 && h->fmt_set &&
         h->built_bytes == h->bytes && h->built_fmt == h->fmt &&
         h->built_channels == h->channels) {
         driver_texobj_t *e = driver_tex_find(h->obj);
         if (e && e->own_image && e->own_image->kind == 2) {
+            int need_upload = 1;
+            if (h->built_addr == h->addr) {
+                // Address unchanged: likely sampler-only change; skip reupload.
+                // (SetAddress(force=1) cases take other paths / will rebuild.)
+                need_upload = 0;
+            }
             void *host = NULL;
-            CUresult hr = host_for(h->addr, h->bytes, &host);
+            CUresult hr = CUDA_SUCCESS;
+            if (need_upload)
+                hr = host_for(h->addr, h->bytes, &host);
             if (hr == CUDA_SUCCESS) {
-                acuda_status_t ust = acuda_image_update_full(g_actx, e->own_image, host);
+                acuda_status_t ust = ACUDA_SUCCESS;
+                if (need_upload)
+                    ust = acuda_image_update_full(g_actx, e->own_image, host);
                 if (ust == ACUDA_SUCCESS) {
                     // Detach image, destroy old tex/sampler, rebuild wrapper.
                     acuda_buffer_t keep_img = e->own_image;
