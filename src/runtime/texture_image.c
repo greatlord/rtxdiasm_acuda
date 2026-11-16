@@ -1094,28 +1094,34 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
     size_t elems = (size_t)desc->width * desc->height *
                    (dim == 3 ? desc->depth : 1) * layers;
     size_t bytes = elems * elem_bytes;
-    size_t upload_bytes = bytes;
-    if (b->tiled1d) {
-        // Pad to full tile rows so the 2D copy covers the image extent.
-        size_t tile_elems = (size_t)b->tile_w * ((desc->width + b->tile_w - 1u) / b->tile_w);
-        upload_bytes = tile_elems * elem_bytes * layers;
-    }
+    size_t layer_bytes = b->tiled1d
+        ? (size_t)b->tile_w * ((desc->width + b->tile_w - 1u) / b->tile_w) * elem_bytes
+        : (size_t)desc->width * desc->height *
+              (dim == 3 ? desc->depth : 1) * elem_bytes;
+    size_t total_upload = layer_bytes * layers;
+
+    // Use chunked staging to avoid a single huge host allocation on 32-bit.
+    const size_t kStageChunk = 32u * 1024u * 1024u;
+    size_t stage_bytes = total_upload ? total_upload : 4;
+    if (stage_bytes > kStageChunk) stage_bytes = kStageChunk;
     acuda_buffer_t stage = NULL;
-    st = acuda_malloc_host(ctx, &stage, upload_bytes ? upload_bytes : 4);
+    st = acuda_malloc_host(ctx, &stage, stage_bytes);
     if (st != ACUDA_SUCCESS) {
-        ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: stage malloc failed st=%d bytes=%zu\n",
-                    (int)st, upload_bytes);
-        acuda_free(ctx, b);
-        return st;
+        // Fallback: try smaller chunks down to 4MB.
+        size_t try_bytes = stage_bytes;
+        while (st != ACUDA_SUCCESS && try_bytes > 4u * 1024u * 1024u) {
+            try_bytes /= 2;
+            st = acuda_malloc_host(ctx, &stage, try_bytes);
+        }
+        if (st != ACUDA_SUCCESS) {
+            ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: stage malloc failed st=%d bytes=%zu (total=%zu)\n",
+                        (int)st, stage_bytes, total_upload);
+            acuda_free(ctx, b);
+            return st;
+        }
+        stage_bytes = try_bytes;
     }
-    st = acuda_memcpy_h2d(ctx, stage, texels, bytes, NULL);
-    if (st != ACUDA_SUCCESS) {
-        ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: upload memcpy failed st=%d bytes=%zu\n",
-                    (int)st, bytes);
-        acuda_free(ctx, stage);
-        acuda_free(ctx, b);
-        return st;
-    }
+
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     st = image_begin(ctx, &pool, &cmd);
@@ -1132,13 +1138,104 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
                       VK_ACCESS_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                       VK_PIPELINE_STAGE_TRANSFER_BIT);
-    size_t layer_bytes = b->tiled1d
-        ? (size_t)b->tile_w * ((desc->width + b->tile_w - 1u) / b->tile_w) * elem_bytes
-        : (size_t)desc->width * desc->height *
-              (dim == 3 ? desc->depth : 1) * elem_bytes;
-    for (uint32_t l = 0; l < layers; l++)
-        image_copy_level(ctx, cmd, b, target, stage->buffer, 0, l,
-                         (size_t)l * layer_bytes);
+
+    // Upload by copying linear chunks of the backing layout into staging and
+    // issuing matching buffer->image regions. For tiled1d, the layout is a
+    // 2D (tile_w x tile_h) tightly-packed image per layer in row-major order.
+    if (b->tiled1d) {
+        size_t row_bytes = (size_t)b->tile_w * elem_bytes;
+        uint32_t tile_h = (desc->width + b->tile_w - 1u) / b->tile_w;
+        size_t rows_per_chunk = stage_bytes / row_bytes;
+        if (rows_per_chunk == 0) rows_per_chunk = 1;
+        size_t chunk_bytes = rows_per_chunk * row_bytes;
+        if (chunk_bytes > stage_bytes) chunk_bytes = stage_bytes;
+        for (uint32_t l = 0; l < layers; l++) {
+            size_t layer_src_base = (size_t)l * (size_t)desc->width * elem_bytes;
+            size_t layer_dst_base = (size_t)l * layer_bytes;
+            for (uint32_t y = 0; y < tile_h; y += (uint32_t)rows_per_chunk) {
+                uint32_t rows = (uint32_t)rows_per_chunk;
+                if (y + rows > tile_h) rows = tile_h - y;
+                size_t copy_bytes = (size_t)rows * row_bytes;
+                size_t src_off = layer_src_base + (size_t)y * row_bytes;
+                size_t src_avail = 0;
+                if (src_off < layer_src_base + (size_t)desc->width * elem_bytes)
+                    src_avail = (layer_src_base + (size_t)desc->width * elem_bytes) - src_off;
+                size_t to_copy = copy_bytes < src_avail ? copy_bytes : src_avail;
+                if (to_copy > 0) {
+                    st = acuda_memcpy_h2d(ctx, stage, (const unsigned char *)texels + src_off, to_copy, NULL);
+                    if (st != ACUDA_SUCCESS) {
+                        ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: upload memcpy failed st=%d bytes=%zu\n",
+                                    (int)st, to_copy);
+                        acuda_free(ctx, stage);
+                        acuda_free(ctx, b);
+                        image_end(ctx, pool, cmd);
+                        return st;
+                    }
+                }
+                // Padding tail beyond source width can remain uninitialized (unused).
+                VkBufferImageCopy2 region = {
+                    .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+                    .bufferOffset = 0,
+                    .bufferRowLength = 0,
+                    .bufferImageHeight = 0,
+                    .imageSubresource = {
+                        image_is_depth(b->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                  : VK_IMAGE_ASPECT_COLOR_BIT,
+                        0,
+                        l,
+                        1,
+                    },
+                    .imageOffset = { 0, (int32_t)y, 0 },
+                    .imageExtent = { b->tile_w, rows, 1u },
+                };
+                VkCopyBufferToImageInfo2 cinfo = {
+                    .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
+                    .srcBuffer = stage->buffer,
+                    .dstImage = target,
+                    .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .regionCount = 1,
+                    .pRegions = &region,
+                };
+                vkCmdCopyBufferToImage2(cmd, &cinfo);
+                (void)layer_dst_base;
+            }
+        }
+    } else {
+        for (uint32_t l = 0; l < layers; l++) {
+            size_t layer_off = (size_t)l * layer_bytes;
+            size_t remaining = layer_bytes;
+            size_t done = 0;
+            while (remaining > 0) {
+                size_t chunk = remaining < stage_bytes ? remaining : stage_bytes;
+                st = acuda_memcpy_h2d(ctx, stage, (const unsigned char *)texels + layer_off + done, chunk, NULL);
+                if (st != ACUDA_SUCCESS) {
+                    ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: upload memcpy failed st=%d bytes=%zu\n",
+                                (int)st, chunk);
+                    acuda_free(ctx, stage);
+                    acuda_free(ctx, b);
+                    // image_end will flush/end; but we are in bad state; best-effort end
+                    image_end(ctx, pool, cmd);
+                    return st;
+                }
+                // For non-tiled general case, copy whole remaining as one region is complex if chunked in bytes;
+                // fall back to per-layer copy when chunk==layer_bytes (common after one iter)
+                if (chunk == remaining && done == 0) {
+                    image_copy_level(ctx, cmd, b, target, stage->buffer, 0, l, 0);
+                } else {
+                    // Generic byte-chunking of arbitrary 2D/3D layout is non-trivial; copy full layer in chunks
+                    // by issuing one copy per chunk if possible. As a safe fallback, require full-layer staging.
+                    ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: chunked non-tiled path unsupported, need %zu\n", layer_bytes);
+                    acuda_free(ctx, stage);
+                    acuda_free(ctx, b);
+                    image_end(ctx, pool, cmd);
+                    return ACUDA_ERROR_OUT_OF_MEMORY;
+                }
+                remaining -= chunk;
+                done += chunk;
+            }
+        }
+    }
+
     image_barrier_img(cmd, b, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                       idle_layout, VK_ACCESS_TRANSFER_WRITE_BIT,
                       idle_access, VK_PIPELINE_STAGE_TRANSFER_BIT,
