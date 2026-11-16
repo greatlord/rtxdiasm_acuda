@@ -7064,58 +7064,40 @@ static CUresult texref_rebuild(CUtexref h, int force) {
     } else if (!force && h->obj && h->built_addr == h->addr &&
                h->built_bytes == h->bytes && h->built_fmt == h->fmt &&
                h->built_channels == h->channels) {
-        // Bind state unchanged (filter/flag/mipmap re-set): keep the
-        // existing snapshot instead of re-uploading every frame.
-        // For linear textures, device-side writes can change contents even
-        // when bind state is unchanged; skip only when explicitly allowed.
+        // Bind state (addr/bytes/fmt/channels) unchanged. Sampler/flags may
+        // have changed, or linear content may need resnapshot. If caching
+        // is explicitly allowed for linear texrefs, keep existing snapshot.
         if (getenv("ACUDA_TEXREF_LINEAR_CACHE"))
             return CUDA_SUCCESS;
         /* fall through to rebuild/re-snapshot for linear texrefs */
     } else {
-        // Try to reuse existing linear snapshot image to avoid realloc churn
-        // (large PhysX fluid buffers can be hundreds of MB).
-        if (!h->is_array && h->obj && h->built_bytes == h->bytes &&
-            h->built_fmt == h->fmt && h->built_channels == h->channels &&
-            h->bytes != 0 && h->fmt_set) {
-            driver_texobj_t *e = driver_tex_find(h->obj);
-            if (e && e->own_image && e->own_image->kind == 2) {
-                CUcontext cc = NULL;
-                if (need_ctx(&cc) == CUDA_SUCCESS)
-                    acuda_stream_synchronize(g_actx, NULL);
-                void *host = NULL;
-                if (host_for(h->addr, h->bytes, &host) == CUDA_SUCCESS) {
-                    acuda_status_t ust = acuda_image_update_full(g_actx, e->own_image, host);
-                    if (ust == ACUDA_SUCCESS) {
-                        h->built_addr = h->addr;
-                        h->built_bytes = h->bytes;
-                        h->built_fmt = h->fmt;
-                        h->built_channels = h->channels;
-                        ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reused image obj=%llx\n",
-                                    h->name, (unsigned long long)(uint64_t)h->obj);
-                        return CUDA_SUCCESS;
-                    }
-                    ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reuse update failed st=%d, recreating\n",
-                                h->name, (int)ust);
-                }
+        // Bind state changed; will rebuild below (with image reuse if possible).
+        if (h->obj) {
+            // If image layout matches, keep allocation by detaching it below;
+            // otherwise destroy now.
+            int can_reuse_img = (!h->is_array && h->built_bytes == h->bytes &&
+                                 h->built_fmt == h->fmt &&
+                                 h->built_channels == h->channels &&
+                                 h->bytes != 0 && h->fmt_set);
+            if (!can_reuse_img) {
+                cuTexObjectDestroy(h->obj);
+                h->obj = 0;
             }
         }
-        if (h->obj) {
-            cuTexObjectDestroy(h->obj);
-            h->obj = 0;
+        if (!h->obj) {
+            h->built_addr = 0;
+            h->built_bytes = 0;
         }
-        h->built_addr = 0;
-        h->built_bytes = 0;
     }
-    /* The linear snapshot below copies from the host-visible mirror.
-       Make sure previously submitted work (e.g. a sort that just filled
-       this buffer) has completed first; otherwise the image captures
-       stale bytes and kernels hang on the degenerate data. Only needed
-       when actually (re)building; unchanged binds keep their snapshot. */
+
+    /* The linear snapshot copies from the host-visible mirror. Synchronize
+       first so GPU writes are visible. */
     if (!h->is_array && h->bytes != 0 && h->addr != 0) {
         CUcontext cc = NULL;
         if (need_ctx(&cc) == CUDA_SUCCESS)
             acuda_stream_synchronize(g_actx, NULL);
     }
+
     CUDA_RESOURCE_DESC rd;
     memset(&rd, 0, sizeof(rd));
     if (h->is_array) {
@@ -7140,6 +7122,102 @@ static CUresult texref_rebuild(CUtexref h, int force) {
     td.maxAnisotropy = h->max_aniso ? h->max_aniso : 1;
     td.mipmapFilterMode = CU_TR_FILTER_MODE_POINT;
     td.borderColor[0] = td.borderColor[1] = td.borderColor[2] = td.borderColor[3] = 0.0f;
+
+    // Fast path: reuse existing linear snapshot image allocation (and
+    // reupload contents). Recreate tex/sampler to reflect current flags.
+    if (!h->is_array && h->obj && h->bytes != 0 && h->fmt_set &&
+        h->built_bytes == h->bytes && h->built_fmt == h->fmt &&
+        h->built_channels == h->channels) {
+        driver_texobj_t *e = driver_tex_find(h->obj);
+        if (e && e->own_image && e->own_image->kind == 2) {
+            void *host = NULL;
+            CUresult hr = host_for(h->addr, h->bytes, &host);
+            if (hr == CUDA_SUCCESS) {
+                acuda_status_t ust = acuda_image_update_full(g_actx, e->own_image, host);
+                if (ust == ACUDA_SUCCESS) {
+                    // Detach image, destroy old tex/sampler, rebuild wrapper.
+                    acuda_buffer_t keep_img = e->own_image;
+                    e->own_image = NULL;
+                    CUtexObject old = h->obj;
+                    h->obj = 0;
+                    cuTexObjectDestroy(old);
+
+                    acuda_sampler_desc sd;
+                    memset(&sd, 0, sizeof(sd));
+                    sd.filter = td.filterMode == CU_TR_FILTER_MODE_LINEAR ? 1u : 0u;
+                    sd.mip_filter = td.mipmapFilterMode == CU_TR_FILTER_MODE_LINEAR ? 1u : 0u;
+                    for (int i = 0; i < 3; i++) {
+                        switch (td.addressMode[i]) {
+                        case CU_TR_ADDRESS_MODE_CLAMP: sd.addr[i] = 2; break;
+                        case CU_TR_ADDRESS_MODE_MIRROR: sd.addr[i] = 1; break;
+                        case CU_TR_ADDRESS_MODE_BORDER: sd.addr[i] = 3; break;
+                        default: sd.addr[i] = 0; break;
+                        }
+                    }
+                    sd.normalized = (td.flags & 0x2u) ? 1u : 0u;
+                    sd.compare = 0;
+                    sd.compare_op = 3;
+                    for (int i = 0; i < 4; i++)
+                        sd.border[i] = td.borderColor[i];
+
+                    acuda_buffer_t smp = NULL, tex = NULL;
+                    if (acuda_sampler_create(g_actx, &smp, &sd) != ACUDA_SUCCESS ||
+                        acuda_texture_create_image(g_actx, &tex, keep_img, smp) != ACUDA_SUCCESS) {
+                        if (tex) acuda_free(g_actx, tex);
+                        if (smp) acuda_free(g_actx, smp);
+                        acuda_free(g_actx, keep_img);
+                        h->built_addr = h->built_bytes = 0;
+                        return CUDA_ERROR_OUT_OF_MEMORY;
+                    }
+                    if (g_ntexobjs == g_ctexobjs) {
+                        size_t ncap = g_ctexobjs ? g_ctexobjs * 2 : 8;
+                        driver_texobj_t *n = realloc(g_texobjs, sizeof(*n) * ncap);
+                        if (!n) {
+                            acuda_free(g_actx, tex);
+                            acuda_free(g_actx, smp);
+                            acuda_free(g_actx, keep_img);
+                            return CUDA_ERROR_OUT_OF_MEMORY;
+                        }
+                        g_texobjs = n;
+                        g_ctexobjs = ncap;
+                    }
+                    driver_texobj_t *ne = &g_texobjs[g_ntexobjs++];
+                    memset(ne, 0, sizeof(*ne));
+                    ne->id = g_next_texid++;
+                    if (ne->id == 0) ne->id = g_next_texid++;
+                    ne->tex = tex;
+                    ne->sampler = smp;
+                    ne->own_image = keep_img;
+                    ne->res = rd;
+                    ne->td = td;
+                    h->obj = ne->id;
+                    h->built_addr = h->addr;
+                    h->built_bytes = h->bytes;
+                    h->built_fmt = h->fmt;
+                    h->built_channels = h->channels;
+                    ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reused image alloc obj=%llx\n",
+                                h->name, (unsigned long long)(uint64_t)h->obj);
+                    return CUDA_SUCCESS;
+                }
+                ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reuse update failed st=%d, recreating\n",
+                            h->name, (int)ust);
+            }
+        }
+        // Reuse path failed; ensure old obj is destroyed before full recreate.
+        if (h->obj) {
+            cuTexObjectDestroy(h->obj);
+            h->obj = 0;
+        }
+        h->built_addr = 0;
+        h->built_bytes = 0;
+    } else if (h->obj) {
+        // e.g. array or other case still holding old obj: destroy before recreate
+        cuTexObjectDestroy(h->obj);
+        h->obj = 0;
+        h->built_addr = 0;
+        h->built_bytes = 0;
+    }
+
     CUresult tcr = cuTexObjectCreate(&h->obj, &rd, &td, NULL);
     ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) create rc=%d obj=%llx\n",
                 h->name, (int)tcr, (unsigned long long)(uint64_t)h->obj);
