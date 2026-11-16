@@ -342,6 +342,10 @@ int acuda_surface_alias_supported(acuda_context_t ctx);
 void acuda_buf_barrier(VkCommandBuffer cmd, VkBuffer buf,
                        VkDeviceSize offset, VkDeviceSize size);
 
+// Re-upload image contents from linear host data (tiled1d-aware, chunked).
+acuda_status_t acuda_image_update_full(acuda_context_t ctx, acuda_buffer_t image,
+                                       const void *texels);
+
 // Retires a per-launch descriptor pool once submission value completes.
 acuda_status_t acuda_stream_track_dpool(acuda_context_t ctx,
                                         acuda_stream_t stream,

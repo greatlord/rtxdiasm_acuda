@@ -1512,6 +1512,147 @@ acuda_status_t acuda_surface_download(acuda_context_t ctx,
     return st;
 }
 
+// Re-upload a full image (level 0, all layers) from a linear host source.
+// For tiled1d images, linear_texels is the original 1D linear buffer.
+acuda_status_t acuda_image_update_full(acuda_context_t ctx, acuda_buffer_t b,
+                                        const void *texels) {
+    if (!ctx || !b || b->kind != 2 || !texels)
+        return ACUDA_ERROR_INVALID_VALUE;
+    uint32_t layers = b->dim3d ? 1u : (b->layers ? b->layers : 1);
+    size_t elem_bytes = image_elem_bytes(b->format);
+    size_t logical_w = b->logical_width ? b->logical_width : b->width;
+    size_t layer_linear_bytes = b->tiled1d
+        ? logical_w * elem_bytes
+        : (size_t)b->width * b->height * (b->dim3d ? b->depth : 1) * elem_bytes;
+    size_t layer_bytes = b->tiled1d
+        ? (size_t)b->tile_w * ((logical_w + b->tile_w - 1u) / b->tile_w) * elem_bytes
+        : layer_linear_bytes;
+
+    const size_t kStageChunk = 32u * 1024u * 1024u;
+    size_t stage_bytes = layer_bytes ? layer_bytes : 4;
+    if (stage_bytes > kStageChunk) stage_bytes = kStageChunk;
+    acuda_buffer_t stage = NULL;
+    acuda_status_t st = acuda_malloc_host(ctx, &stage, stage_bytes);
+    if (st != ACUDA_SUCCESS) {
+        size_t try_bytes = stage_bytes;
+        while (st != ACUDA_SUCCESS && try_bytes > 4u * 1024u * 1024u) {
+            try_bytes /= 2;
+            st = acuda_malloc_host(ctx, &stage, try_bytes);
+        }
+        if (st != ACUDA_SUCCESS)
+            return st;
+        stage_bytes = try_bytes;
+    }
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    st = image_begin(ctx, &pool, &cmd);
+    if (st != ACUDA_SUCCESS) {
+        acuda_free(ctx, stage);
+        return st;
+    }
+    VkImage target = b->is_ms ? b->ms_src_image : b->image;
+    VkImageLayout idle_layout = b->is_surface ? VK_IMAGE_LAYOUT_GENERAL
+                                              : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkAccessFlags idle_access = b->is_surface
+        ? (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)
+        : VK_ACCESS_SHADER_READ_BIT;
+    image_barrier_img(cmd, b, target, idle_layout,
+                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, idle_access,
+                      VK_ACCESS_TRANSFER_WRITE_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    if (b->tiled1d) {
+        size_t row_bytes = (size_t)b->tile_w * elem_bytes;
+        uint32_t tile_h = (uint32_t)((logical_w + b->tile_w - 1u) / b->tile_w);
+        size_t rows_per_chunk = stage_bytes / row_bytes;
+        if (rows_per_chunk == 0) rows_per_chunk = 1;
+        for (uint32_t l = 0; l < layers; l++) {
+            size_t layer_src_base = (size_t)l * layer_linear_bytes;
+            for (uint32_t y = 0; y < tile_h; y += (uint32_t)rows_per_chunk) {
+                uint32_t rows = (uint32_t)rows_per_chunk;
+                if (y + rows > tile_h) rows = tile_h - y;
+                size_t copy_bytes = (size_t)rows * row_bytes;
+                size_t src_off = layer_src_base + (size_t)y * row_bytes;
+                size_t src_layer_end = layer_src_base + layer_linear_bytes;
+                size_t src_avail = 0;
+                if (src_off < src_layer_end)
+                    src_avail = src_layer_end - src_off;
+                size_t to_copy = copy_bytes < src_avail ? copy_bytes : src_avail;
+                if (to_copy > 0) {
+                    st = acuda_memcpy_h2d(ctx, stage,
+                                          (const unsigned char *)texels + src_off,
+                                          to_copy, NULL);
+                    if (st != ACUDA_SUCCESS) {
+                        acuda_free(ctx, stage);
+                        image_end(ctx, pool, cmd);
+                        return st;
+                    }
+                }
+                VkBufferImageCopy2 region = {
+                    .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+                    .bufferOffset = 0,
+                    .bufferRowLength = 0,
+                    .bufferImageHeight = 0,
+                    .imageSubresource = {
+                        image_is_depth(b->format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                  : VK_IMAGE_ASPECT_COLOR_BIT,
+                        0, l, 1,
+                    },
+                    .imageOffset = { 0, (int32_t)y, 0 },
+                    .imageExtent = { b->tile_w, rows, 1u },
+                };
+                VkCopyBufferToImageInfo2 cinfo = {
+                    .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
+                    .srcBuffer = stage->buffer,
+                    .dstImage = target,
+                    .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .regionCount = 1,
+                    .pRegions = &region,
+                };
+                vkCmdCopyBufferToImage2(cmd, &cinfo);
+            }
+        }
+    } else {
+        for (uint32_t l = 0; l < layers; l++) {
+            size_t layer_off = (size_t)l * layer_bytes;
+            size_t remaining = layer_bytes;
+            size_t done = 0;
+            while (remaining > 0) {
+                size_t chunk = remaining < stage_bytes ? remaining : stage_bytes;
+                st = acuda_memcpy_h2d(ctx, stage,
+                                      (const unsigned char *)texels + layer_off + done,
+                                      chunk, NULL);
+                if (st != ACUDA_SUCCESS) {
+                    acuda_free(ctx, stage);
+                    image_end(ctx, pool, cmd);
+                    return st;
+                }
+                if (chunk == remaining && done == 0) {
+                    image_copy_level(ctx, cmd, b, target, stage->buffer, 0, l, 0);
+                } else {
+                    acuda_free(ctx, stage);
+                    image_end(ctx, pool, cmd);
+                    return ACUDA_ERROR_NOT_SUPPORTED;
+                }
+                remaining -= chunk;
+                done += chunk;
+            }
+        }
+    }
+
+    image_barrier_img(cmd, b, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                      idle_layout, VK_ACCESS_TRANSFER_WRITE_BIT, idle_access,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    image_end(ctx, pool, cmd);
+    acuda_free(ctx, stage);
+    if (b->is_ms)
+        return ms_fill(ctx, b);
+    return ACUDA_SUCCESS;
+}
+
 acuda_status_t acuda_image_upload(acuda_context_t ctx, acuda_buffer_t image,
                                   uint32_t level, uint32_t layer,
                                   const void *texels) {

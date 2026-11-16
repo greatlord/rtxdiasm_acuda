@@ -102,6 +102,34 @@ static void acuda_trace_va(const char *tag) {
  * NULL and the fault address is 0x10, the allocator returned NULL. */
 static HANDLE g_veh_log = INVALID_HANDLE_VALUE;
 
+/* ACUDA_CRASH_DUMP=<prefix>: write a minidump from the VEH for the first
+ * fatal exceptions.  No debugger/procdump/WER-LocalDumps is available on
+ * this machine (filtered token), so capture in-process with dbghelp. */
+typedef BOOL(WINAPI *acuda_minidump_fn)(HANDLE, DWORD, HANDLE, DWORD,
+                                        const void *, const void *,
+                                        const void *);
+static acuda_minidump_fn g_minidump;
+static char g_dump_prefix[260];
+static int g_dump_count;
+
+static void acuda_write_dump(DWORD code) {
+    if (!g_minidump || !g_dump_prefix[0] || g_dump_count >= 6)
+        return;
+    char path[300];
+    _snprintf(path, sizeof(path), "%s_%d_%08lx.dmp", g_dump_prefix,
+              g_dump_count, (unsigned long)code);
+    path[sizeof(path) - 1] = 0;
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    g_dump_count++;
+    /* MiniDumpNormal | WithHandleData | WithUnloadedModules | WithThreadInfo */
+    g_minidump(GetCurrentProcess(), GetCurrentProcessId(), h, 0x1026u, NULL,
+               NULL, NULL);
+    CloseHandle(h);
+}
+
 /* Probe whether [p, p+n) is committed readable memory.  Used by the
  * VEH so fault-context garbage can never crash the handler itself. */
 static int acuda_can_read(const void *p, size_t n) {
@@ -129,10 +157,13 @@ static int acuda_can_read(const void *p, size_t n) {
 }
 
 static LONG CALLBACK acuda_veh(EXCEPTION_POINTERS *ep) {
-    if (!g_veh_log || g_veh_log == INVALID_HANDLE_VALUE)
+    if ((!g_veh_log || g_veh_log == INVALID_HANDLE_VALUE) &&
+        !g_dump_prefix[0])
         return EXCEPTION_CONTINUE_SEARCH;
     DWORD code = ep->ExceptionRecord->ExceptionCode;
-    if (code != EXCEPTION_ACCESS_VIOLATION && code != 0xC0000409 /* STATUS_STACK_BUFFER_OVERRUN */)
+    if (code != EXCEPTION_ACCESS_VIOLATION &&
+        code != 0xC0000409 /* STATUS_STACK_BUFFER_OVERRUN */
+        && code != 0xC0000374 /* STATUS_HEAP_CORRUPTION */)
         return EXCEPTION_CONTINUE_SEARCH;
     unsigned long fn = 0;
     unsigned long modbase = 0;
@@ -194,10 +225,11 @@ static LONG CALLBACK acuda_veh(EXCEPTION_POINTERS *ep) {
         (unsigned long)ep->ContextRecord->Eip, modbase, fn, count16,
         (unsigned long long)ms.ullAvailPageFile,
         stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
-    if (n > 0) {
+    if (n > 0 && g_veh_log && g_veh_log != INVALID_HANDLE_VALUE) {
         DWORD w = 0;
         WriteFile(g_veh_log, buf, (DWORD)n, &w, NULL);
     }
+    acuda_write_dump(code);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -206,13 +238,21 @@ static void acuda_install_veh(void) {
     if (done)
         return;
     done = 1;
+    const char *dp = getenv("ACUDA_CRASH_DUMP");
+    if (dp && *dp) {
+        strncpy(g_dump_prefix, dp, sizeof(g_dump_prefix) - 1);
+        g_dump_prefix[sizeof(g_dump_prefix) - 1] = 0;
+        HMODULE dbg = LoadLibraryA("dbghelp.dll");
+        if (dbg)
+            g_minidump = (acuda_minidump_fn)(void *)GetProcAddress(
+                dbg, "MiniDumpWriteDump");
+    }
     const char *tp = getenv("ACUDA_TRACE_FILE");
-    if (!tp || !*tp)
-        return;
-    g_veh_log = CreateFileA(tp, FILE_APPEND_DATA,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (g_veh_log != INVALID_HANDLE_VALUE)
+    if (tp && *tp)
+        g_veh_log = CreateFileA(tp, FILE_APPEND_DATA,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if ((g_veh_log && g_veh_log != INVALID_HANDLE_VALUE) || g_minidump)
         AddVectoredExceptionHandler(1, acuda_veh);
 }
 #endif
@@ -830,10 +870,17 @@ CUresult ACUDA_CUDAAPI cuInit(unsigned int flags) {
     return CUDA_SUCCESS;
 }
 
+static int acuda_driver_version_value(void) {
+    const char *s = getenv("ACUDA_DRIVER_VERSION");
+    if (s && *s) return atoi(s);
+    return ACUDA_DRIVER_VERSION;
+}
+
 CUresult ACUDA_CUDAAPI cuDriverGetVersion(int *driverVersion) {
     if (!driverVersion)
         return CUDA_ERROR_INVALID_VALUE;
-    *driverVersion = ACUDA_DRIVER_VERSION;
+    *driverVersion = acuda_driver_version_value();
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDriverGetVersion -> %d\n", *driverVersion);
     return CUDA_SUCCESS;
 }
 
@@ -883,8 +930,16 @@ CUresult ACUDA_CUDAAPI cuDeviceGetName(char *name, int len, CUdevice dev) {
     acuda_status_t st = acuda_device_get(g_actx, (uint32_t)dev, &info);
     if (st != ACUDA_SUCCESS)
         return CUDA_ERROR_INVALID_DEVICE;
-    strncpy(name, info.name, (size_t)len - 1);
+    {
+        const char *ov = getenv("ACUDA_DEVICE_NAME");
+        if (ov && *ov) {
+            strncpy(name, ov, (size_t)len - 1);
+        } else {
+            strncpy(name, info.name, (size_t)len - 1);
+        }
+    }
     name[len - 1] = '\0';
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetName(dev=%d) -> '%s'\n", dev, name);
     return CUDA_SUCCESS;
 }
 
@@ -909,6 +964,7 @@ CUresult ACUDA_CUDAAPI cuDeviceComputeCapability(int *major, int *minor, CUdevic
         return CUDA_ERROR_INVALID_DEVICE;
     *major = cc_major();
     *minor = cc_minor();
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceComputeCapability(dev=%d) -> %d.%d\n", dev, *major, *minor);
     return CUDA_SUCCESS;
 }
 
@@ -937,6 +993,9 @@ CUresult ACUDA_CUDAAPI cuDeviceGetProperties(CUdevprop *prop, CUdevice dev) {
     prop->regsPerBlock = 65536;
     prop->clockRate = 1290000;
     prop->textureAlign = 512;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetProperties(dev=%d) cc=%d.%d sm=%d regs=%d warp=%d const=%d\n",
+        dev, cc_major(), cc_minor(), prop->sharedMemPerBlock, prop->regsPerBlock,
+        prop->SIMDWidth, prop->totalConstantMemory);
     return CUDA_SUCCESS;
 }
 
@@ -958,8 +1017,14 @@ static int device_pci_info(CUdevice dev, acuda_device_info_t *info);
 CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev) {
     if (!value)
         return CUDA_ERROR_INVALID_VALUE;
-    ACUDA_DEBUG_PRINT("acuda-trace ?? cuDeviceGetAttribute(%d, dev=%d)\n",
-                attrib, dev);
+    {
+        void *retaddr = NULL;
+#if defined(_MSC_VER)
+        retaddr = _ReturnAddress();
+#endif
+        ACUDA_DEBUG_PRINT("acuda-trace ?? cuDeviceGetAttribute(%d/0x%x, dev=%d) caller=%p\n",
+                    attrib, (unsigned)attrib, dev, retaddr);
+    }
     int n = 0;
     CUresult r = cuDeviceGetCount(&n);
     if (r != CUDA_SUCCESS) {
@@ -973,29 +1038,37 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
     switch (attrib) {
     case CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR:
         *value = cc_major();
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR:
         *value = cc_minor();
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X:
         *value = 2147483647;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X:
     case CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK:
         *value = 1024;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y:
         *value = 1024;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z:
         *value = 64;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y:
     case CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z:
         *value = 65535;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK:
         *value = 49152;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_WARP_SIZE:
         // ACuda lowers PTX warps as 32 lanes: shfl/vote use 32-bit
@@ -1006,199 +1079,261 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         // this attribute would otherwise spawn two logical lanes per
         // PTX lane (e.g. torch.sort's warpMergeSort kernels).
         *value = 32;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT:
         *value = 40; // RTX 3070 laptop GPU
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_CLOCK_RATE:
         *value = 1290000; // kHz
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE:
         *value = 6001000; // kHz
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH:
         *value = 256; // TODO per-device
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE:
         *value = 4 << 20; // TODO per-device
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR:
         *value = 1536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY:
         *value = 65536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_PITCH:
         *value = 2147483647;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK:
         *value = 65536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT:
     case CU_DEVICE_ATTRIBUTE_SURFACE_ALIGNMENT:
         *value = 512;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_TEXTURE_PITCH_ALIGNMENT:
         *value = 32;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE1D_WIDTH:
         *value = 131072;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE2D_WIDTH:
         *value = 131072;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_MAXIMUM_TEXTURE2D_HEIGHT:
         *value = 65536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 15: // legacy CU_DEVICE_ATTRIBUTE_GPU_OVERLAP
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 24: // MAXIMUM_TEXTURE3D_WIDTH
     case 25: // MAXIMUM_TEXTURE3D_HEIGHT
     case 26: // MAXIMUM_TEXTURE3D_DEPTH
         *value = 16384;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 27: // MAXIMUM_TEXTURE2D_LAYERED_WIDTH
     case 28: // MAXIMUM_TEXTURE2D_LAYERED_HEIGHT
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 29: // MAXIMUM_TEXTURE2D_LAYERED_LAYERS
         *value = 2048;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 42: // MAXIMUM_TEXTURE1D_LAYERED_WIDTH
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 43: // MAXIMUM_TEXTURE1D_LAYERED_LAYERS
         *value = 2048;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 44: // MAXIMUM_TEXTURE2D_GATHER_WIDTH
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 45: // MAXIMUM_TEXTURE2D_GATHER_HEIGHT
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 46: // MAXIMUM_TEXTURE3D_WIDTH_ALT
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 47: // MAXIMUM_TEXTURE3D_HEIGHT_ALT
         *value = 8192;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 48: // MAXIMUM_TEXTURE3D_DEPTH_ALT
         *value = 8192;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 49: // MAXIMUM_TEXTURE3D_DEPTH_ALT (newer)
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 52: // MAXIMUM_TEXTURE1D_LAYERED_WIDTH (newer enum)
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 53: // MAXIMUM_TEXTURE1D_LAYERED_LAYERS
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 54: // MAXIMUM_TEXTURE2D_LINEAR_WIDTH
         *value = 2046;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 55: // MAXIMUM_TEXTURE2D_LINEAR_HEIGHT
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 56: // MAXIMUM_TEXTURE2D_LINEAR_PITCH
         *value = 131072;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 57: // MAXIMUM_TEXTURE2D_LINEAR_WIDTH (newer)
         *value = 65536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 58: // MAXIMUM_TEXTURE2D_LINEAR_HEIGHT (newer)
         *value = 16384;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 59: // MAXIMUM_TEXTURE2D_LINEAR_PITCH (newer)
         *value = 16384;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 60:
         *value = 16384;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 61:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 62:
         *value = 2048;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 63:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 64:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 65:
         *value = 2048;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 66:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 67:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 68:
         *value = 2046;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 69:
         *value = 268435456;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 70:
         *value = 131072;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 71:
         *value = 65000;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 72:
         *value = 2097120;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 73:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 74:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 77:
         *value = 32768;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 78:
     case 79:
     case 80:
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 81: // MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
         *value = 102400;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 82: // MAX_REGISTERS_PER_MULTIPROCESSOR
         *value = 65536;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 87:
         *value = 64;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case 90:
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT:
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_INTEGRATED:
         *value = 0;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY:
         *value = 1; // host-visible heaps
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_COMPUTE_MODE:
         *value = 0; // default
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_CONCURRENT_KERNELS:
     case CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT:
         *value = 1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING:
         {
             const char *s = getenv("ACUDA_UNIFIED_ADDRESSING");
             *value = s && *s ? (int)strtol(s, NULL, 0) : 1;
         }
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_PCI_BUS_ID: {
         acuda_device_info_t info;
@@ -1206,6 +1341,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         if (s && *s) *value = (int)strtol(s, NULL, 0);
         else if (device_pci_info(dev, &info)) *value = (int)info.pci_bus;
         else *value = 0;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     }
     case CU_DEVICE_ATTRIBUTE_PCI_DEVICE_ID: {
@@ -1214,6 +1350,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         if (s && *s) *value = (int)strtol(s, NULL, 0);
         else if (device_pci_info(dev, &info)) *value = (int)info.pci_device;
         else *value = 0;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     }
     case CU_DEVICE_ATTRIBUTE_PCI_DOMAIN_ID: {
@@ -1222,6 +1359,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         if (s && *s) *value = (int)strtol(s, NULL, 0);
         else if (device_pci_info(dev, &info)) *value = (int)info.pci_domain;
         else *value = 0;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     }
     case 0x20080402:
@@ -1231,6 +1369,8 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
             const char *s = getenv("ACUDA_PPU_ATTR");
             if (s && *s) {
                 *value = (int)strtol(s, NULL, 0);
+                ACUDA_DEBUG_PRINT("acuda-trace .. ppu_attr dev=%d value=0x%x (env)\n",
+                            dev, (unsigned)*value);
             } else {
                 acuda_device_info_t info;
                 if (device_pci_info(dev, &info)) {
@@ -1248,6 +1388,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
                             dev, (unsigned)*value);
             }
         }
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     default:
         // CUDA 13's runtime queries a long tail of optional limits during
@@ -1258,6 +1399,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         ACUDA_DEBUG_PRINT("acuda-trace ?? cuDeviceGetAttribute(%d) = 0 "
                     "(default)\n", attrib);
         *value = 0;
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetAttribute(%d, dev=%d) -> %d\n", attrib, dev, *value);
         return CUDA_SUCCESS;
     }
 }
@@ -2207,8 +2349,10 @@ static CUresult load_sass_image(CUmodule *module, const unsigned char *data,
     *module = NULL;
     if (cubin_backend() == 1) {
         ACUDA_DEBUG_PRINT("acuda-trace .. backend=1 (C parser only): "
-                    "refusing the rtxdisam SASS lift\n");
-        return CUDA_ERROR_INVALID_IMAGE;
+                    "attaching SASS image without lift\n");
+        /* Backend 1 cannot lift SASS; keep the image attached so callers that
+         * can tolerate missing PTX/functions may continue (detection/init). */
+        return module_from_sass_image(module, data, size);
     }
     char err[1024] = {0};
     char target[16];
@@ -3138,7 +3282,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     /* One parameter-model fetch serves the launch-info log, the packed
      * argument walk, and the launch below.  acuda_kernel_info_t is
      * ~283 KiB (per-parameter name tables); keep exactly one live copy
-     * — worker threads that drive PhysX do not have stack to spare. */
+     * â€” worker threads that drive PhysX do not have stack to spare. */
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(f->k);
     if (!info)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_UNKNOWN, __LINE__); return CUDA_ERROR_UNKNOWN; }
@@ -4723,7 +4867,7 @@ CUresult ACUDA_CUDAAPI cuGetProcAddress_v2(const char *symbol, void **pfn, int c
     (void)flags;
     if (!pfn)
         return CUDA_ERROR_INVALID_VALUE;
-    if (cudaVersion > ACUDA_DRIVER_VERSION)
+    if (cudaVersion > acuda_driver_version_value())
         return CUDA_ERROR_INVALID_VALUE;
     if (!symbol || !*symbol) {
         *pfn = NULL;
@@ -4816,6 +4960,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetPCIBusId(char *pciBusId, int len, CUdevice dev
     }
     strncpy(pciBusId, id, (size_t)len - 1);
     pciBusId[len - 1] = '\0';
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetPCIBusId(dev=%d) -> %s\n", dev, pciBusId);
     return CUDA_SUCCESS;
 }
 
@@ -5024,7 +5169,7 @@ CUresult ACUDA_CUDAAPI cuCtxGetApiVersion(CUcontext ctx, unsigned int *version) 
         return CUDA_ERROR_INVALID_VALUE;
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
-    *version = ACUDA_DRIVER_VERSION;
+    *version = acuda_driver_version_value();
     return CUDA_SUCCESS;
 }
 
@@ -5072,7 +5217,7 @@ CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemGetInfo\n");
+    ACUDA_DEBUG_PRINT("acuda-trace >> cuMemGetInfo\n");
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
     if (totalBytes)
@@ -5082,6 +5227,9 @@ CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
         unsigned long long total = acuda_device_mem_total();
         *freeBytes = total > live ? (size_t)(total - live) : 0;
     }
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemGetInfo -> free=%llu total=%llu\n",
+                      (unsigned long long)(freeBytes ? *freeBytes : 0),
+                      (unsigned long long)(totalBytes ? *totalBytes : 0));
     return CUDA_SUCCESS;
 }
 
@@ -6189,7 +6337,7 @@ static CUresult ACUDA_CUDAAPI integrity_check(unsigned int version,
 #endif
     acuda_integrity_pass3_t p3;
     memset(&p3, 0, sizeof(p3));
-    p3.driver_version = ACUDA_DRIVER_VERSION;
+    p3.driver_version = acuda_driver_version_value();
     p3.version = version;
     p3.current_process = pid;
     p3.current_thread = tid;
@@ -6924,6 +7072,33 @@ static CUresult texref_rebuild(CUtexref h, int force) {
             return CUDA_SUCCESS;
         /* fall through to rebuild/re-snapshot for linear texrefs */
     } else {
+        // Try to reuse existing linear snapshot image to avoid realloc churn
+        // (large PhysX fluid buffers can be hundreds of MB).
+        if (!h->is_array && h->obj && h->built_bytes == h->bytes &&
+            h->built_fmt == h->fmt && h->built_channels == h->channels &&
+            h->bytes != 0 && h->fmt_set) {
+            driver_texobj_t *e = driver_tex_find(h->obj);
+            if (e && e->own_image && e->own_image->kind == 2) {
+                CUcontext cc = NULL;
+                if (need_ctx(&cc) == CUDA_SUCCESS)
+                    acuda_stream_synchronize(g_actx, NULL);
+                void *host = NULL;
+                if (host_for(h->addr, h->bytes, &host) == CUDA_SUCCESS) {
+                    acuda_status_t ust = acuda_image_update_full(g_actx, e->own_image, host);
+                    if (ust == ACUDA_SUCCESS) {
+                        h->built_addr = h->addr;
+                        h->built_bytes = h->bytes;
+                        h->built_fmt = h->fmt;
+                        h->built_channels = h->channels;
+                        ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reused image obj=%llx\n",
+                                    h->name, (unsigned long long)(uint64_t)h->obj);
+                        return CUDA_SUCCESS;
+                    }
+                    ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) reuse update failed st=%d, recreating\n",
+                                h->name, (int)ust);
+                }
+            }
+        }
         if (h->obj) {
             cuTexObjectDestroy(h->obj);
             h->obj = 0;
