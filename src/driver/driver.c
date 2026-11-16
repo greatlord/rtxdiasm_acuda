@@ -6918,7 +6918,11 @@ static CUresult texref_rebuild(CUtexref h, int force) {
                h->built_channels == h->channels) {
         // Bind state unchanged (filter/flag/mipmap re-set): keep the
         // existing snapshot instead of re-uploading every frame.
-        return CUDA_SUCCESS;
+        // For linear textures, device-side writes can change contents even
+        // when bind state is unchanged; skip only when explicitly allowed.
+        if (getenv("ACUDA_TEXREF_LINEAR_CACHE"))
+            return CUDA_SUCCESS;
+        /* fall through to rebuild/re-snapshot for linear texrefs */
     } else {
         if (h->obj) {
             cuTexObjectDestroy(h->obj);
