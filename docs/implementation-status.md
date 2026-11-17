@@ -1,47 +1,44 @@
-# ACuda Implementation Status
+# nvcuda.dll / libcuda.so Implementation Status
 
-This document summarizes the current implementation status of major ACuda components.
+This document tracks implementation status for the CUDA Driver API compatibility library (`nvcuda.dll` on Windows, `libcuda.so.1` on Linux).
 
 **Status legend**
-- `ok` — implemented and usable in the current supported scope
-- `partially` — implemented, but with limitations, incomplete coverage, or known gaps
-- `todo` — not implemented yet / planned
+- `ok` — implemented for the currently supported/documented subset
+- `partially` — implemented with limitations, partial coverage, or known gaps
+- `todo` — not implemented
 
-| Area | Component | Status | Notes |
+| Area | API / Component | Status | Notes |
 |---|---|---|---|
-| Driver API | Core init/version/device/context APIs | ok | Implemented subset including `cuInit`, version/device queries, context create/push/pop/current/synchronize, and primary context APIs as documented in `driver-api.md`. |
-| Driver API | Memory APIs (`cuMemAlloc/Free`, sync memcpy/memset, mem info) | ok | Core allocation/free, `HtoD/DtoH/DtoD`, `MemsetD32/D8`, and live memory tracking implemented for supported paths. |
-| Driver API | Module/link/launch APIs (PTX-focused subset) | partially | `cuModuleLoadData[Ex]`, `cuModuleGetFunction`, `cuLaunchKernel`, linker PTX-passthrough (`AddData/Complete`), `cuLaunchKernelEx` basic forwarding implemented; launch/linking have documented constraints (e.g. 1D-oriented launch constraints, PTX-centric flow, limited extended attributes). |
-| Driver API | Streams/events API surface | partially | Stream/event create/destroy/query/record/synchronize/wait paths implemented for supported subset; async behavior and full CUDA parity are not complete. |
-| Driver API | Texture/surface array/object APIs | partially | Arrays/mipmapped arrays, memcpy2D/3D, texture objects, and surface objects implemented for supported formats/geometries/use-cases; advanced/unsupported cases return `NOT_SUPPORTED` or are limited. |
-| Driver API | Torch / broader CUDA client compatibility surface | partially | Targeted compatibility work exists (e.g. selected attributes, fatbinary handling paths, `cuLaunchKernelEx` basic cases), but missing symbols/behaviors remain for wider client compatibility. |
-| Driver API | Full CUDA Driver API coverage | todo | Many CUDA driver APIs and semantics outside the implemented/documented subset are not yet supported. |
-| Runtime | Vulkan instance/device/queue initialization | ok | Vulkan 1.3-based runtime initialization, device/queue selection, and core context bring-up implemented (subject to required feature availability). |
-| Runtime | Command submission and synchronization primitives | ok | Internal stream/event/timeline-semaphore based execution and synchronization paths implemented for supported workloads. |
-| Runtime | GPU memory/resource management | partially | Core buffer/image/resource handling implemented; behavior differs from CUDA in areas (e.g. opaque handle/addressing model, host-visible transfer paths) and is scoped to supported use-cases. |
-| Runtime | Compute pipeline creation and kernel execution | partially | PTX-to-SPIR-V to Vulkan compute pipeline execution path implemented for supported kernels/features; not full CUDA/PTX coverage. |
-| Runtime | Optional capability detection and accelerated paths | partially | Optional Vulkan features/extensions are detected and used opportunistically when available, with fallbacks in some cases. |
-| Memory | Linear device allocations and transfers | ok | Implemented for supported driver/runtime paths (`alloc/free`, sync host/device copies, memset operations). |
-| Memory | Texture/image/surface backing resources | partially | Vulkan image-backed textures/surfaces and related upload/download/copy paths implemented for supported formats/layouts/geometries. |
-| Memory | CUDA memory semantics parity (advanced/pools/unified/etc.) | partially/todo | Some pool-related driver entry points exist, but broader CUDA memory model/parity (and advanced features) is incomplete. |
-| Execution | Streams | ok | Stream creation, batching/flush/submit/sync, and tracking paths implemented in runtime (refactored into modular TUs). |
-| Execution | Events and timing/query | partially | Event record/query/synchronize/elapsed and stream-wait-event paths implemented for supported usage; full CUDA behavior/timing parity not guaranteed. |
-| Execution | Multi-context / concurrency isolation | partially/todo | Current design shares Vulkan device/state with limited isolation semantics; full CUDA context isolation/concurrency behavior is not implemented. |
-| Compilation | PTX module load and PTX-to-SPIR-V execution integration | ok | PTX-based module loading/launch path integrated with `rtxdiasm-ptx-to-spirv` for supported kernels. |
-| Compilation | Fatbin/cubin handling and SASS-to-PTX bridge integration | partially | Fatbin parsing and optional SASS-to-PTX lifting paths exist (including backend selection behavior), with limitations (e.g. unsupported/compressed cases, lazy/multi-entry constraints). |
-| Compilation | Full PTX/SASS instruction and feature coverage | todo | Coverage is workload-driven and incomplete relative to full CUDA/PTX/SASS surface. |
-| Debug/Validation | Validation/debug env controls and tracing hooks | partially | Runtime/driver support includes validation toggles and tracing/debug-related options in parts of the stack; coverage and tooling depth vary. |
-| Debug/Validation | Profiling and diagnostics | partially | Some profiling/tracing hooks and diagnostics exist, but not a complete CUDA-compatible profiling/debug toolchain. |
-| Build/Packaging | Native driver/runtime library build (CMake) | ok | Builds `acuda_driver` and `acuda_runtime` with Vulkan and PTX compiler integration (per module README/build setup). |
-| Platform/Test | Windows PTX kit validation (Win32/x86, Vulkan 1.4 SDK env used in this workspace) | ok | Canonical `rtxdiasm_tests/tests/acuda/windows-kit` currently verified at **61/61 passing** in this workspace flow. |
-| Platform/Test | Cross-platform / conformant-GPU runtime validation | partially | WSL/software-Vulkan (e.g. llvmpipe) is not conformant for runtime correctness; broader platform/GPU validation depends on available conformant Vulkan environments. |
+| Initialization / Version | `cuInit`, `cuDriverGetVersion` | ok | Driver version reported for CUDA compatibility (see `driver-api.md`). |
+| Device | `cuDeviceGetCount/Get/GetName`, compute capability, total memory, UUID, PCI bus ID/query, common attributes | ok | Implemented subset for device discovery/characterization. |
+| Device | `cuDeviceGetAttribute` (full attribute coverage) | partially | Common characterization attributes covered; not all CUDA attributes are implemented. |
+| Device | P2P/mempool/query helpers (`GetP2PAttribute`, `CanAccessPeer`, default/mempool get-set, trim, RDMA flush no-op, etc.) | partially | Present for compatibility in subset form; behavior may be stubbed/limited compared to CUDA. |
+| Context | Create/destroy/push/pop/set/get-current/device/api-version/synchronize, limits/cache-config, detach | ok | Implemented as lightweight current markers over a shared Vulkan device (limited isolation). |
+| Context | Primary context APIs (`retain/release/reset/setflags/getstate`) | ok | Implemented for supported usage. |
+| Memory | `cuMemAlloc`, `cuMemFree`, `cuMemGetInfo` | ok | Linear allocation/free and live memory tracking for supported paths. |
+| Memory | Sync transfers/memset (`cuMemcpyHtoD/DtoH/DtoD`, `cuMemsetD32/D8`) | ok | Synchronous variants implemented; complete before return. |
+| Memory | Async memory operations and broader memory API coverage | partially/todo | Some async-related APIs exist in adjacent areas (e.g. memcpy2D/3D async variants), but general async memory API coverage/parity is incomplete. |
+| Module | `cuModuleLoadData`, `cuModuleLoadDataEx`, `cuModuleUnload`, `cuModuleGetFunction` | partially | PTX-focused path implemented; binary/cubin/fatbin handling depends on parser/lifter paths and documented constraints. |
+| Module | `cuModuleLoadFatBinary` | partially | Supports fatbin parsing/PTX extraction and optional SASS-to-PTX lifting paths (backend-dependent); unsupported/missing cases return errors (e.g. `INVALID_IMAGE`). |
+| Module | Globals/other module APIs (`cuModuleGetGlobal_v2`, libraries, etc.) | todo | Noted as missing/not yet on taken paths in current driver docs. |
+| Linker | `cuLinkCreate`, `cuLinkAddData`, `cuLinkAddFile[_v2]`, `cuLinkComplete`, `cuLinkDestroy` | partially | PTX-passthrough linker implemented for supported inputs; cubin/fatbin/object inputs rejected where unsupported. |
+| Launch / Function | `cuLaunchKernel` | partially | Implemented with documented constraints (e.g. 1D-oriented limits/assumptions, `sharedMem=0`, `extra=NULL`, specific arg marshalling expectations). |
+| Launch / Function | `cuLaunchKernelEx` | partially | Plain configs forwarded to `cuLaunchKernel`; extended attributes rejected (`INVALID_VALUE`). |
+| Launch / Function | `cuFuncGetAttribute`, `cuFuncSetAttribute` | partially | Implemented with driver/runtime-reported values and advisory/limited behavior where CUDA features are not backed by equivalent runtime capabilities. |
+| Occupancy / Execution control | `cuOccupancyMaxActiveBlocksPerMultiprocessor` and related APIs | todo | Driver occupancy APIs noted as missing in current docs. |
+| Streams | `cuStreamCreate/Destroy/Query/WaitEvent/GetFlags/GetPriority/Synchronize` (subset) | partially | Supported stream subset implemented; full CUDA stream semantics/parity not complete. |
+| Events | `cuEventCreate/Destroy/Record/Query/Synchronize` (subset) | partially | Supported event subset implemented; elapsed timing/query behavior depends on runtime support and is subset-scoped. |
+| Arrays / Texture objects | `cuArray*`, `cuMipmappedArray*`, `cuTexObject*` (supported formats/geometries) | partially | Implemented for documented formats/geometries and use-cases; unsupported cases return `NOT_SUPPORTED` or are limited. |
+| Memcpy 2D/3D (array/device/host) | `cuMemcpy2D[Async]`, `cuMemcpy3D[Async]` | partially | Supported paths implemented (including rectangle handling/staging as documented); not full CUDA coverage. |
+| Surface objects | `cuSurfObjectCreate/Destroy/GetResourceDesc` (supported cases) | partially | Supported array-backed surface cases implemented; unsupported resource types/arrays (e.g. depth/cube/multisampled in unsupported paths) rejected. |
+| Dispatch / Errors | `cuGetProcAddress[_v2]`, `cuGetErrorString`, `cuGetErrorName` | ok | Dispatch over implemented symbols and error string/name reporting implemented. |
+| Handle lifetime / ABI behavior | Driver handle ownership and compatibility behaviors | partially | Key fixes/behaviors implemented (e.g. function handle not consumed on launch), but full CUDA ABI/behavior parity is not guaranteed. |
+| Client compatibility (e.g. cudart/torch-facing symbols) | Additional driver symbols required by specific clients | partially | Targeted symbols/paths added for client compatibility, but some required APIs remain missing depending on workload/client path. |
 
-## Notes
-- This table is a high-level snapshot and should be updated as APIs/features evolve.
-- Detailed behavior, supported subsets, and known divergences are documented in:
-  - `README.md`
-  - `docs/driver-api.md`
-  - `docs/streams.md`
-  - `docs/device-module-linking.md`
-  - `docs/host-calls.md`
-- Some items are marked `partially` where functionality exists but full CUDA compatibility, performance parity, or edge-case coverage is not yet complete.
+## References
+- `docs/driver-api.md`
+- `docs/streams.md`
+- `README.md`
+
+## Scope note
+This table reflects the current documented/implemented subset of the driver library (`nvcuda.dll` / `libcuda.so`), not full CUDA Driver API compatibility.
