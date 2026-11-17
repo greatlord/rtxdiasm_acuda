@@ -269,3 +269,5 @@ CUresult module_from_sass_image(CUmodule *module, const unsigned char *data, siz
 #define ACUDA_HANDLE_FUNC 0x46554e43u
 #define ACUDA_HANDLE_KERNEL 0x4b45524eu
 CUresult handle_as_func(void *handle, CUfunction *out);
+
+CUresult bind_for(CUdeviceptr dptr, size_t bytes, VkBuffer *buf, size_t *offset);
