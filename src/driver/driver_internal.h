@@ -203,3 +203,5 @@ CUresult memcpy_d2d(CUdeviceptr dst, CUdeviceptr src, size_t bytes);
 
 driver_texobj_t *driver_tex_find(CUtexObject id);
 int driver_elem_bytes(uint32_t fmt);
+
+typedef void (ACUDA_CUDAAPI *acuda_stream_cb_t)(CUstream hStream, CUresult status, void *userData);
