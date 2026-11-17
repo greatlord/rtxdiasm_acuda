@@ -39,7 +39,7 @@ endif()
 # --- Runtime library (internal foundation used by driver/consumers) ---
 add_library(acuda_runtime STATIC
   src/runtime/error.c
-  src/runtime/context.c
+  src/runtime/context_init.c
   src/runtime/context_query.c
   src/runtime/context_highperf.c
   src/runtime/context_probe.c
