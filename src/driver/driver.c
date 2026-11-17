@@ -1,4 +1,4 @@
-#ifndef _GNU_SOURCE
+﻿#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 // CUDA Driver API over the ACuda runtime. Single-threaded.
@@ -18,6 +18,7 @@
 #include "acuda/context.h"
 #include "acuda/memory.h"
 #include "acuda/stream.h"
+#include "driver_stub.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -682,58 +683,6 @@ static CUresult need_init(void) {
 
 // Lazily creates the one shared Vulkan context for the process.
 
-/* Arity-only declarations for compatibility stubs whose definitions use
- * ABI-loose void* parameter lists. */
-CUresult ACUDA_CUDAAPI cuCtxDisablePeerAccess();
-CUresult ACUDA_CUDAAPI cuCtxEnablePeerAccess();
-CUresult ACUDA_CUDAAPI cuD3D10CtxCreateOnDevice();
-CUresult ACUDA_CUDAAPI cuD3D10GetDevice();
-CUresult ACUDA_CUDAAPI cuD3D10GetDevices();
-CUresult ACUDA_CUDAAPI cuD3D10GetDirect3DDevice();
-CUresult ACUDA_CUDAAPI cuD3D10MapResources();
-CUresult ACUDA_CUDAAPI cuD3D10RegisterResource();
-CUresult ACUDA_CUDAAPI cuD3D10UnmapResources();
-CUresult ACUDA_CUDAAPI cuD3D11CtxCreateOnDevice();
-CUresult ACUDA_CUDAAPI cuD3D11GetDevice();
-CUresult ACUDA_CUDAAPI cuD3D11GetDevices();
-CUresult ACUDA_CUDAAPI cuD3D11GetDirect3DDevice();
-CUresult ACUDA_CUDAAPI cuFuncSetCacheConfig();
-CUresult ACUDA_CUDAAPI cuFuncSetSharedMemConfig();
-CUresult ACUDA_CUDAAPI cuGLCtxCreate_v2();
-CUresult ACUDA_CUDAAPI cuGLGetDevices();
-CUresult ACUDA_CUDAAPI cuGLMapBufferObjectAsync_v2();
-CUresult ACUDA_CUDAAPI cuGLMapBufferObject_v2();
-CUresult ACUDA_CUDAAPI cuGLRegisterBufferObject();
-CUresult ACUDA_CUDAAPI cuGLSetBufferObjectMapFlags();
-CUresult ACUDA_CUDAAPI cuGLUnmapBufferObject();
-CUresult ACUDA_CUDAAPI cuGLUnmapBufferObjectAsync();
-CUresult ACUDA_CUDAAPI cuGLUnregisterBufferObject();
-CUresult ACUDA_CUDAAPI cuGraphicsD3D10RegisterResource();
-CUresult ACUDA_CUDAAPI cuGraphicsD3D11RegisterResource();
-CUresult ACUDA_CUDAAPI cuGraphicsD3D9RegisterResource();
-CUresult ACUDA_CUDAAPI cuGraphicsGLRegisterBuffer();
-CUresult ACUDA_CUDAAPI cuGraphicsGLRegisterImage();
-CUresult ACUDA_CUDAAPI cuGraphicsMapResources();
-CUresult ACUDA_CUDAAPI cuGraphicsResourceGetMappedMipmappedArray();
-CUresult ACUDA_CUDAAPI cuGraphicsResourceGetMappedPointer_v2();
-CUresult ACUDA_CUDAAPI cuGraphicsResourceSetMapFlags_v2();
-CUresult ACUDA_CUDAAPI cuGraphicsSubResourceGetMappedArray();
-CUresult ACUDA_CUDAAPI cuGraphicsUnmapResources();
-CUresult ACUDA_CUDAAPI cuMemAllocManaged();
-CUresult ACUDA_CUDAAPI cuMemcpy3DPeer();
-CUresult ACUDA_CUDAAPI cuMemcpy3DPeerAsync();
-CUresult ACUDA_CUDAAPI cuModuleGetSurfRef();
-CUresult ACUDA_CUDAAPI cuModuleLoad();
-CUresult ACUDA_CUDAAPI cuProfilerInitialize();
-CUresult ACUDA_CUDAAPI cuStreamAttachMemAsync();
-CUresult ACUDA_CUDAAPI cuSurfRefSetArray();
-CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc();
-CUresult ACUDA_CUDAAPI cuTexRefSetAddress2D_v3();
-CUresult ACUDA_CUDAAPI cuTexRefSetMipmapFilterMode();
-CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelBias();
-CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelClamp();
-CUresult ACUDA_CUDAAPI cuTexRefSetMipmappedArray();
-CUresult ACUDA_CUDAAPI cuWGLGetDevice();
 static CUresult need_actx(void) {
     CUresult r = need_init();
     if (r != CUDA_SUCCESS)
@@ -3061,7 +3010,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     /* One parameter-model fetch serves the launch-info log, the packed
      * argument walk, and the launch below.  acuda_kernel_info_t is
      * ~283 KiB (per-parameter name tables); keep exactly one live copy
-     * — worker threads that drive PhysX do not have stack to spare. */
+     * â€” worker threads that drive PhysX do not have stack to spare. */
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(f->k);
     if (!info)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_UNKNOWN, __LINE__); return CUDA_ERROR_UNKNOWN; }
@@ -7162,74 +7111,6 @@ CUresult ACUDA_CUDAAPI cuMemcpy3DAsync(const void *pCopy, CUstream hStream) {
  * unmodelled APIs.  All prototypes are arity-exact: the driver is
  * __stdcall on 32-bit Windows, so the callee must clean exactly the
  * pushed bytes. */
-static CUresult compat_unimpl(const char *name) {
-    ACUDA_DEBUG_PRINT("acuda-trace ?? %s -> NOT_SUPPORTED (compat stub)\n",
-                name);
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
-
-static CUresult compat_noop(const char *name) {
-    ACUDA_DEBUG_PRINT("acuda-trace ?? %s -> SUCCESS (compat no-op)\n",
-                name);
-    return CUDA_SUCCESS;
-}
-
-#define ACUDA_COMPAT_UNIMPL0(fn) \
-    CUresult ACUDA_CUDAAPI fn(void) { return compat_unimpl(#fn); }
-#define ACUDA_COMPAT_UNIMPL1(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a) { \
-        (void)a; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_UNIMPL2(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b) { \
-        (void)a; (void)b; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_UNIMPL3(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c) { \
-        (void)a; (void)b; (void)c; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_UNIMPL4(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c, void *d) { \
-        (void)a; (void)b; (void)c; (void)d; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_UNIMPL5(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c, void *d, \
-                              void *e) { \
-        (void)a; (void)b; (void)c; (void)d; (void)e; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_UNIMPL6(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c, void *d, void *e, \
-                              void *f) { \
-        (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; \
-        return compat_unimpl(#fn); \
-    }
-#define ACUDA_COMPAT_NOOP0(fn) \
-    CUresult ACUDA_CUDAAPI fn(void) { return compat_noop(#fn); }
-#define ACUDA_COMPAT_NOOP1(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a) { \
-        (void)a; \
-        return compat_noop(#fn); \
-    }
-#define ACUDA_COMPAT_NOOP2(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b) { \
-        (void)a; (void)b; \
-        return compat_noop(#fn); \
-    }
-#define ACUDA_COMPAT_NOOP3(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c) { \
-        (void)a; (void)b; (void)c; \
-        return compat_noop(#fn); \
-    }
-#define ACUDA_COMPAT_NOOP4(fn) \
-    CUresult ACUDA_CUDAAPI fn(void *a, void *b, void *c, void *d) { \
-        (void)a; (void)b; (void)c; (void)d; \
-        return compat_noop(#fn); \
-    }
 
 /* 2D/3D copy variants the runtime probes for. */
 CUresult ACUDA_CUDAAPI cuMemcpy2D_v2(const void *pCopy) {
@@ -7275,8 +7156,6 @@ CUresult ACUDA_CUDAAPI cuMemcpyPeerAsync(CUdeviceptr dst, CUcontext dstCtx,
 }
 
 /* Multi-device / IPC / graphics-interop copies: no second device here. */
-ACUDA_COMPAT_UNIMPL1(cuMemcpy3DPeer)
-ACUDA_COMPAT_UNIMPL2(cuMemcpy3DPeerAsync)
 
 /* Allocation queries. */
 CUresult ACUDA_CUDAAPI cuMemGetInfo_v2(size_t *freeBytes, size_t *totalBytes) {
@@ -7308,7 +7187,6 @@ CUresult ACUDA_CUDAAPI cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
     return r;
 }
 
-ACUDA_COMPAT_UNIMPL3(cuMemAllocManaged)
 
 /* Array descriptors: forward the versioned queries. */
 CUresult ACUDA_CUDAAPI cuArrayGetDescriptor_v2(CUDA_ARRAY_DESCRIPTOR *pDesc,
@@ -7324,11 +7202,8 @@ cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pDesc, CUarray hArray) {
 /* Legacy link entry points are defined alongside the _v2 variants above. */
 
 /* File-based module load: the runtime uses the fat-binary path instead. */
-ACUDA_COMPAT_UNIMPL2(cuModuleLoad)
 
 /* Surfaces are unused by the fluid kernels; texref orphans are real. */
-ACUDA_COMPAT_UNIMPL3(cuModuleGetSurfRef)
-ACUDA_COMPAT_UNIMPL3(cuSurfRefSetArray)
 
 CUresult ACUDA_CUDAAPI cuTexRefCreate(CUtexref *pTexRef) {
     if (!pTexRef)
@@ -7348,25 +7223,12 @@ CUresult ACUDA_CUDAAPI cuTexRefDestroy(CUtexref hTexRef) {
     return CUDA_SUCCESS;
 }
 
-ACUDA_COMPAT_UNIMPL4(cuTexRefSetAddress2D_v3)
-ACUDA_COMPAT_NOOP2(cuTexRefSetMipmapFilterMode)
-ACUDA_COMPAT_NOOP2(cuTexRefSetMipmapLevelBias)
-ACUDA_COMPAT_NOOP3(cuTexRefSetMipmapLevelClamp)
-ACUDA_COMPAT_NOOP3(cuTexRefSetMipmappedArray)
-ACUDA_COMPAT_UNIMPL2(cuTexObjectGetResourceViewDesc)
 
 /* Cache / shared-memory configuration: accepted, no separate hardware. */
-ACUDA_COMPAT_NOOP2(cuFuncSetCacheConfig)
-ACUDA_COMPAT_NOOP2(cuFuncSetSharedMemConfig)
 
 /* Peer access: single device, nothing to enable. */
-ACUDA_COMPAT_NOOP2(cuCtxEnablePeerAccess)
-ACUDA_COMPAT_NOOP1(cuCtxDisablePeerAccess)
 
 /* Profiler hooks: accepted, nothing recorded. */
-ACUDA_COMPAT_NOOP3(cuProfilerInitialize)
-ACUDA_COMPAT_NOOP0(cuProfilerStart)
-ACUDA_COMPAT_NOOP0(cuProfilerStop)
 
 /* Stream extensions. */
 CUresult ACUDA_CUDAAPI cuStreamCreateWithPriority(CUstream *phStream,
@@ -7395,44 +7257,8 @@ CUresult ACUDA_CUDAAPI cuStreamAddCallback(CUstream hStream,
     return CUDA_SUCCESS;
 }
 
-ACUDA_COMPAT_NOOP4(cuStreamAttachMemAsync)
 
 /* Direct3D / OpenGL / WGL / graphics interop: outside our model. */
-ACUDA_COMPAT_UNIMPL4(cuD3D10CtxCreateOnDevice)
-ACUDA_COMPAT_UNIMPL2(cuD3D10GetDevice)
-ACUDA_COMPAT_UNIMPL3(cuD3D10GetDevices)
-ACUDA_COMPAT_UNIMPL2(cuD3D10GetDirect3DDevice)
-ACUDA_COMPAT_UNIMPL2(cuD3D10MapResources)
-ACUDA_COMPAT_UNIMPL3(cuD3D10RegisterResource)
-ACUDA_COMPAT_UNIMPL2(cuD3D10UnmapResources)
-ACUDA_COMPAT_UNIMPL1(cuD3D10UnregisterResource)
-ACUDA_COMPAT_UNIMPL4(cuD3D11CtxCreateOnDevice)
-ACUDA_COMPAT_UNIMPL2(cuD3D11GetDevice)
-ACUDA_COMPAT_UNIMPL3(cuD3D11GetDevices)
-ACUDA_COMPAT_UNIMPL2(cuD3D11GetDirect3DDevice)
-ACUDA_COMPAT_UNIMPL3(cuGLCtxCreate_v2)
-ACUDA_COMPAT_UNIMPL3(cuGLGetDevices)
-ACUDA_COMPAT_UNIMPL0(cuGLInit)
-ACUDA_COMPAT_UNIMPL3(cuGLMapBufferObject_v2)
-ACUDA_COMPAT_UNIMPL4(cuGLMapBufferObjectAsync_v2)
-ACUDA_COMPAT_UNIMPL1(cuGLRegisterBufferObject)
-ACUDA_COMPAT_UNIMPL2(cuGLSetBufferObjectMapFlags)
-ACUDA_COMPAT_UNIMPL1(cuGLUnmapBufferObject)
-ACUDA_COMPAT_UNIMPL2(cuGLUnmapBufferObjectAsync)
-ACUDA_COMPAT_UNIMPL1(cuGLUnregisterBufferObject)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsD3D10RegisterResource)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsD3D11RegisterResource)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsD3D9RegisterResource)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsGLRegisterBuffer)
-ACUDA_COMPAT_UNIMPL4(cuGraphicsGLRegisterImage)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsMapResources)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsUnmapResources)
-ACUDA_COMPAT_UNIMPL1(cuGraphicsUnregisterResource)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsResourceGetMappedPointer_v2)
-ACUDA_COMPAT_UNIMPL2(cuGraphicsResourceSetMapFlags_v2)
-ACUDA_COMPAT_UNIMPL4(cuGraphicsSubResourceGetMappedArray)
-ACUDA_COMPAT_UNIMPL4(cuGraphicsResourceGetMappedMipmappedArray)
-ACUDA_COMPAT_UNIMPL2(cuWGLGetDevice)
 
 /* IPC handles: 64-byte structs passed by value, like the real driver. */
 CUresult ACUDA_CUDAAPI cuIpcCloseMemHandle(CUdeviceptr dptr) {
@@ -8010,3 +7836,4 @@ CUresult ACUDA_CUDAAPI cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src,
         return CUDA_ERROR_INVALID_VALUE;
     }
 }
+
