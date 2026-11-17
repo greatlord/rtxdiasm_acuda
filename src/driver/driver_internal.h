@@ -205,3 +205,6 @@ driver_texobj_t *driver_tex_find(CUtexObject id);
 int driver_elem_bytes(uint32_t fmt);
 
 typedef void (ACUDA_CUDAAPI *acuda_stream_cb_t)(CUstream hStream, CUresult status, void *userData);
+
+CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y, size_t z, void *host, size_t wbytes, size_t h, size_t depth, size_t pitch);
+CUresult driver_memcpy_common(size_t src_xb, size_t src_y, size_t src_z, CUmemorytype src_type, const void *src_host, CUdeviceptr src_dev, CUarray src_array, size_t src_pitch, size_t src_height, size_t dst_xb, size_t dst_y, size_t dst_z, CUmemorytype dst_type, void *dst_host, CUdeviceptr dst_dev, CUarray dst_array, size_t dst_pitch, size_t dst_height, size_t wbytes, size_t h, size_t depth);
