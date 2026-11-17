@@ -1739,9 +1739,14 @@ static acuda_status_t launch_host_common(acuda_context_t ctx,
         return ACUDA_ERROR_INVALID_VALUE;
     size_t shared_stride = info->host_shared_stride +
                            (((size_t)dyn_shared_bytes + 3u) & ~(size_t)3u);
-    if (groups > SIZE_MAX / shared_stride)
-        return ACUDA_ERROR_INVALID_VALUE;
-    size_t shared_total = groups * shared_stride;
+    size_t shared_total = 0;
+    if (shared_stride == 0) {
+        shared_total = 0;
+    } else {
+        if (groups > SIZE_MAX / shared_stride)
+            return ACUDA_ERROR_INVALID_VALUE;
+        shared_total = groups * shared_stride;
+    }
     if (shared_total > SIZE_MAX - 16)
         return ACUDA_ERROR_INVALID_VALUE;
     size_t state_offset = 16 + shared_total;
