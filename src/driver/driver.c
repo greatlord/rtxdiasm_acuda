@@ -45,7 +45,7 @@
  * (the 32-bit default is 512 MiB; real cards of the era had 1+ GiB).
  * ACUDA_DEVICE_MEM_MB=<n> overrides the reported total without touching
  * the arenas.  Cached once per process. */
-static unsigned long long acuda_device_mem_total(void) {
+unsigned long long acuda_device_mem_total(void) {
     static unsigned long long cached;
     static int cached_ok;
     if (!cached_ok) {
@@ -3550,18 +3550,6 @@ CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
     return CUDA_SUCCESS; // legacy no-op
 }
 
-CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    if (totalBytes)
-        *totalBytes = (size_t)acuda_device_mem_total();
-    if (freeBytes) {
-        size_t live = acuda_arena_live();
-        unsigned long long total = acuda_device_mem_total();
-        *freeBytes = total > live ? (size_t)(total - live) : 0;
-    }
-    return CUDA_SUCCESS;
-}
 
 CUresult ACUDA_CUDAAPI cuDeviceGetDefaultMemPool(CUmemPool *pool_out, CUdevice dev) {
     if (!pool_out)

@@ -28,3 +28,16 @@ CUresult ACUDA_CUDAAPI cuMemFree_v2(CUdeviceptr dptr) {
 CUresult ACUDA_CUDAAPI cuMemFree(CUdeviceptr dptr) {
     return cuMemFree_v2(dptr);
 }
+
+CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (totalBytes)
+        *totalBytes = (size_t)acuda_device_mem_total();
+    if (freeBytes) {
+        size_t live = acuda_arena_live();
+        unsigned long long total = acuda_device_mem_total();
+        *freeBytes = total > live ? (size_t)(total - live) : 0;
+    }
+    return CUDA_SUCCESS;
+}
