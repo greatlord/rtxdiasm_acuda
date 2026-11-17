@@ -342,3 +342,8 @@ CUresult ACUDA_CUDAAPI cuMemHostRegister_v2(void *p, size_t bytesize, unsigned i
 CUresult ACUDA_CUDAAPI cuMemHostUnregister(void *p) {
     return p ? CUDA_SUCCESS : CUDA_ERROR_INVALID_VALUE;
 }
+
+CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer_v2(void **pdst, void *p,
+                                                    unsigned int flags) {
+    return cuMemHostGetDevicePointer(pdst, p, flags);
+}

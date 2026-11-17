@@ -41,3 +41,27 @@ CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes) {
     }
     return CUDA_SUCCESS;
 }
+
+CUresult ACUDA_CUDAAPI cuMemGetInfo_v2(size_t *freeBytes, size_t *totalBytes) {
+    return cuMemGetInfo(freeBytes, totalBytes);
+}
+
+CUresult ACUDA_CUDAAPI cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
+                                         size_t widthInBytes, size_t height,
+                                         unsigned int elemSize) {
+    if (!dptr || !pPitch)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (elemSize == 0)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (height == 0)
+        height = 1;
+    size_t pitch = (widthInBytes + 511u) & ~(size_t)511u;
+    if (pitch == 0)
+        pitch = 512;
+    if (pitch > (size_t)-1 / height)
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    CUresult r = cuMemAlloc_v2(dptr, pitch * height);
+    if (r == CUDA_SUCCESS)
+        *pPitch = pitch;
+    return r;
+}

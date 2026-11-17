@@ -3680,34 +3680,8 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
 /* Multi-device / IPC / graphics-interop copies: no second device here. */
 
 /* Allocation queries. */
-CUresult ACUDA_CUDAAPI cuMemGetInfo_v2(size_t *freeBytes, size_t *totalBytes) {
-    return cuMemGetInfo(freeBytes, totalBytes);
-}
 
-CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer_v2(void **pdst, void *p,
-                                                    unsigned int flags) {
-    return cuMemHostGetDevicePointer(pdst, p, flags);
-}
 
-CUresult ACUDA_CUDAAPI cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
-                                         size_t widthInBytes, size_t height,
-                                         unsigned int elemSize) {
-    if (!dptr || !pPitch)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (elemSize == 0)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (height == 0)
-        height = 1;
-    size_t pitch = (widthInBytes + 511u) & ~(size_t)511u;
-    if (pitch == 0)
-        pitch = 512;
-    if (pitch > (size_t)-1 / height)
-        return CUDA_ERROR_OUT_OF_MEMORY;
-    CUresult r = cuMemAlloc_v2(dptr, pitch * height);
-    if (r == CUDA_SUCCESS)
-        *pPitch = pitch;
-    return r;
-}
 
 
 /* Array descriptors: forward the versioned queries. */
