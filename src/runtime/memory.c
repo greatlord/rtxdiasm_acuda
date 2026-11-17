@@ -54,10 +54,21 @@ static acuda_status_t alloc_impl(acuda_context_t ctx, acuda_buffer_t *out_buf,
         (uint64_t)bytes > (uint64_t)ctx->max_buffer_size)
         return ACUDA_ERROR_NOT_SUPPORTED;
 
+    // Subword stores are lowered via 32-bit atomic RMWs, so every storage
+    // buffer must cover at least one aligned word even for smaller logical
+    // allocations (e.g. 2-byte outputs).
+    size_t alloc_bytes = bytes;
+    if (alloc_bytes < 4)
+        alloc_bytes = 4;
+    alloc_bytes = (alloc_bytes + 3u) & ~(size_t)3u;
+    if (ctx->max_buffer_size &&
+        (uint64_t)alloc_bytes > (uint64_t)ctx->max_buffer_size)
+        alloc_bytes = bytes;
+
     acuda_buffer_t b = calloc(1, sizeof(*b));
     if (!b)
         return ACUDA_ERROR_OUT_OF_MEMORY;
-    b->size = bytes;
+    b->size = alloc_bytes;
     b->host_visible = host_visible;
 
     VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
@@ -67,7 +78,7 @@ static acuda_status_t alloc_impl(acuda_context_t ctx, acuda_buffer_t *out_buf,
         usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     VkBufferCreateInfo bci = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = bytes,
+        .size = alloc_bytes,
         .usage = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
