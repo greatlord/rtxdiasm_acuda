@@ -232,13 +232,6 @@ driver_surfobj_t *driver_surf_find(CUsurfObject id) {
 
 
 
-driver_texobj_t *driver_tex_find(CUtexObject id) {
-    for (size_t i = 0; i < g_ntexobjs; i++)
-        if (g_texobjs[i].id == id)
-            return &g_texobjs[i];
-    return NULL;
-}
-
 CUresult map_status(acuda_status_t st) {
     switch (st) {
     case ACUDA_SUCCESS: return CUDA_SUCCESS;
@@ -309,34 +302,7 @@ CUresult need_ctx(CUcontext *out) {
 
 
 
-// CUDA 12.4 extended launch. Field offsets mirror NVIDIA's
-// CUlaunchConfig exactly (verified against cuda.h in the cu126 pip
-// wheel: 7x u32 dims+shared, ptr stream, ptr attrs, u32 numAttrs).
-// Extended attributes are NOT supported: any attrs -> INVALID_VALUE.
-// Plain configs forward to cuLaunchKernel (same 1D/sharedMem=0 rules).
 
-
-
-
-
-
-CUresult ACUDA_CUDAAPI cuStreamGetCtx(CUstream hStream, CUcontext *pctx);
-CUresult ACUDA_CUDAAPI cuStreamGetCtx_v2(CUstream hStream, CUcontext *pctx,
-                           void *pGreenCtx);
-CUresult ACUDA_CUDAAPI cuStreamGetDevice(CUstream hStream, CUdevice *device);
-CUresult ACUDA_CUDAAPI cuStreamGetId(CUstream hStream, unsigned long long *streamId);
-CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdeviceptr ptr);
-CUresult ACUDA_CUDAAPI cuPointerGetAttributes(unsigned int numAttributes,
-                                int *attributes, void **data,
-                                CUdeviceptr ptr);
-CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer(void **pdst, void *p, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuMemHostGetFlags(unsigned int *flags, void *p);
-CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p);
-CUresult ACUDA_CUDAAPI cuMemHostRegister(void *p, size_t bytesize, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuMemHostRegister_v2(void *p, size_t bytesize, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuMemHostUnregister(void *p);
 
 
 /* ---- Device characterization, primary contexts, misc (torch init path) ---- */
@@ -380,35 +346,4 @@ typedef enum { CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE_s = 0 } CUtensorMapFloatOOBfill
 
 
 /* Array descriptors: forward the versioned queries. */
-
-/* Legacy link entry points are defined alongside the _v2 variants above. */
-
-/* File-based module load: the runtime uses the fat-binary path instead. */
-
-/* Surfaces are unused by the fluid kernels; texref orphans are real. */
-
-
-
-/* Cache / shared-memory configuration: accepted, no separate hardware. */
-
-/* Peer access: single device, nothing to enable. */
-
-/* Profiler hooks: accepted, nothing recorded. */
-
-/* Stream extensions. */
-
-
-/* Direct3D / OpenGL / WGL / graphics interop: outside our model. */
-
-/* IPC handles: 64-byte structs passed by value, like the real driver. */
-
-
-
-
-
-
-
-
-
-
 

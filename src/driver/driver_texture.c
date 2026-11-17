@@ -843,3 +843,10 @@ void driver_img_type(acuda_buffer_t img, int *dim, int *arrayed,
     *arrayed = !img->dim3d && img->layers > 1;
     *isint = img->format == 3 ? 1 : (img->format == 0 ? 0 : -1);
 }
+
+driver_texobj_t *driver_tex_find(CUtexObject id) {
+    for (size_t i = 0; i < g_ntexobjs; i++)
+        if (g_texobjs[i].id == id)
+            return &g_texobjs[i];
+    return NULL;
+}
