@@ -1788,32 +1788,6 @@ CUresult ACUDA_CUDAAPI cuModuleLoadFatBinary(CUmodule *module, const void *fatCu
     return CUDA_ERROR_INVALID_IMAGE;
 }
 
-CUresult ACUDA_CUDAAPI cuModuleUnload(CUmodule module) {
-    if (!module)
-        return CUDA_ERROR_INVALID_HANDLE;
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    for (size_t i = 0; i < module->nfuncs; i++)
-        acuda_kernel_free(module->funcs[i].k);
-    for (size_t i = 0; i < module->ntexrefs; i++) {
-        struct CUtexref_st *tr = module->texrefs[i];
-        if (tr) {
-            if (tr->obj)
-                cuTexObjectDestroy(tr->obj);
-            free(tr);
-        }
-    }
-    for (size_t i = 0; i < module->nglobals; i++)
-        if (module->globals[i].dptr)
-            cuMemFree_v2(module->globals[i].dptr);
-    free(module->globals);
-    free(module->texrefs);
-    free(module->funcs);
-    free(module->ptx);
-    free(module->image);
-    free(module);
-    return CUDA_SUCCESS;
-}
 
 static char *replace_text(const char *src, const char *from,
                          const char *to) {
