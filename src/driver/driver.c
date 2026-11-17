@@ -4608,32 +4608,6 @@ CUresult ACUDA_CUDAAPI cuMemGetAddressRange_v2(CUdeviceptr *pbase, size_t *psize
                                  CUdeviceptr dptr) {
     return cuMemGetAddressRange(pbase, psize, dptr);
 }
-/* Async entry points run synchronously on the default stream. */
-CUresult ACUDA_CUDAAPI cuMemsetD32Async(CUdeviceptr dst, unsigned int value,
-                          size_t count, void *stream) {
-    (void)stream;
-    return cuMemsetD32_v2(dst, value, count);
-}
-CUresult ACUDA_CUDAAPI cuMemsetD8Async(CUdeviceptr dst, unsigned char value,
-                         size_t count, void *stream) {
-    (void)stream;
-    return cuMemsetD8_v2(dst, value, count);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyHtoDAsync_v2(CUdeviceptr dst, const void *src,
-                              size_t bytes, void *stream) {
-    (void)stream;
-    return cuMemcpyHtoD_v2(dst, src, bytes);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyDtoHAsync_v2(void *dst, CUdeviceptr src,
-                              size_t bytes, void *stream) {
-    (void)stream;
-    return cuMemcpyDtoH_v2(dst, src, bytes);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyDtoDAsync_v2(CUdeviceptr dst, CUdeviceptr src,
-                              size_t bytes, void *stream) {
-    (void)stream;
-    return cuMemcpyDtoD_v2(dst, src, bytes);
-}
 /* Stream memory operations are accepted as no-ops; the software paths
  * that use them are not scheduled on this backend. */
 CUresult ACUDA_CUDAAPI cuStreamWriteValue32(void *stream, CUdeviceptr addr,
@@ -4722,37 +4696,6 @@ CUresult ACUDA_CUDAAPI cuStreamGetCaptureInfo_v3(void *stream, int *status,
         *edgeData = NULL;
     return cuStreamGetCaptureInfo_v2(stream, status, id, graph, deps,
                                      numDeps);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyHtoDAsync(CUdeviceptr dst, const void *src,
-                           size_t bytes, void *stream) {
-    return cuMemcpyHtoDAsync_v2(dst, src, bytes, stream);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyDtoHAsync(void *dst, CUdeviceptr src, size_t bytes,
-                           void *stream) {
-    return cuMemcpyDtoHAsync_v2(dst, src, bytes, stream);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyDtoDAsync(CUdeviceptr dst, CUdeviceptr src,
-                           size_t bytes, void *stream) {
-    return cuMemcpyDtoDAsync_v2(dst, src, bytes, stream);
-}
-CUresult ACUDA_CUDAAPI cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src,
-                       size_t bytes, int kind, void *stream) {
-    (void)stream;
-    switch (kind) {
-    case 1: /* HtoD */
-        return cuMemcpyHtoD_v2(dst, (const void *)(uintptr_t)src, bytes);
-    case 2: /* DtoH */
-        return cuMemcpyDtoH_v2((void *)(uintptr_t)dst, src, bytes);
-    case 3: /* DtoD */
-        return cuMemcpyDtoD_v2(dst, src, bytes);
-    default:
-        if (kind == 0) { /* HtoH */
-            memcpy((void *)(uintptr_t)dst, (const void *)(uintptr_t)src,
-                   bytes);
-            return CUDA_SUCCESS;
-        }
-        return CUDA_ERROR_INVALID_VALUE;
-    }
 }
 
 

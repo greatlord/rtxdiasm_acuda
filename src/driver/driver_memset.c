@@ -179,3 +179,15 @@ CUresult ACUDA_CUDAAPI cuMemsetD2D32Async(CUdeviceptr dst, size_t pitch,
     (void)hStream;
     return memset_d2d(dst, pitch, value, width, height, 4);
 }
+
+/* Async entry points run synchronously on the default stream. */
+CUresult ACUDA_CUDAAPI cuMemsetD32Async(CUdeviceptr dst, unsigned int value,
+                          size_t count, void *stream) {
+    (void)stream;
+    return cuMemsetD32_v2(dst, value, count);
+}
+CUresult ACUDA_CUDAAPI cuMemsetD8Async(CUdeviceptr dst, unsigned char value,
+                         size_t count, void *stream) {
+    (void)stream;
+    return cuMemsetD8_v2(dst, value, count);
+}
