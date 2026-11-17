@@ -13,7 +13,7 @@
 #if defined(_M_IX86)
 #include <intrin.h>
 #endif
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 #include "acuda/driver/arena.h"
 #include "acuda/driver/rtxdisam_bridge.h"
 #include "acuda/driver.h"

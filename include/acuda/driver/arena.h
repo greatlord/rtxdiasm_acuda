@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <vulkan/vulkan.h>
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 #if defined(__i386__) || (defined(_WIN32) && !defined(_WIN64))
 // A 32-bit host cannot reserve the 8 GiB virtual window used on 64-bit hosts.
