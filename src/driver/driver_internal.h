@@ -244,3 +244,5 @@ static inline void acuda_trace_va(const char *tag) {
 #else
 static inline void acuda_trace_va(const char *tag) { (void)tag; }
 #endif
+
+CUcontext current_ctx(void);

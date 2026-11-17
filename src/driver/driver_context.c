@@ -101,3 +101,89 @@ CUresult ACUDA_CUDAAPI cuCtxSynchronize(void) {
     return map_status(acuda_stream_synchronize(g_actx, NULL));
 }
 
+
+CUcontext current_ctx(void) {
+    return g_depth > 0 ? g_stack[g_depth - 1] : NULL;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxGetCurrent(CUcontext *pctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxGetCurrent\n");
+    if (!pctx)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    *pctx = current_ctx();
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxSetCurrent(CUcontext ctx) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSetCurrent(%p)\n", (void *)ctx);
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!ctx) {
+        g_depth = 0;
+        return CUDA_SUCCESS;
+    }
+    return ctx_push(ctx);
+}
+
+CUresult ACUDA_CUDAAPI cuCtxGetDevice(CUdevice *device) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxGetDevice\n");
+    if (!device)
+        return CUDA_ERROR_INVALID_VALUE;
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    *device = c->device;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxGetApiVersion(CUcontext ctx, unsigned int *version) {
+    (void)ctx;
+    if (!version)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    *version = ACUDA_DRIVER_VERSION;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxGetLimit(size_t *pvalue, int limit) {
+    (void)limit;
+    if (!pvalue)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    *pvalue = 0;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxSetLimit(int limit, size_t value) {
+    (void)limit;
+    (void)value;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxSetCacheConfig(int config) {
+    (void)config;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxGetCacheConfig(int *config) {
+    if (!config)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    *config = 0;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
+    (void)ctx;
+    return CUDA_SUCCESS; // legacy no-op
+}
