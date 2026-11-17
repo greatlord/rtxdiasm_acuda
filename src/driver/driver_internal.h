@@ -277,3 +277,6 @@ void acuda_install_veh(void);
 int cc_major(void);
 int cc_minor(void);
 CUresult need_actx(void);
+
+int looks_like_ptx(const char *text);
+CUresult load_sass_image(CUmodule *module, const unsigned char *data, size_t size);
