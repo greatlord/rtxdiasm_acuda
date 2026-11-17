@@ -4031,42 +4031,6 @@ CUresult ACUDA_CUDAAPI cuMemHostUnregister(void *p) {
     return p ? CUDA_SUCCESS : CUDA_ERROR_INVALID_VALUE;
 }
 
-CUresult ACUDA_CUDAAPI cuStreamGetCtx(CUstream hStream, CUcontext *pctx) {
-    if (!pctx)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (hStream) {
-        *pctx = hStream->ctx;
-        return CUDA_SUCCESS;
-    }
-    return need_ctx(pctx) == CUDA_SUCCESS ? CUDA_SUCCESS
-                                          : CUDA_ERROR_NOT_INITIALIZED;
-}
-
-CUresult ACUDA_CUDAAPI cuStreamGetCtx_v2(CUstream hStream, CUcontext *pctx,
-                           void *pGreenCtx) {
-    if (pGreenCtx)
-        *(void **)pGreenCtx = NULL;
-    return cuStreamGetCtx(hStream, pctx);
-}
-
-CUresult ACUDA_CUDAAPI cuStreamGetDevice(CUstream hStream, CUdevice *device) {
-    (void)hStream;
-    if (!device)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    *device = 0;
-    return CUDA_SUCCESS;
-}
-
-CUresult ACUDA_CUDAAPI cuStreamGetId(CUstream hStream, unsigned long long *streamId) {
-    if (!streamId)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    *streamId = (unsigned long long)(uintptr_t)hStream;
-    return CUDA_SUCCESS;
-}
 
 /* Stubs for newer driver APIs that may be linked by torch */
 typedef struct CUtensorMap_st *CUtensorMap_t;
