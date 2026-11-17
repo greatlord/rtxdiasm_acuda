@@ -3701,23 +3701,6 @@ cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pDesc, CUarray hArray) {
 
 /* Surfaces are unused by the fluid kernels; texref orphans are real. */
 
-CUresult ACUDA_CUDAAPI cuTexRefCreate(CUtexref *pTexRef) {
-    if (!pTexRef)
-        return CUDA_ERROR_INVALID_VALUE;
-    CUtexref tr = calloc(1, sizeof(*tr));
-    if (!tr)
-        return CUDA_ERROR_OUT_OF_MEMORY;
-    snprintf(tr->name, sizeof(tr->name), "orphan");
-    *pTexRef = tr;
-    return CUDA_SUCCESS;
-}
-
-CUresult ACUDA_CUDAAPI cuTexRefDestroy(CUtexref hTexRef) {
-    if (!hTexRef)
-        return CUDA_ERROR_INVALID_HANDLE;
-    free(hTexRef);
-    return CUDA_SUCCESS;
-}
 
 
 /* Cache / shared-memory configuration: accepted, no separate hardware. */
