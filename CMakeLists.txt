@@ -56,6 +56,7 @@ add_library(acuda_runtime STATIC
   src/runtime/event.c
   src/runtime/memory.c
   src/runtime/texture_image.c
+  src/runtime/texture_create.c
   src/runtime/texture_fill.c
   src/runtime/texture_io.c
   src/runtime/texture_api.c

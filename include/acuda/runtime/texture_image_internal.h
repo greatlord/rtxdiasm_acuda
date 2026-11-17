@@ -6,6 +6,13 @@
 VkFormat image_vkformat(uint32_t f);
 uint32_t image_elem_bytes(uint32_t f);
 int image_is_depth(uint32_t f);
+int image_format_storage_ok(acuda_context_t ctx, VkFormat fmt);
+uint32_t find_image_mem(acuda_context_t ctx, uint32_t bits);
+void image_range(acuda_buffer_t b, VkImageSubresourceRange *r);
+void image_barrier(VkCommandBuffer cmd, acuda_buffer_t b,
+                   VkImageLayout from, VkImageLayout to,
+                   VkAccessFlags src, VkAccessFlags dst,
+                   VkPipelineStageFlags sp, VkPipelineStageFlags dp);
 void image_barrier_img(VkCommandBuffer cmd, acuda_buffer_t b,
                        VkImage img, VkImageLayout from, VkImageLayout to,
                        VkAccessFlags src, VkAccessFlags dst,
