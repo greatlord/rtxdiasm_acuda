@@ -3,6 +3,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+driver_texobj_t *g_texobjs;
+size_t g_ntexobjs, g_ctexobjs;
+CUtexObject g_next_texid = 1;
+
+driver_surfobj_t *g_surfobjs;
+size_t g_nsurfobjs, g_csurfobjs;
+acuda_buffer_t *g_surf_slots;
+uint32_t g_surf_slot_cap;
+
 // ---- CUDA texture arrays and texture objects -------------------------
 
 int driver_elem_bytes(uint32_t fmt) {

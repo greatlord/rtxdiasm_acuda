@@ -3,6 +3,126 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_M_IX86)
+/* PhysXCore crashes on an unchecked allocator return.  A vectored handler
+ * lets us capture the registers at the fault without a debugger: if eax is
+ * NULL and the fault address is 0x10, the allocator returned NULL. */
+static HANDLE g_veh_log = INVALID_HANDLE_VALUE;
+
+/* Probe whether [p, p+n) is committed readable memory.  Used by the
+ * VEH so fault-context garbage can never crash the handler itself. */
+static int acuda_can_read(const void *p, size_t n) {
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = (uintptr_t)p;
+    uintptr_t base, len;
+    if (!p || n == 0 || addr + n < addr)
+        return 0;
+#if defined(_WIN32)
+    if (VirtualQuery(p, &mbi, sizeof(mbi)) != sizeof(mbi))
+        return 0;
+    if (mbi.State != MEM_COMMIT)
+        return 0;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))
+        return 0;
+    base = (uintptr_t)mbi.BaseAddress;
+    len = (uintptr_t)mbi.RegionSize;
+    if (addr < base || addr + n > base + len)
+        return 0;
+    return 1;
+#else
+    (void)addr;
+    return 1;
+#endif
+}
+
+static LONG CALLBACK acuda_veh(EXCEPTION_POINTERS *ep) {
+    if (!g_veh_log || g_veh_log == INVALID_HANDLE_VALUE)
+        return EXCEPTION_CONTINUE_SEARCH;
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+        return EXCEPTION_CONTINUE_SEARCH;
+    unsigned long fn = 0;
+    unsigned long modbase = 0;
+    unsigned int count16 = 0;
+    unsigned long stk[8] = {0};
+    /* The faulting context can carry garbage registers (e.g. Esi=0x200
+     * after a bad user-mode read); validate every probe address with
+     * VirtualQuery first so the diagnostic handler itself can never
+     * fault.  A nested fault inside a VEH would otherwise terminate
+     * the process with no log. */
+    {
+        HMODULE h = GetModuleHandleA("PhysXCore.dll");
+        modbase = (unsigned long)(uintptr_t)h;
+        if (h && acuda_can_read((const void *)(uintptr_t)(modbase +
+                                                          0x2f4048u),
+                                sizeof(fn)))
+            fn = *(volatile unsigned long *)(modbase + 0x2f4048u);
+        {
+            const void *cp =
+                (const void *)(uintptr_t)(ep->ContextRecord->Esi + 0x2b4u);
+            if (acuda_can_read(cp, sizeof(unsigned short)))
+                count16 = *(volatile unsigned short *)cp;
+            else
+                count16 = 0xffffffffu;
+        }
+        {
+            const unsigned long *sp =
+                (const unsigned long *)(uintptr_t)ep->ContextRecord->Esp;
+            for (int i = 0; i < 8; i++)
+                if (acuda_can_read(sp + i, sizeof(sp[i])))
+                    stk[i] = sp[i];
+                else
+                    stk[i] = 0xddddddddul;
+        }
+    }
+    MEMORYSTATUSEX ms;
+    ms.dwLength = sizeof(ms);
+    GlobalMemoryStatusEx(&ms);
+    char buf[512];
+    int n = _snprintf(
+        buf, sizeof(buf),
+        "acuda-veh AV at %p op=%llu addr=%p eax=%08lx ecx=%08lx "
+        "esi=%08lx edi=%08lx ebp=%08lx esp=%08lx eip=%08lx "
+        "mod=%08lx fn4048=%08lx cnt2b4=%u availcommit=%llu\r\n"
+        "acuda-veh stack: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\r\n",
+        ep->ExceptionRecord->ExceptionAddress,
+        (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0],
+        (void *)ep->ExceptionRecord->ExceptionInformation[1],
+        (unsigned long)ep->ContextRecord->Eax,
+        (unsigned long)ep->ContextRecord->Ecx,
+        (unsigned long)ep->ContextRecord->Esi,
+        (unsigned long)ep->ContextRecord->Edi,
+        (unsigned long)ep->ContextRecord->Ebp,
+        (unsigned long)ep->ContextRecord->Esp,
+        (unsigned long)ep->ContextRecord->Eip, modbase, fn, count16,
+        (unsigned long long)ms.ullAvailPageFile,
+        stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+    if (n > 0) {
+        DWORD w = 0;
+        WriteFile(g_veh_log, buf, (DWORD)n, &w, NULL);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void acuda_install_veh(void) {
+    static int done = 0;
+    if (done)
+        return;
+    done = 1;
+    const char *tp = getenv("ACUDA_TRACE_FILE");
+    if (!tp || !*tp)
+        return;
+    g_veh_log = CreateFileA(tp, FILE_APPEND_DATA,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (g_veh_log != INVALID_HANDLE_VALUE)
+        AddVectoredExceptionHandler(1, acuda_veh);
+}
+#endif
+
+#if defined(_M_IX86)
+#pragma comment(linker, "/export:cuInit=_cuInit@4")
+#endif
+
 CUresult ACUDA_CUDAAPI cuInit(unsigned int flags) {
     /* Allow trace capture from GUI apps whose stderr is not wired
      * anywhere (FluidMark): ACUDA_TRACE_FILE=<path> redirects stderr. */

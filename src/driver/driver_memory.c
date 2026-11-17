@@ -1,5 +1,21 @@
 ﻿#include "driver_internal.h"
 
+/* Diagnostics: PhysX-era capability gates may key off total device memory
+ * (the 32-bit default is 512 MiB; real cards of the era had 1+ GiB).
+ * ACUDA_DEVICE_MEM_MB=<n> overrides the reported total without touching
+ * the arenas.  Cached once per process. */
+unsigned long long acuda_device_mem_total(void) {
+    static unsigned long long cached;
+    static int cached_ok;
+    if (!cached_ok) {
+        const char *s = getenv("ACUDA_DEVICE_MEM_MB");
+        unsigned long mb = s && *s ? strtoul(s, NULL, 0) : 0;
+        cached = mb ? (unsigned long long)mb << 20 : ACUDA_DEVICE_MEM;
+        cached_ok = 1;
+    }
+    return cached;
+}
+
 CUresult ACUDA_CUDAAPI cuMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize) {
     return mem_alloc(dptr, bytesize);
 }
