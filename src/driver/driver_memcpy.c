@@ -149,3 +149,144 @@ CUresult ACUDA_CUDAAPI cuMemcpyPeerAsync(CUdeviceptr dst, CUcontext dstCtx,
     return cuMemcpyPeer(dst, dstCtx, src, srcCtx, bytes);
 }
 
+
+
+ CUresult memcpy_h2d(CUdeviceptr dst, const void *src, size_t bytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyHtoD(dst=%llx bytes=%zu)\n",
+                (unsigned long long)dst, bytes);
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    (void)c;
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!src)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (bytes == 0)
+        return CUDA_SUCCESS;
+    void *host = NULL;
+    r = host_for(dst, bytes, &host);
+    if (r != CUDA_SUCCESS)
+        return r;
+    // Host-visible coherent: plain copy, ordered after default-stream work.
+    r = map_status(acuda_stream_synchronize(g_actx, NULL));
+    if (r != CUDA_SUCCESS)
+        return r;
+    memcpy(host, src, bytes);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyHtoD_v2(CUdeviceptr dst, const void *src, size_t bytes) {
+    return memcpy_h2d(dst, src, bytes);
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyHtoD(CUdeviceptr dst, const void *src, size_t bytes) {
+    return memcpy_h2d(dst, src, bytes);
+}
+
+ CUresult memcpy_d2h(void *dst, CUdeviceptr src, size_t bytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyDtoH(dst=%p src=%llx bytes=%zu)\n",
+                dst, (unsigned long long)src, bytes);
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    (void)c;
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!dst)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (bytes == 0)
+        return CUDA_SUCCESS;
+    void *host = NULL;
+    r = host_for(src, bytes, &host);
+    if (r != CUDA_SUCCESS)
+        return r;
+    r = map_status(acuda_stream_synchronize(g_actx, NULL));
+    if (r != CUDA_SUCCESS)
+        return r;
+    memcpy(dst, host, bytes);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyDtoH_v2(void *dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_d2h(dst, src, bytes);
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyDtoH(void *dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_d2h(dst, src, bytes);
+}
+
+CUresult memcpy_d2d(CUdeviceptr dst, CUdeviceptr src, size_t bytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyDtoD(dst=%llx src=%llx bytes=%zu)\n",
+                (unsigned long long)dst, (unsigned long long)src, bytes);
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    (void)c;
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (bytes == 0)
+        return CUDA_SUCCESS;
+    void *hd = NULL, *hs = NULL;
+    r = host_for(dst, bytes, &hd);
+    if (r != CUDA_SUCCESS)
+        return r;
+    r = host_for(src, bytes, &hs);
+    if (r != CUDA_SUCCESS)
+        return r;
+    r = map_status(acuda_stream_synchronize(g_actx, NULL));
+    if (r != CUDA_SUCCESS)
+        return r;
+    memmove(hd, hs, bytes);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyDtoD_v2(CUdeviceptr dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_d2d(dst, src, bytes);
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyDtoD(CUdeviceptr dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_d2d(dst, src, bytes);
+}
+
+// Generic copy used by CUDA 13 cudart for the scalar `.item()` path.
+// Dispatch on which side is arena-backed; host/host stays a plain copy.
+static CUresult memcpy_generic(CUdeviceptr dst, CUdeviceptr src,
+                               size_t bytes) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    (void)c;
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (bytes == 0)
+        return CUDA_SUCCESS;
+    if (!dst || !src)
+        return CUDA_ERROR_INVALID_VALUE;
+    size_t cap = 0;
+    int ddev = acuda_arena_capacity(dst, &cap) == 0;
+    int sdev = acuda_arena_capacity(src, &cap) == 0;
+    if (ddev && sdev)
+        return memcpy_d2d(dst, src, bytes);
+    if (ddev)
+        return memcpy_h2d(dst, (const void *)(uintptr_t)src, bytes);
+    if (sdev)
+        return memcpy_d2h((void *)(uintptr_t)dst, src, bytes);
+    memcpy((void *)(uintptr_t)dst, (const void *)(uintptr_t)src, bytes);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpy(CUdeviceptr dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_generic(dst, src, bytes);
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpy_v2(CUdeviceptr dst, CUdeviceptr src, size_t bytes) {
+    return memcpy_generic(dst, src, bytes);
+}
+
+// CUDA 13.4 cudart probes the attributed-copy entry point for scalar
+// readback.  The attributes are placement hints; the copy itself is
+// the same.
+CUresult ACUDA_CUDAAPI cuMemcpyWithAttributesAsync(CUdeviceptr dst, CUdeviceptr src,
+                                     size_t bytes, void *attr,
+                                     void *stream) {
+    (void)attr;
+    (void)stream;
+    return memcpy_generic(dst, src, bytes);
+}
