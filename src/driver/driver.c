@@ -3632,64 +3632,6 @@ CUresult ACUDA_CUDAAPI cuMemPoolTrimTo(CUmemPool pool, size_t minBytesToKeep) {
     return CUDA_SUCCESS;
 }
 
-CUresult ACUDA_CUDAAPI cuStreamQuery(CUstream hStream) {
-    CUcontext c = NULL;
-    CUresult r = need_ctx(&c);
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (!hStream)
-        return CUDA_SUCCESS; // default stream: host-synchronous view
-    if (hStream->ctx != c)
-        return CUDA_ERROR_INVALID_HANDLE;
-    uint64_t done = 0, last = hStream->s->last_submitted;
-    if (last == 0)
-        return CUDA_SUCCESS;
-    if (vkGetSemaphoreCounterValue(g_actx->device, hStream->s->timeline,
-                                   &done) != VK_SUCCESS)
-        return CUDA_ERROR_UNKNOWN;
-    return done >= last ? CUDA_SUCCESS : CUDA_ERROR_NOT_READY;
-}
-
-CUresult ACUDA_CUDAAPI cuStreamWaitEvent(CUstream hStream, CUevent hEvent,
-                           unsigned int flags) {
-    (void)flags;
-    if (!hEvent)
-        return CUDA_ERROR_INVALID_HANDLE;
-    CUcontext c = NULL;
-    CUresult r = need_ctx(&c);
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (hEvent->ctx != c)
-        return CUDA_ERROR_INVALID_HANDLE;
-    acuda_stream_t s = NULL;
-    if (hStream) {
-        if (hStream->ctx != c)
-            return CUDA_ERROR_INVALID_HANDLE;
-        s = hStream->s;
-    }
-    return map_status(acuda_stream_wait_event(g_actx, s, hEvent->e));
-}
-
-CUresult ACUDA_CUDAAPI cuStreamGetFlags(CUstream hStream, unsigned int *flags) {
-    (void)hStream;
-    if (!flags)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    *flags = 0;
-    return CUDA_SUCCESS;
-}
-
-CUresult ACUDA_CUDAAPI cuStreamGetPriority(CUstream hStream, int *priority) {
-    (void)hStream;
-    if (!priority)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
-    *priority = 0;
-    return CUDA_SUCCESS;
-}
-
 CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdeviceptr ptr) {
     if (!data)
         return CUDA_ERROR_INVALID_VALUE;
