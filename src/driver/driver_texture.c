@@ -826,3 +826,13 @@ CUresult ACUDA_CUDAAPI cuTexRefDestroy(CUtexref hTexRef) {
     free(hTexRef);
     return CUDA_SUCCESS;
 }
+
+CUresult ACUDA_CUDAAPI cuArrayGetDescriptor_v2(CUDA_ARRAY_DESCRIPTOR *pDesc,
+                                               CUarray hArray) {
+    return cuArrayGetDescriptor(pDesc, hArray);
+}
+
+CUresult ACUDA_CUDAAPI
+cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pDesc, CUarray hArray) {
+    return cuArray3DGetDescriptor(pDesc, hArray);
+}

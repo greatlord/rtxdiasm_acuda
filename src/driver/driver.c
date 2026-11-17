@@ -3685,15 +3685,6 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
 
 
 /* Array descriptors: forward the versioned queries. */
-CUresult ACUDA_CUDAAPI cuArrayGetDescriptor_v2(CUDA_ARRAY_DESCRIPTOR *pDesc,
-                                               CUarray hArray) {
-    return cuArrayGetDescriptor(pDesc, hArray);
-}
-
-CUresult ACUDA_CUDAAPI
-cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pDesc, CUarray hArray) {
-    return cuArray3DGetDescriptor(pDesc, hArray);
-}
 
 /* Legacy link entry points are defined alongside the _v2 variants above. */
 
