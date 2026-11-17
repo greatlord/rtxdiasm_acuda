@@ -500,64 +500,6 @@ CUresult need_ctx(CUcontext *out) {
 // Device pointers are arena virtual addresses (base+offset), so caching
 // allocators and sub-views work with plain arithmetic. Resolved to host
 // memory (persistently mapped, coherent) or to (buffer, offset) binds.
-CUresult host_for(CUdeviceptr dptr, size_t bytes, void **host) {
-    if (!dptr || !host)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (acuda_arena_host((uint64_t)dptr, bytes, host) != 0)
-        return CUDA_ERROR_INVALID_VALUE;
-    return CUDA_SUCCESS;
-}
-
-CUresult bind_for(CUdeviceptr dptr, size_t bytes, VkBuffer *buf,
-                         size_t *offset) {
-    if (!dptr || !buf || !offset)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (acuda_arena_bind((uint64_t)dptr, bytes, buf, offset) != 0)
-        return CUDA_ERROR_INVALID_VALUE;
-    return CUDA_SUCCESS;
-}
-
-
- int device_pci_info(CUdevice dev, acuda_device_info_t *info);
-
-
-
-
-CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
-    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu)\n", bytesize);
-    if (!dptr)
-        return CUDA_ERROR_INVALID_VALUE;
-    *dptr = 0;
-    CUcontext c = NULL;
-    CUresult r = need_ctx(&c);
-    (void)c;
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (bytesize == 0)
-        return CUDA_ERROR_INVALID_VALUE;
-    uint64_t virt = 0;
-    VkBuffer buf = VK_NULL_HANDLE;
-    (void)buf;
-    int ar = acuda_arena_alloc(bytesize, &virt, &buf);
-    if (ar != 0) {
-        ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu) -> OOM (arena %d)\n", bytesize, ar);
-        return CUDA_ERROR_OUT_OF_MEMORY;
-    }
-    *dptr = (CUdeviceptr)virt;
-    if (getenv("ACUDA_TRACE")) {
-        fprintf(stderr, "acuda-trace .. cuMemAlloc(%zu) -> 0x%llx\n", bytesize, (unsigned long long)virt);
-#if defined(_WIN32) && !defined(_WIN64)
-        acuda_trace_va("cuMemAlloc");
-#endif
-    }
-    return CUDA_SUCCESS;
-}
-
-
-
-
-uint32_t rd32le(const unsigned char *p);
-
 int looks_like_ptx(const char *text) {
     // Skips whitespace and comments; PTX starts with ".version".
     for (;;) {
