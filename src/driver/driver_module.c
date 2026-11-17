@@ -1032,3 +1032,26 @@ CUresult handle_as_func(void *handle, CUfunction *out) {
     }
     return CUDA_ERROR_INVALID_HANDLE;
 }
+
+int looks_like_ptx(const char *text) {
+    // Skips whitespace and comments; PTX starts with ".version".
+    for (;;) {
+        while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r')
+            text++;
+        if (text[0] == '/' && text[1] == '/') {
+            while (*text && *text != '\n')
+                text++;
+            continue;
+        }
+        if (text[0] == '/' && text[1] == '*') {
+            text += 2;
+            while (*text && !(text[0] == '*' && text[1] == '/'))
+                text++;
+            if (*text)
+                text += 2;
+            continue;
+        }
+        break;
+    }
+    return strncmp(text, ".version", 8) == 0;
+}

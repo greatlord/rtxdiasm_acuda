@@ -229,12 +229,7 @@ driver_surfobj_t *driver_surf_find(CUsurfObject id) {
     return NULL;
 }
 
-void driver_img_type(acuda_buffer_t img, int *dim, int *arrayed,
-                            int *isint) {
-    *dim = img->dim3d ? 2 : (img->dim1d ? 0 : 1);
-    *arrayed = !img->dim3d && img->layers > 1;
-    *isint = img->format == 3 ? 1 : (img->format == 0 ? 0 : -1);
-}
+
 
 
 driver_texobj_t *driver_tex_find(CUtexObject id) {
@@ -310,28 +305,7 @@ CUresult need_ctx(CUcontext *out) {
 // Device pointers are arena virtual addresses (base+offset), so caching
 // allocators and sub-views work with plain arithmetic. Resolved to host
 // memory (persistently mapped, coherent) or to (buffer, offset) binds.
-int looks_like_ptx(const char *text) {
-    // Skips whitespace and comments; PTX starts with ".version".
-    for (;;) {
-        while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r')
-            text++;
-        if (text[0] == '/' && text[1] == '/') {
-            while (*text && *text != '\n')
-                text++;
-            continue;
-        }
-        if (text[0] == '/' && text[1] == '*') {
-            text += 2;
-            while (*text && !(text[0] == '*' && text[1] == '/'))
-                text++;
-            if (*text)
-                text += 2;
-            continue;
-        }
-        break;
-    }
-    return strncmp(text, ".version", 8) == 0;
-}
+
 
 
 
@@ -396,82 +370,6 @@ typedef enum { CU_TENSOR_MAP_SWIZZLE_NONE_s = 0 } CUtensorMapSwizzle_s;
 typedef enum { CU_TENSOR_MAP_L2_PROMOTION_NONE_s = 0 } CUtensorMapL2promotion_s;
 typedef enum { CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE_s = 0 } CUtensorMapFloatOOBfill_s;
 
-
-// Copy a rectangle between host memory and an array level/layer.
-CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
-                                size_t z, void *host, size_t wbytes,
-                                size_t h, size_t depth, size_t pitch) {
-    if (!a || !a->image || !host)
-        return CUDA_ERROR_INVALID_VALUE;
-    acuda_buffer_t img = a->image;
-    uint32_t level = a->level;
-    uint32_t lw = img->width >> level;
-    if (!lw) lw = 1;
-    uint32_t lh = img->dim1d ? 1u : (img->height >> level);
-    if (!lh) lh = 1;
-    uint32_t ld = img->dim3d ? (img->depth >> level) : 1u;
-    if (!ld) ld = 1;
-    size_t elem = (size_t)driver_elem_bytes(img->format);
-    if (elem == 0 || xb + wbytes > (size_t)lw * elem || y + h > lh ||
-        z + depth > (img->dim3d ? ld : img->layers))
-        return CUDA_ERROR_INVALID_VALUE;
-    size_t layer_bytes = (size_t)lw * lh * elem;
-    size_t total = img->dim3d ? layer_bytes * ld : layer_bytes;
-    void *tmp = malloc(total);
-    if (!tmp)
-        return CUDA_ERROR_OUT_OF_MEMORY;
-    acuda_status_t st;
-    if (img->dim3d) {
-        st = acuda_image_download(g_actx, img, level, 0, tmp);
-        if (st != ACUDA_SUCCESS) {
-            free(tmp);
-            return map_status(st);
-        }
-    }
-    for (size_t dz = 0; dz < depth; dz++) {
-        void *lb;
-        uint32_t layer = 0;
-        if (img->dim3d) {
-            lb = tmp;
-        } else {
-            layer = (uint32_t)(z + dz);
-            lb = tmp;
-            st = acuda_image_download(g_actx, img, level, layer, lb);
-            if (st != ACUDA_SUCCESS) {
-                free(tmp);
-                return map_status(st);
-            }
-        }
-        for (size_t row = 0; row < h; row++) {
-            size_t ry = y + row;
-            size_t rz = img->dim3d ? (z + dz) : 0;
-            unsigned char *lp = (unsigned char *)lb +
-                                ((size_t)rz * lh + ry) * lw * elem + xb;
-            unsigned char *hp = (unsigned char *)host +
-                                (dz * h + row) * pitch;
-            if (write)
-                memcpy(lp, hp, wbytes);
-            else
-                memcpy(hp, lp, wbytes);
-        }
-        if (!img->dim3d) {
-            st = acuda_image_upload(g_actx, img, level, layer, lb);
-            if (st != ACUDA_SUCCESS) {
-                free(tmp);
-                return map_status(st);
-            }
-        }
-    }
-    if (img->dim3d) {
-        st = acuda_image_upload(g_actx, img, level, 0, tmp);
-        if (st != ACUDA_SUCCESS) {
-            free(tmp);
-            return map_status(st);
-        }
-    }
-    free(tmp);
-    return CUDA_SUCCESS;
-}
 
 
 /* Multi-device / IPC / graphics-interop copies: no second device here. */

@@ -836,3 +836,10 @@ CUresult ACUDA_CUDAAPI
 cuArray3DGetDescriptor_v2(CUDA_ARRAY3D_DESCRIPTOR *pDesc, CUarray hArray) {
     return cuArray3DGetDescriptor(pDesc, hArray);
 }
+
+void driver_img_type(acuda_buffer_t img, int *dim, int *arrayed,
+                            int *isint) {
+    *dim = img->dim3d ? 2 : (img->dim1d ? 0 : 1);
+    *arrayed = !img->dim3d && img->layers > 1;
+    *isint = img->format == 3 ? 1 : (img->format == 0 ? 0 : -1);
+}
