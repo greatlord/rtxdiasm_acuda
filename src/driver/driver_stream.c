@@ -241,3 +241,26 @@ CUresult ACUDA_CUDAAPI cuStreamGetPriority(CUstream hStream, int *priority) {
     return CUDA_SUCCESS;
 }
 
+
+/* Stream extensions. */
+CUresult ACUDA_CUDAAPI cuStreamCreateWithPriority(CUstream *phStream,
+                                                  unsigned int flags,
+                                                  int priority) {
+    (void)priority;
+    return cuStreamCreate(phStream, flags);
+}
+
+CUresult ACUDA_CUDAAPI cuStreamAddCallback(CUstream hStream,
+                                           acuda_stream_cb_t cb,
+                                           void *userData,
+                                           unsigned int flags) {
+    (void)flags;
+    if (!cb)
+        return CUDA_ERROR_INVALID_VALUE;
+    /* Synchronous backend: drain the stream, then run inline. */
+    CUresult r = cuStreamSynchronize(hStream);
+    if (r != CUDA_SUCCESS)
+        return r;
+    cb(hStream, CUDA_SUCCESS, userData);
+    return CUDA_SUCCESS;
+}
