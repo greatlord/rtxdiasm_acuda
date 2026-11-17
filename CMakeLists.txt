@@ -97,6 +97,7 @@ endif()
 add_library(acuda_driver SHARED
   src/driver/driver.c
   src/driver/driver_compat_stubs.c
+  src/driver/driver_stub_funcs.c
   src/driver/arena.c
   ${ACUDA_TRACE_SOURCE_INTERNAL}
   src/driver/rtxdisam_bridge.c

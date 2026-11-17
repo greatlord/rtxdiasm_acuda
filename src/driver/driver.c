@@ -18,6 +18,7 @@
 #include "acuda/context.h"
 #include "acuda/memory.h"
 #include "acuda/stream.h"
+#include "driver_internal.h"
 #include "driver_stub.h"
 
 #if defined(_WIN32)
@@ -217,33 +218,6 @@ static void acuda_install_veh(void) {
 #pragma comment(linker, "/export:cuInit=_cuInit@4")
 #endif
 
-struct CUctx_st {
-    int device;
-};
-struct CUmod_st {
-    CUcontext ctx;
-    char *ptx;
-    // Original SASS-only image. Kept so a driver module with multiple text
-    // sections can be lifted lazily for each requested entry point.
-    unsigned char *image;
-    size_t image_size;
-    // The 32-bit PTX parser OOMed on this module (whole-text or per-entry);
-    // go straight to the 64-bit compile host for each requested entry.
-    int ptx_oom;
-    struct { char name[ACUDA_ENTRY_NAME_MAX]; acuda_kernel_t *k; } *funcs;
-    size_t nfuncs, fcap;
-    struct CUtexref_st **texrefs;
-    size_t ntexrefs, texrefs_cap;
-    // Synthetic module globals.  Runtime-registered __constant__ symbols
-    // are resolved through cuModuleGetGlobal; legacy SASS-only modules
-    // carry no symbol table of their own, so allocate per-name storage.
-    struct {
-        char name[ACUDA_ENTRY_NAME_MAX];
-        CUdeviceptr dptr;
-        size_t bytes;
-    } *globals;
-    size_t nglobals, globals_cap;
-};
 
 struct CUtexref_st {
     CUmodule mod;
@@ -270,35 +244,6 @@ struct CUtexref_st {
 #define ACUDA_HANDLE_FUNC 0x46554e43u
 #define ACUDA_HANDLE_KERNEL 0x4b45524eu
 
-struct CUfunc_st {
-    uint32_t magic;
-    CUmodule mod;
-    acuda_kernel_t *k;
-    char name[ACUDA_ENTRY_NAME_MAX];
-    int maxdyn_set;      // CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES
-    unsigned maxdyn;
-};
-struct CUkernel_st {
-    uint32_t magic;
-    CUmodule mod;
-    char name[ACUDA_ENTRY_NAME_MAX];
-    CUfunction func;
-};
-struct CUstream_st {
-    CUcontext ctx;
-    acuda_stream_t s;
-};
-struct CUevent_st {
-    CUcontext ctx;
-    acuda_event_t e;
-};
-struct CUlink_st {
-    char **blobs;
-    size_t *sizes;
-    size_t n, cap;
-    char *linked;
-    size_t linked_size;
-};
 
 static int g_init;
 static acuda_context_t g_actx;
@@ -675,7 +620,7 @@ CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSize(int *minGridSize, int *m
 CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSizeWithFlags(int *minGridSize, int *maxBlockSize, CUfunction func, size_t blockSizeLimit, size_t dynamicSMemSize, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuTensorMapEncodeTiled(void *tensorMap, int tensorDataType, unsigned int tensorRank, void *globalAddress, const unsigned long long *globalDim, const unsigned long long *globalStrides, const unsigned int *boxDim, const unsigned int *elementStrides, int interleave, int swizzle, int l2Promotion, int oobFill);
 
-static CUresult need_init(void) {
+CUresult need_init(void) {
     ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p\n", g_init,
                 (void *)&g_init);
     return g_init ? CUDA_SUCCESS : CUDA_ERROR_NOT_INITIALIZED;
@@ -1314,7 +1259,7 @@ CUresult ACUDA_CUDAAPI cuCtxSynchronize(void) {
     return map_status(acuda_stream_synchronize(g_actx, NULL));
 }
 
-static CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
+CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu)\n", bytesize);
     if (!dptr)
         return CUDA_ERROR_INVALID_VALUE;
@@ -5373,95 +5318,6 @@ CUresult ACUDA_CUDAAPI cuStreamGetId(CUstream hStream, unsigned long long *strea
 }
 
 /* Stubs for newer driver APIs that may be linked by torch */
-CUresult acuda_stub_cuModuleGetGlobal(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod,
-                                      const char *name) {
-    ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetGlobal(%s)\n",
-                name ? name : "(null)");
-    // `bytes` may be NULL when caller does not request the size.
-    if (!dptr || !hmod || !name) {
-        ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetGlobal(%s) -> invalid dptr=%p bytes=%p hmod=%p name=%p\n",
-                    name ? name : "(null)", (void *)dptr, (void *)bytes, (void *)hmod, (void *)name);
-        return CUDA_ERROR_INVALID_VALUE;
-    }
-    *dptr = 0;
-    if (bytes) *bytes = 0;
-    for (size_t i = 0; i < hmod->nglobals; i++) {
-        if (strcmp(hmod->globals[i].name, name) == 0) {
-            *dptr = hmod->globals[i].dptr;
-            if (bytes) *bytes = hmod->globals[i].bytes;
-            ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetGlobal(%s) -> cached 0x%llx %zu\n",
-                        name, (unsigned long long)*dptr, hmod->globals[i].bytes);
-            return CUDA_SUCCESS;
-        }
-    }
-    // Legacy PhysX kernels keep their parameter block in a 10 KiB
-    // __constant__ symbol.  Other names keep a generous default.
-    size_t gsize = strcmp(name, "parameters_cmem") == 0 ? 10240 : 65536;
-    CUdeviceptr p = 0;
-    CUresult r = mem_alloc(&p, gsize);
-    ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetGlobal(%s) alloc %zu -> r=%d p=0x%llx\n",
-                name, gsize, (int)r, (unsigned long long)p);
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (hmod->nglobals == hmod->globals_cap) {
-        size_t cap = hmod->globals_cap ? hmod->globals_cap * 2 : 4;
-        void *ng = realloc(hmod->globals, cap * sizeof(*hmod->globals));
-        if (!ng) {
-            cuMemFree_v2(p);
-            return CUDA_ERROR_OUT_OF_MEMORY;
-        }
-        hmod->globals = ng;
-        hmod->globals_cap = cap;
-    }
-    snprintf(hmod->globals[hmod->nglobals].name,
-             sizeof(hmod->globals[hmod->nglobals].name), "%s", name);
-    hmod->globals[hmod->nglobals].dptr = p;
-    hmod->globals[hmod->nglobals].bytes = gsize;
-    hmod->nglobals++;
-    *dptr = p;
-    if (bytes) *bytes = gsize;
-    ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetGlobal(%s) -> 0x%llx %zu\n",
-                name, (unsigned long long)*dptr, gsize);
-    return CUDA_SUCCESS;
-}
-CUresult acuda_stub_cuModuleGetGlobal_v2(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod,
-                                         const char *name) {
-    return acuda_stub_cuModuleGetGlobal(dptr, bytes, hmod, name);
-}
-CUresult acuda_stub_cuOccupancyMaxActiveBlocksPerMultiprocessor(int *numBlocks,
-                                                                CUfunction func,
-                                                                int blockSize,
-                                                                size_t dynamicSMemSize) {
-    (void)func; (void)blockSize; (void)dynamicSMemSize;
-    if (!numBlocks) return CUDA_ERROR_INVALID_VALUE;
-    if (need_init() != CUDA_SUCCESS) return CUDA_ERROR_NOT_INITIALIZED;
-    *numBlocks = 1;
-    return CUDA_SUCCESS;
-}
-CUresult acuda_stub_cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
-    int *numBlocks, CUfunction func, int blockSize, size_t dynamicSMemSize,
-    unsigned int flags) {
-    (void)flags;
-    return acuda_stub_cuOccupancyMaxActiveBlocksPerMultiprocessor(numBlocks, func,
-                                                                  blockSize,
-                                                                  dynamicSMemSize);
-}
-CUresult acuda_stub_cuOccupancyMaxPotentialBlockSize(int *minGridSize, int *maxBlockSize,
-                                                     CUfunction func, size_t blockSizeLimit,
-                                                     size_t dynamicSMemSize) {
-    (void)func; (void)blockSizeLimit; (void)dynamicSMemSize;
-    if (need_init() != CUDA_SUCCESS) return CUDA_ERROR_NOT_INITIALIZED;
-    if (minGridSize) *minGridSize = 1;
-    if (maxBlockSize) *maxBlockSize = 256;
-    return CUDA_SUCCESS;
-}
-CUresult acuda_stub_cuOccupancyMaxPotentialBlockSizeWithFlags(
-    int *minGridSize, int *maxBlockSize, CUfunction func,
-    size_t blockSizeLimit, size_t dynamicSMemSize, unsigned int flags) {
-    (void)flags;
-    return acuda_stub_cuOccupancyMaxPotentialBlockSize(minGridSize, maxBlockSize, func,
-                                                       blockSizeLimit, dynamicSMemSize);
-}
 // CUDA 13's runtime fetches this small interface table with
 // cuGetExportTable instead of resolving the corresponding entry points
 // one by one.  It is queried during device enumeration; slot 12 is the
@@ -6117,16 +5973,6 @@ typedef enum { CU_TENSOR_MAP_INTERLEAVE_NONE_s = 0 } CUtensorMapInterleave_s;
 typedef enum { CU_TENSOR_MAP_SWIZZLE_NONE_s = 0 } CUtensorMapSwizzle_s;
 typedef enum { CU_TENSOR_MAP_L2_PROMOTION_NONE_s = 0 } CUtensorMapL2promotion_s;
 typedef enum { CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE_s = 0 } CUtensorMapFloatOOBfill_s;
-CUresult acuda_stub_cuTensorMapEncodeTiled(void *tensorMap, int tensorDataType,
-                                           unsigned int tensorRank, void *globalAddress,
-                                           const unsigned long long *globalDim, const unsigned long long *globalStrides,
-                                           const unsigned int *boxDim, const unsigned int *elementStrides,
-                                           int interleave, int swizzle,
-                                           int l2Promotion, int oobFill) {
-    (void)tensorMap;(void)tensorDataType;(void)tensorRank;(void)globalAddress;(void)globalDim;(void)globalStrides;(void)boxDim;(void)elementStrides;(void)interleave;(void)swizzle;(void)l2Promotion;(void)oobFill;
-    if (need_init() != CUDA_SUCCESS) return CUDA_ERROR_NOT_INITIALIZED;
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
 
 // ---- CUDA texture arrays and texture objects -------------------------
 
@@ -7836,4 +7682,7 @@ CUresult ACUDA_CUDAAPI cuMemcpyAsync(CUdeviceptr dst, CUdeviceptr src,
         return CUDA_ERROR_INVALID_VALUE;
     }
 }
+
+
+
 

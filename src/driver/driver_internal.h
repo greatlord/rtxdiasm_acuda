@@ -63,10 +63,38 @@
 struct CUctx_st {
     int device;
 };
-struct CUmod_st;
+struct CUmod_st {
+    CUcontext ctx;
+    char *ptx;
+    unsigned char *image;
+    size_t image_size;
+    int ptx_oom;
+    struct { char name[ACUDA_ENTRY_NAME_MAX]; acuda_kernel_t *k; } *funcs;
+    size_t nfuncs, fcap;
+    struct CUtexref_st **texrefs;
+    size_t ntexrefs, texrefs_cap;
+    struct {
+        char name[ACUDA_ENTRY_NAME_MAX];
+        CUdeviceptr dptr;
+        size_t bytes;
+    } *globals;
+    size_t nglobals, globals_cap;
+};
 struct CUtexref_st;
-struct CUfunc_st;
-struct CUkernel_st;
+struct CUfunc_st {
+    uint32_t magic;
+    CUmodule mod;
+    acuda_kernel_t *k;
+    char name[ACUDA_ENTRY_NAME_MAX];
+    int maxdyn_set;
+    unsigned maxdyn;
+};
+struct CUkernel_st {
+    uint32_t magic;
+    CUmodule mod;
+    char name[ACUDA_ENTRY_NAME_MAX];
+    CUfunction func;
+};
 struct CUstream_st {
     CUcontext ctx;
     acuda_stream_t s;
@@ -104,3 +132,5 @@ CUresult memcpy_d2h(void *dst, CUdeviceptr src, size_t bytes);
 CUresult memcpy_d2d(CUdeviceptr dst, CUdeviceptr src, size_t bytes);
 
 #endif
+
+
