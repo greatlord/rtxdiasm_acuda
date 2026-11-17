@@ -40,6 +40,7 @@ endif()
 add_library(acuda_runtime STATIC
   src/runtime/error.c
   src/runtime/context.c
+  src/runtime/context_query.c
   src/runtime/stream.c
   src/runtime/memory.c
   src/runtime/texture_image.c
