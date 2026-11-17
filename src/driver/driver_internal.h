@@ -258,3 +258,14 @@ CUresult check_dev(int dev);
 struct CUmemPool_st {
     int device;
 };
+
+uint32_t rd32le(const unsigned char *p);
+uint64_t rd64le(const unsigned char *p);
+int cubin_backend(void);
+char *fatbin_first_ptx(const unsigned char *blob, size_t cap);
+CUresult attach_sass_image(CUmodule module, const unsigned char *data, size_t size);
+CUresult module_from_sass_image(CUmodule *module, const unsigned char *data, size_t size);
+
+#define ACUDA_HANDLE_FUNC 0x46554e43u
+#define ACUDA_HANDLE_KERNEL 0x4b45524eu
+CUresult handle_as_func(void *handle, CUfunction *out);
