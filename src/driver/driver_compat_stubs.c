@@ -55,3 +55,39 @@ ACUDA_COMPAT_UNIMPL2(cuGraphicsResourceSetMapFlags_v2)
 ACUDA_COMPAT_UNIMPL4(cuGraphicsSubResourceGetMappedArray)
 ACUDA_COMPAT_UNIMPL4(cuGraphicsResourceGetMappedMipmappedArray)
 ACUDA_COMPAT_UNIMPL2(cuWGLGetDevice)
+
+/* IPC handles: 64-byte structs passed by value, like the real driver. */
+CUresult ACUDA_CUDAAPI cuIpcCloseMemHandle(CUdeviceptr dptr) {
+    (void)dptr;
+    return compat_unimpl("cuIpcCloseMemHandle");
+}
+
+CUresult ACUDA_CUDAAPI cuIpcGetEventHandle(CUipcEventHandle *handle,
+                                           CUevent event) {
+    (void)handle;
+    (void)event;
+    return compat_unimpl("cuIpcGetEventHandle");
+}
+
+CUresult ACUDA_CUDAAPI cuIpcGetMemHandle(CUipcMemHandle *handle,
+                                        CUdeviceptr dptr) {
+    (void)handle;
+    (void)dptr;
+    return compat_unimpl("cuIpcGetMemHandle");
+}
+
+CUresult ACUDA_CUDAAPI cuIpcOpenEventHandle(CUevent *event,
+                                           CUipcEventHandle handle) {
+    (void)event;
+    (void)handle;
+    return compat_unimpl("cuIpcOpenEventHandle");
+}
+
+CUresult ACUDA_CUDAAPI cuIpcOpenMemHandle(CUdeviceptr *dptr,
+                                         CUipcMemHandle handle,
+                                         unsigned int flags) {
+    (void)dptr;
+    (void)handle;
+    (void)flags;
+    return compat_unimpl("cuIpcOpenMemHandle");
+}
