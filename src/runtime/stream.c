@@ -6,21 +6,21 @@
 #include "acuda/runtime/time_compat.h"
 
 // ACUDA_PROFILE_LAUNCH: aggregate recording/submission timings.
-static int prof_on = -1;
-static uint64_t prof_cmds, prof_flushes, prof_record, prof_submit;
-static double prof_now_ns(void) {
+int stream_prof_on = -1;
+uint64_t stream_prof_cmds, stream_prof_flushes, stream_prof_record, stream_prof_submit;
+double stream_prof_now_ns(void) {
     return (double)acuda_now_ns();
 }
-static void prof_dump(void) {
-    if (prof_flushes == 0)
+void stream_prof_dump(void) {
+    if (stream_prof_flushes == 0)
         return;
-    double c = (double)(prof_cmds ? prof_cmds : 1);
-    double f = (double)prof_flushes;
+    double c = (double)(stream_prof_cmds ? stream_prof_cmds : 1);
+    double f = (double)stream_prof_flushes;
     fprintf(stderr,
             "ACuda launch profile: %llu commands / %llu flushes, "
             "record %.2f us/command, submit %.2f us/flush\n",
-            (unsigned long long)prof_cmds, (unsigned long long)prof_flushes,
-            prof_record / c / 1e3, prof_submit / f / 1e3);
+            (unsigned long long)stream_prof_cmds, (unsigned long long)stream_prof_flushes,
+            stream_prof_record / c / 1e3, stream_prof_submit / f / 1e3);
 }
 
 acuda_status_t acuda_resolve_stream(acuda_context_t ctx, acuda_stream_t stream,
@@ -127,7 +127,7 @@ acuda_status_t stream_wait_value(acuda_context_t ctx, acuda_stream_t s,
 // batch until it is submitted and are then tracked against its timeline
 // value.
 
-static int stream_pending_dpool(acuda_stream_t s, VkDescriptorPool pool) {
+int stream_pending_dpool(acuda_stream_t s, VkDescriptorPool pool) {
     if (s->pend_dpool_count == s->pend_dpool_cap) {
         size_t ncap = s->pend_dpool_cap ? s->pend_dpool_cap * 2 : 8;
         VkDescriptorPool *np =
@@ -141,7 +141,7 @@ static int stream_pending_dpool(acuda_stream_t s, VkDescriptorPool pool) {
     return 0;
 }
 
-static int stream_pending_buffer(acuda_stream_t s, acuda_buffer_t buf) {
+int stream_pending_buffer(acuda_stream_t s, acuda_buffer_t buf) {
     if (s->pend_buf_count == s->pend_buf_cap) {
         size_t ncap = s->pend_buf_cap ? s->pend_buf_cap * 2 : 8;
         acuda_buffer_t *nb =
@@ -177,7 +177,7 @@ acuda_status_t acuda_stream_track_buffer_pending(acuda_context_t ctx,
                : ACUDA_ERROR_OUT_OF_MEMORY;
 }
 
-static void stream_discard_batch(acuda_context_t ctx, acuda_stream_t s) {
+void stream_discard_batch(acuda_context_t ctx, acuda_stream_t s) {
     if (s->batch_cmd) {
         vkResetCommandBuffer(s->batch_cmd, 0);
         stream_push_free_cmd(s, s->batch_cmd);
@@ -193,7 +193,7 @@ static void stream_discard_batch(acuda_context_t ctx, acuda_stream_t s) {
     s->batch_serialize = 0;
 }
 
-static acuda_status_t stream_begin_batch(acuda_context_t ctx,
+acuda_status_t stream_begin_batch(acuda_context_t ctx,
                                          acuda_stream_t s) {
     if (s->batch_cmd)
         return ACUDA_SUCCESS;
@@ -252,7 +252,7 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
 // Submit any open batches on other blocking streams before this stream
 // crosses a queue boundary.  The in_flush guard prevents cycles when two
 // blocking streams submit at nearly the same time.
-static acuda_status_t stream_flush_blocking_peers(acuda_context_t ctx,
+acuda_status_t stream_flush_blocking_peers(acuda_context_t ctx,
                                                   acuda_stream_t stream) {
     if (!stream->blocking || ctx->nuser_queues == 0 || stream->in_flush)
         return ACUDA_SUCCESS;
@@ -273,7 +273,7 @@ static acuda_status_t stream_flush_blocking_peers(acuda_context_t ctx,
 
 // CUDA's legacy default stream synchronizes with every blocking stream.
 // Non-blocking streams (CU_STREAM_NON_BLOCKING) do not participate.
-static uint32_t stream_sync_wait_count(acuda_context_t ctx,
+uint32_t stream_sync_wait_count(acuda_context_t ctx,
                                        acuda_stream_t stream) {
     if (!stream->blocking || ctx->nuser_queues == 0)
         return 0;
@@ -290,7 +290,7 @@ static uint32_t stream_sync_wait_count(acuda_context_t ctx,
                : 0u;
 }
 
-static void stream_fill_sync_waits(acuda_context_t ctx, acuda_stream_t stream,
+void stream_fill_sync_waits(acuda_context_t ctx, acuda_stream_t stream,
                                    VkSemaphoreSubmitInfo *w, uint32_t *k) {
     if (!stream->blocking || ctx->nuser_queues == 0)
         return;
@@ -403,11 +403,11 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
         .signalSemaphoreInfoCount = nsig,
         .pSignalSemaphoreInfos = sinfos,
     };
-    double st0 = prof_on ? prof_now_ns() : 0;
+    double st0 = stream_prof_on ? stream_prof_now_ns() : 0;
     vr = vkQueueSubmit2(stream->queue ? stream->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
-    if (prof_on) {
-        prof_submit += (uint64_t)(prof_now_ns() - st0);
-        prof_flushes++;
+    if (stream_prof_on) {
+        stream_prof_submit += (uint64_t)(stream_prof_now_ns() - st0);
+        stream_prof_flushes++;
     }
     free(winfos);
     free(sinfos);
@@ -457,161 +457,4 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
     if (out_value)
         *out_value = sigval;
     return ACUDA_SUCCESS;
-}
-
-acuda_status_t acuda_stream_append(acuda_context_t ctx, acuda_stream_t stream,
-                                   acuda_record_fn record, void *user,
-                                   int serialize) {
-    if (!ctx || !stream || !record)
-        return ACUDA_ERROR_INVALID_HANDLE;
-    if (stream->batch_cmd && stream->batch_count >= stream->batch_max) {
-        acuda_status_t fst = stream_flush_impl(ctx, stream, NULL, NULL, 0,
-                                               NULL);
-        if (fst != ACUDA_SUCCESS)
-            return fst;
-    }
-    if (prof_on < 0) {
-        prof_on = getenv("ACUDA_PROFILE_LAUNCH") != NULL;
-        if (prof_on)
-            atexit(prof_dump);
-    }
-    acuda_status_t st = stream_begin_batch(ctx, stream);
-    if (st != ACUDA_SUCCESS)
-        return st;
-    double rt0 = prof_on ? prof_now_ns() : 0;
-    st = record(stream->batch_cmd, user);
-    if (prof_on) {
-        prof_record += (uint64_t)(prof_now_ns() - rt0);
-        prof_cmds++;
-    }
-    if (st != ACUDA_SUCCESS) {
-        stream_discard_batch(ctx, stream);
-        return st;
-    }
-    stream->batch_count++;
-    if (serialize)
-        stream->batch_serialize = 1;
-    return ACUDA_SUCCESS;
-}
-
-// True when a cached command buffer can be submitted or re-recorded: no
-// open batch, and no submission still using the command buffer/resources.
-acuda_status_t acuda_stream_cached_ready(acuda_context_t ctx,
-                                         acuda_stream_t stream) {
-    if (!ctx || !stream)
-        return ACUDA_ERROR_INVALID_HANDLE;
-    acuda_stream_t s = NULL;
-    acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
-    if (st != ACUDA_SUCCESS)
-        return st;
-    if (s->blocking && ctx->nuser_queues > 0)
-        return ACUDA_ERROR_NOT_READY;
-    if (s->batch_cmd || s->batch_count != 0)
-        return ACUDA_ERROR_NOT_READY;
-    if (s->last_submitted > 0) {
-        uint64_t done = 0;
-        VkResult qr = vkGetSemaphoreCounterValue(ctx->device, s->timeline,
-                                                 &done);
-        if (qr != VK_SUCCESS)
-            return acuda_from_vk(qr);
-        if (done < s->last_submitted)
-            return ACUDA_ERROR_NOT_READY;
-    }
-    return ACUDA_SUCCESS;
-}
-
-// Submits a command buffer that was recorded earlier and is being reused
-// verbatim. Only safe when the stream has no open batch and the previous
-// submission has completed, so the command buffer and the resources it
-// references cannot still be in flight. Returns ACUDA_ERROR_NOT_READY when
-// the caller should fall back to normal batch recording.
-acuda_status_t acuda_stream_submit_cached(acuda_context_t ctx,
-                                          acuda_stream_t stream,
-                                          VkCommandBuffer cmd,
-                                          uint64_t *out_value) {
-    if (!ctx || !stream || !cmd)
-        return ACUDA_ERROR_INVALID_HANDLE;
-    acuda_stream_t s = NULL;
-    acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
-    if (st != ACUDA_SUCCESS)
-        return st;
-    if (s->batch_cmd || s->batch_count != 0)
-        return ACUDA_ERROR_NOT_READY;
-    if (s->last_submitted > 0) {
-        uint64_t done = 0;
-        VkResult qr = vkGetSemaphoreCounterValue(ctx->device, s->timeline,
-                                                 &done);
-        if (qr != VK_SUCCESS)
-            return acuda_from_vk(qr);
-        if (done < s->last_submitted)
-            return ACUDA_ERROR_NOT_READY;
-    }
-    st = stream_reclaim(ctx, s);
-    if (st != ACUDA_SUCCESS)
-        return st;
-
-    uint32_t nwait = (uint32_t)s->wait_count +
-                     stream_sync_wait_count(ctx, s);
-    VkSemaphoreSubmitInfo *winfos = NULL;
-    if (nwait > 0) {
-        winfos = calloc(nwait, sizeof(*winfos));
-        if (!winfos)
-            return ACUDA_ERROR_OUT_OF_MEMORY;
-        uint32_t k = 0;
-        for (uint32_t i = 0; i < s->wait_count; i++, k++) {
-            winfos[k].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            winfos[k].semaphore = s->wait_sems[i];
-            winfos[k].value = s->wait_vals[i];
-            winfos[k].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        }
-        stream_fill_sync_waits(ctx, s, winfos, &k);
-    }
-    uint64_t sigval = ++s->next_value;
-    VkSemaphoreSubmitInfo sinfo = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = s->timeline,
-        .value = sigval,
-        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-    };
-    VkCommandBufferSubmitInfo cbi = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-        .commandBuffer = cmd,
-    };
-    VkSubmitInfo2 si = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .waitSemaphoreInfoCount = nwait,
-        .pWaitSemaphoreInfos = winfos,
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &cbi,
-        .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = &sinfo,
-    };
-    VkResult vr = vkQueueSubmit2(stream->queue ? stream->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
-    free(winfos);
-    s->wait_count = 0;
-    if (vr != VK_SUCCESS)
-        return acuda_from_vk(vr);
-    s->last_submitted = sigval;
-    // A later normal batch must not overlap this standalone submission.
-    s->last_serialized = 1;
-    if (out_value)
-        *out_value = sigval;
-    return ACUDA_SUCCESS;
-}
-
-acuda_status_t acuda_stream_maybe_flush(acuda_context_t ctx,
-                                        acuda_stream_t stream) {
-    if (!ctx || !stream)
-        return ACUDA_ERROR_INVALID_HANDLE;
-    if (stream->batch_cmd && stream->batch_count >= stream->batch_max)
-        return stream_flush_impl(ctx, stream, NULL, NULL, 0, NULL);
-    return ACUDA_SUCCESS;
-}
-
-acuda_status_t acuda_stream_flush(acuda_context_t ctx, acuda_stream_t stream) {
-    acuda_stream_t s = NULL;
-    acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
-    if (st != ACUDA_SUCCESS)
-        return st;
-    return stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
 }
