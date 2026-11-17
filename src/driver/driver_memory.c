@@ -80,3 +80,41 @@ CUresult ACUDA_CUDAAPI cuMemGetAddressRange_v2(CUdeviceptr *pbase, size_t *psize
                                  CUdeviceptr dptr) {
     return cuMemGetAddressRange(pbase, psize, dptr);
 }
+
+CUresult ACUDA_CUDAAPI cuDeviceGetDefaultMemPool(CUmemPool *pool_out, CUdevice dev) {
+    if (!pool_out)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pool_out = NULL;
+    CUresult r = check_dev(dev);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (dev < 0 || dev >= ACUDA_MAX_DEVICES)
+        return CUDA_ERROR_INVALID_DEVICE;
+    if (!default_pool[dev]) {
+        CUmemPool p = calloc(1, sizeof(*p));
+        if (!p)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        p->device = dev;
+        default_pool[dev] = p;
+    }
+    *pool_out = default_pool[dev];
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuDeviceGetMemPool(CUmemPool *pool_out, CUdevice dev) {
+    return cuDeviceGetDefaultMemPool(pool_out, dev);
+}
+
+CUresult ACUDA_CUDAAPI cuDeviceSetMemPool(CUdevice dev, CUmemPool pool) {
+    (void)pool;
+    return check_dev(dev);
+}
+
+CUresult ACUDA_CUDAAPI cuMemPoolTrimTo(CUmemPool pool, size_t minBytesToKeep) {
+    (void)minBytesToKeep;
+    if (!pool)
+        return CUDA_ERROR_INVALID_HANDLE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}

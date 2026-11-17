@@ -187,3 +187,84 @@ CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
     (void)ctx;
     return CUDA_SUCCESS; // legacy no-op
 }
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRetain(CUcontext *pctx, CUdevice dev) {
+    if (!pctx)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pctx = NULL;
+    CUresult r = check_dev(dev);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (dev < 0 || dev >= ACUDA_MAX_DEVICES)
+        return CUDA_ERROR_INVALID_DEVICE;
+    if (!primary_ctx[dev]) {
+        CUcontext c = calloc(1, sizeof(*c));
+        if (!c)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        c->device = dev;
+        primary_ctx[dev] = c;
+    }
+    primary_refs[dev]++;
+    r = ctx_push(primary_ctx[dev]);
+    if (r != CUDA_SUCCESS) {
+        if (--primary_refs[dev] == 0) {
+            free(primary_ctx[dev]);
+            primary_ctx[dev] = NULL;
+        }
+        return r;
+    }
+    *pctx = primary_ctx[dev];
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRelease(CUdevice dev) {
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (dev < 0 || dev >= ACUDA_MAX_DEVICES || !primary_ctx[dev])
+        return CUDA_ERROR_INVALID_DEVICE;
+    if (primary_refs[dev] > 0)
+        primary_refs[dev]--;
+    // Wrapper is freed on last release; Vulkan device stays (shared).
+    if (primary_refs[dev] == 0) {
+        for (size_t i = 0; i < g_depth; i++) {
+            if (g_stack[i] == primary_ctx[dev]) {
+                memmove(&g_stack[i], &g_stack[i + 1],
+                        sizeof(*g_stack) * (g_depth - i - 1));
+                g_depth--;
+                break;
+            }
+        }
+        free(primary_ctx[dev]);
+        primary_ctx[dev] = NULL;
+    }
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxReset(CUdevice dev) {
+    CUresult r = check_dev(dev);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (dev < 0 || dev >= ACUDA_MAX_DEVICES)
+        return CUDA_ERROR_INVALID_DEVICE;
+    return CUDA_SUCCESS; // wrappers are stateless; nothing to reset
+}
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxSetFlags(CUdevice dev, unsigned int flags) {
+    if (flags & ~ACUDA_CTX_FLAGS_MASK)
+        return CUDA_ERROR_INVALID_VALUE;
+    return check_dev(dev);
+}
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxGetState(CUdevice dev, unsigned int *flags,
+                                    int *active) {
+    CUresult r = check_dev(dev);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (dev < 0 || dev >= ACUDA_MAX_DEVICES)
+        return CUDA_ERROR_INVALID_DEVICE;
+    if (flags)
+        *flags = 0;
+    if (active)
+        *active = primary_ctx[dev] ? 1 : 0;
+    return CUDA_SUCCESS;
+}

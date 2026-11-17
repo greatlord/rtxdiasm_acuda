@@ -246,3 +246,15 @@ static inline void acuda_trace_va(const char *tag) { (void)tag; }
 #endif
 
 CUcontext current_ctx(void);
+
+#ifndef ACUDA_MAX_DEVICES
+#define ACUDA_MAX_DEVICES 8
+#endif
+extern CUcontext primary_ctx[ACUDA_MAX_DEVICES];
+extern int primary_refs[ACUDA_MAX_DEVICES];
+extern CUmemPool default_pool[ACUDA_MAX_DEVICES];
+CUresult check_dev(int dev);
+
+struct CUmemPool_st {
+    int device;
+};
