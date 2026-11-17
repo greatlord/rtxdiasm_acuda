@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "acuda/memory.h"
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 static int ctx_buffer_add(acuda_context_t ctx, acuda_buffer_t b) {
     if (ctx->nbufs + 1 > ctx->capbufs) {

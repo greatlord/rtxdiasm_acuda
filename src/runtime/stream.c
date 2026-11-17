@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "acuda/stream.h"
-#include "internal.h"
-#include "time_compat.h"
+#include "acuda/runtime/internal.h"
+#include "acuda/runtime/time_compat.h"
 
 // ACUDA_PROFILE_LAUNCH: aggregate recording/submission timings.
 static int prof_on = -1;

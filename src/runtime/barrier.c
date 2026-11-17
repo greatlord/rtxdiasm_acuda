@@ -4,7 +4,7 @@
 //
 // Uses synchronization2 (required at device selection): the 1.3 barrier
 // API takes 64-bit stage/access masks directly.
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 void acuda_buf_barrier(VkCommandBuffer cmd, VkBuffer buf,
                        VkDeviceSize offset, VkDeviceSize size) {

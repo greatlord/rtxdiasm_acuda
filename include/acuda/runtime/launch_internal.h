@@ -1,7 +1,7 @@
 #ifndef ACUDA_LAUNCH_INTERNAL_H
 #define ACUDA_LAUNCH_INTERNAL_H
 
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 #define ACUDA_BIND_CACHE_N 8
 #define ACUDA_BIND_CACHE_PARAMS 8

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "acuda/memory.h"
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 static VkFormat image_vkformat(uint32_t f) {
     switch (f) {

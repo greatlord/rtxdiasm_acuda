@@ -4,8 +4,8 @@
 #include <ctype.h>
 #include "acuda/compiler.h"
 #include "acuda/context.h"
-#include "internal.h"
-#include "time_compat.h"
+#include "acuda/runtime/internal.h"
+#include "acuda/runtime/time_compat.h"
 #if defined(_WIN32)
 #include <windows.h>
 #include <vulkan/vulkan_core.h>

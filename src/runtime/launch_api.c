@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
-#include "internal.h"
-#include "launch_internal.h"
+#include "acuda/runtime/internal.h"
+#include "acuda/runtime/launch_internal.h"
 
 // Raw entry points used by the driver/cudart arena path. Host-call
 // kernels are detected here and routed through the state-machine

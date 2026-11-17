@@ -1,8 +1,8 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "internal.h"
-#include "launch_internal.h"
+#include "acuda/runtime/internal.h"
+#include "acuda/runtime/launch_internal.h"
 
 static acuda_status_t launch_host_common(acuda_context_t ctx,
                                          acuda_kernel_t *kernel,

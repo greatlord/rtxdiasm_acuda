@@ -1,17 +1,17 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include "acuda/compiler.h"
-#include "internal.h"
-#include "launch_internal.h"
-#include "time_compat.h"
+#include "acuda/runtime/internal.h"
+#include "acuda/runtime/launch_internal.h"
+#include "acuda/runtime/time_compat.h"
 #if defined(_WIN32)
 #include <windows.h>
 #else
 #include <pthread.h>
 #endif
-#include "launch_internal.h"
+#include "acuda/runtime/launch_internal.h"
 
 acuda_status_t launch_raw_once(acuda_context_t ctx,
                                 acuda_kernel_t *kernel,

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "acuda/hostcall.h"
-#include "internal.h"
+#include "acuda/runtime/internal.h"
 
 acuda_host_entry_t *acuda_host_call_find(acuda_context_t ctx,
                                         const char *name) {
