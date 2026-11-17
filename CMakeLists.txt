@@ -113,6 +113,7 @@ add_library(acuda_driver SHARED
   src/driver/driver_host.c
   src/driver/driver_library.c
   src/driver/driver_launch.c
+  src/driver/driver_device.c
   src/driver/arena.c
   ${ACUDA_TRACE_SOURCE_INTERNAL}
   src/driver/rtxdisam_bridge.c

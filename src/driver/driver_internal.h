@@ -271,3 +271,9 @@ CUresult module_from_sass_image(CUmodule *module, const unsigned char *data, siz
 CUresult handle_as_func(void *handle, CUfunction *out);
 
 CUresult bind_for(CUdeviceptr dptr, size_t bytes, VkBuffer *buf, size_t *offset);
+
+void acuda_install_veh(void);
+
+int cc_major(void);
+int cc_minor(void);
+CUresult need_actx(void);
