@@ -3,6 +3,7 @@
 
 #include "acuda/runtime/internal.h"
 
+VkFormat image_vkformat(uint32_t f);
 uint32_t image_elem_bytes(uint32_t f);
 int image_is_depth(uint32_t f);
 void image_barrier_img(VkCommandBuffer cmd, acuda_buffer_t b,
