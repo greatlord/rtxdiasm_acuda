@@ -157,3 +157,7 @@ CUresult ACUDA_CUDAAPI cuDeviceTotalMem(size_t *bytes, CUdevice dev) {
     *bytes = (size_t)acuda_device_mem_total();
     return CUDA_SUCCESS;
 }
+
+CUresult ACUDA_CUDAAPI cuDeviceTotalMem_v2(size_t *bytes, CUdevice dev) {
+    return cuDeviceTotalMem(bytes, dev);
+}

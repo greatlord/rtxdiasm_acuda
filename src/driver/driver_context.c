@@ -268,3 +268,16 @@ CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxGetState(CUdevice dev, unsigned int *fl
         *active = primary_ctx[dev] ? 1 : 0;
     return CUDA_SUCCESS;
 }
+
+CUresult ACUDA_CUDAAPI cuCtxGetDevice_v2(CUdevice *device) { return cuCtxGetDevice(device); }
+CUresult ACUDA_CUDAAPI cuCtxSynchronize_v2(void) { return cuCtxSynchronize(); }
+
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRelease_v2(CUdevice dev) {
+    return cuDevicePrimaryCtxRelease(dev);
+}
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxReset_v2(CUdevice dev) {
+    return cuDevicePrimaryCtxReset(dev);
+}
+CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxSetFlags_v2(CUdevice dev, unsigned int flags) {
+    return cuDevicePrimaryCtxSetFlags(dev, flags);
+}

@@ -1831,22 +1831,8 @@ CUresult ACUDA_CUDAAPI cuFuncSetAttribute(CUfunction hfunc, int attrib, int valu
 
 
 
-CUresult ACUDA_CUDAAPI cuCtxGetDevice_v2(CUdevice *device) { return cuCtxGetDevice(device); }
-CUresult ACUDA_CUDAAPI cuCtxSynchronize_v2(void) { return cuCtxSynchronize(); }
-CUresult ACUDA_CUDAAPI cuDeviceTotalMem_v2(size_t *bytes, CUdevice dev) {
-    return cuDeviceTotalMem(bytes, dev);
-}
 CUresult ACUDA_CUDAAPI cuDeviceGetUuid_v2(CUuuid *uuid, CUdevice dev) {
     return cuDeviceGetUuid(uuid, dev);
-}
-CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRelease_v2(CUdevice dev) {
-    return cuDevicePrimaryCtxRelease(dev);
-}
-CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxReset_v2(CUdevice dev) {
-    return cuDevicePrimaryCtxReset(dev);
-}
-CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxSetFlags_v2(CUdevice dev, unsigned int flags) {
-    return cuDevicePrimaryCtxSetFlags(dev, flags);
 }
 
 CUresult ACUDA_CUDAAPI cuStreamGetCtx(CUstream hStream, CUcontext *pctx);
