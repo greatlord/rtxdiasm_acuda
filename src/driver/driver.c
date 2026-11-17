@@ -190,23 +190,6 @@ void acuda_install_veh(void) {
 
 
 
-int g_init;
-acuda_context_t g_actx;
-int g_actx_exit_registered;
-CUcontext g_stack[ACUDA_CTX_STACK];
-size_t g_depth;
-
-// The driver keeps one process-wide runtime context that outlives individual
-// CUDA contexts. At exit, stop its ACUDA_HIGH_PERF keep-busy thread so it is
-// not still submitting while other atexit handlers (e.g. the Vulkan
-// validation layer) tear the device down. The context itself is left intact:
-// destroying it here would report the driver's intentionally persistent
-// resources as leaks.
-static void acuda_driver_atexit(void) {
-    if (g_actx)
-        acuda_high_perf_shutdown(g_actx);
-}
-
 // ---- texture arrays and texture objects ------------------------------
 
 
@@ -227,68 +210,7 @@ uint32_t g_surf_slot_cap;
 
 
 
-CUresult map_status(acuda_status_t st) {
-    switch (st) {
-    case ACUDA_SUCCESS: return CUDA_SUCCESS;
-    case ACUDA_ERROR_INVALID_VALUE: return CUDA_ERROR_INVALID_VALUE;
-    case ACUDA_ERROR_OUT_OF_MEMORY: return CUDA_ERROR_OUT_OF_MEMORY;
-    case ACUDA_ERROR_NO_DEVICE: return CUDA_ERROR_NO_DEVICE;
-    case ACUDA_ERROR_NOT_SUPPORTED: return CUDA_ERROR_NOT_SUPPORTED;
-    case ACUDA_ERROR_INVALID_HANDLE: return CUDA_ERROR_INVALID_HANDLE;
-    case ACUDA_ERROR_NOT_READY: return CUDA_ERROR_NOT_READY;
-    default: return CUDA_ERROR_UNKNOWN;
-    }
-}
 
-// Default host-call stub for the CUDA driver API.  The driver API has
-// no callback-registration entry point, so unresolved .extern .func
-// calls use this identity stub unless the application registered a
-// real callback through acuda_host_call_register().  It copies the
-// argument bytes into the return area (remaining return bytes zero).
-
-
-CUresult need_init(void) {
-    ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p\n", g_init,
-                (void *)&g_init);
-    return g_init ? CUDA_SUCCESS : CUDA_ERROR_NOT_INITIALIZED;
-}
-
-// Lazily creates the one shared Vulkan context for the process.
-
-CUresult need_actx(void) {
-    CUresult r = need_init();
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (!g_actx) {
-        acuda_context_t ctx = NULL;
-        acuda_status_t st = acuda_init(&ctx);
-        if (st != ACUDA_SUCCESS)
-            return map_status(st);
-        if (acuda_arena_boot(ctx) != 0) {
-            acuda_shutdown(ctx);
-            return CUDA_ERROR_OUT_OF_MEMORY;
-        }
-        g_actx = ctx;
-        if (!g_actx_exit_registered) {
-            g_actx_exit_registered = 1;
-            atexit(acuda_driver_atexit);
-        }
-    }
-    return CUDA_SUCCESS;
-}
-
-
-CUresult need_ctx(CUcontext *out) {
-    CUresult r = need_actx();
-    if (r != CUDA_SUCCESS)
-        return r;
-    CUcontext c = current_ctx();
-    if (!c)
-        return CUDA_ERROR_INVALID_CONTEXT;
-    if (out)
-        *out = c;
-    return CUDA_SUCCESS;
-}
 
 // Device pointers are arena virtual addresses (base+offset), so caching
 // allocators and sub-views work with plain arithmetic. Resolved to host
