@@ -1,0 +1,810 @@
+﻿#include "driver_internal.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+// ---- CUDA texture arrays and texture objects -------------------------
+
+int driver_elem_bytes(uint32_t fmt) {
+    switch (fmt) {
+    case 0: return 16;
+    case 1: return 4;
+    case 2: return 4;
+    case 3: return 4;
+    case 4: return 4;
+    }
+    return 0;
+}
+
+static int driver_array_format(CUarray_format f, unsigned nchans,
+                               unsigned flags, uint32_t *fmt) {
+    if (flags & CUDA_ARRAY3D_DEPTH_TEXTURE) {
+        if (f == CU_AD_FORMAT_FLOAT && nchans == 1) {
+            *fmt = 4;
+            return 0;
+        }
+        return -1;
+    }
+    switch (f) {
+    case CU_AD_FORMAT_FLOAT:
+        if (nchans == 4) { *fmt = 0; return 0; }
+        if (nchans == 1) { *fmt = 2; return 0; }
+        return -1;
+    case CU_AD_FORMAT_UNSIGNED_INT32:
+        if (nchans == 1) { *fmt = 3; return 0; }
+        return -1;
+    case CU_AD_FORMAT_UNSIGNED_INT8:
+        if (nchans == 4) { *fmt = 1; return 0; }
+        return -1;
+    default:
+        return -1;
+    }
+}
+
+static void driver_array_shape(const CUDA_ARRAY3D_DESCRIPTOR *d,
+                               uint32_t *dim, uint32_t *layers,
+                               uint32_t *cube) {
+    *cube = (d->Flags & CUDA_ARRAY3D_CUBEMAP) ? 1u : 0u;
+    if (d->Flags & CUDA_ARRAY3D_LAYERED) {
+        *dim = d->Height <= 1 ? 1u : 2u;
+        *layers = (uint32_t)d->Depth;
+    } else if (d->Depth > 1) {
+        *dim = 3;
+        *layers = 1;
+    } else if (d->Height <= 1) {
+        *dim = 1;
+        *layers = 1;
+    } else {
+        *dim = 2;
+        *layers = 1;
+    }
+    if (*cube && *layers < 6)
+        *layers = 6; // CUDA cube arrays are six layers per cube
+}
+
+static CUresult driver_array_alloc(CUarray *out,
+                                   const CUDA_ARRAY3D_DESCRIPTOR *d,
+                                   unsigned levels, acuda_buffer_t shared) {
+    if (!out || !d || d->Width == 0)
+        return CUDA_ERROR_INVALID_VALUE;
+    uint32_t fmt;
+    if (driver_array_format(d->Format, d->NumChannels, d->Flags, &fmt) != 0)
+        return CUDA_ERROR_NOT_SUPPORTED;
+    uint32_t dim, layers, cube;
+    driver_array_shape(d, &dim, &layers, &cube);
+    if (cube && (layers % 6) != 0)
+        return CUDA_ERROR_INVALID_VALUE;
+    acuda_buffer_t img = shared;
+    if (!img) {
+        acuda_image_desc id = {
+            .width = (uint32_t)d->Width,
+            .height = dim == 1 ? 1u : (uint32_t)d->Height,
+            .depth = dim == 3 ? (uint32_t)d->Depth : 1u,
+            .layers = layers,
+            .levels = levels ? levels : 1,
+            .samples = 1,
+            .format = fmt,
+            .dim = dim,
+            .cube = cube,
+        };
+        if (acuda_image_create(g_actx, &img, &id, NULL) != ACUDA_SUCCESS)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+    }
+    CUarray a = calloc(1, sizeof(*a));
+    if (!a) {
+        if (!shared)
+            acuda_free(g_actx, img);
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
+    a->image = img;
+    a->own = shared ? 0 : 1;
+    a->level = 0;
+    a->desc3 = *d;
+    a->is3d = 1;
+    a->desc2.Width = d->Width;
+    a->desc2.Height = d->Height;
+    a->desc2.Format = d->Format;
+    a->desc2.NumChannels = d->NumChannels;
+    *out = a;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuArrayCreate_v2(CUarray *pHandle,
+                          const CUDA_ARRAY_DESCRIPTOR *pAllocateArray) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!pHandle || !pAllocateArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    CUDA_ARRAY3D_DESCRIPTOR d = {
+        .Width = pAllocateArray->Width,
+        .Height = pAllocateArray->Height,
+        .Depth = 1,
+        .Format = pAllocateArray->Format,
+        .NumChannels = pAllocateArray->NumChannels,
+        .Flags = 0,
+    };
+    return driver_array_alloc(pHandle, &d, 1, NULL);
+}
+
+CUresult ACUDA_CUDAAPI cuArrayCreate(CUarray *pHandle,
+                       const CUDA_ARRAY_DESCRIPTOR *pAllocateArray) {
+    return cuArrayCreate_v2(pHandle, pAllocateArray);
+}
+
+CUresult ACUDA_CUDAAPI cuArray3DCreate_v2(CUarray *pHandle,
+                            const CUDA_ARRAY3D_DESCRIPTOR *pAllocateArray) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    return driver_array_alloc(pHandle, pAllocateArray, 1, NULL);
+}
+
+CUresult ACUDA_CUDAAPI cuArray3DCreate(CUarray *pHandle,
+                         const CUDA_ARRAY3D_DESCRIPTOR *pAllocateArray) {
+    return cuArray3DCreate_v2(pHandle, pAllocateArray);
+}
+
+CUresult ACUDA_CUDAAPI cuArrayDestroy(CUarray hArray) {
+    if (!hArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (hArray->own && hArray->image)
+        acuda_free(g_actx, hArray->image);
+    free(hArray);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuArrayGetDescriptor(CUDA_ARRAY_DESCRIPTOR *pArrayDescriptor,
+                              CUarray hArray) {
+    if (!pArrayDescriptor || !hArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pArrayDescriptor = hArray->desc2;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuArray3DGetDescriptor(CUDA_ARRAY3D_DESCRIPTOR *pArrayDescriptor,
+                                CUarray hArray) {
+    if (!pArrayDescriptor || !hArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pArrayDescriptor = hArray->desc3;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMipmappedArrayCreate(
+    CUmipmappedArray *pHandle,
+    const CUDA_ARRAY3D_DESCRIPTOR *pMipmappedArrayDesc,
+    unsigned int numMipmapLevels) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!pHandle || !pMipmappedArrayDesc || numMipmapLevels == 0)
+        return CUDA_ERROR_INVALID_VALUE;
+    uint32_t fmt;
+    if (driver_array_format(pMipmappedArrayDesc->Format,
+                            pMipmappedArrayDesc->NumChannels,
+                            pMipmappedArrayDesc->Flags, &fmt) != 0)
+        return CUDA_ERROR_NOT_SUPPORTED;
+    uint32_t dim, layers, cube;
+    driver_array_shape(pMipmappedArrayDesc, &dim, &layers, &cube);
+    acuda_image_desc id = {
+        .width = (uint32_t)pMipmappedArrayDesc->Width,
+        .height = dim == 1 ? 1u : (uint32_t)pMipmappedArrayDesc->Height,
+        .depth = dim == 3 ? (uint32_t)pMipmappedArrayDesc->Depth : 1u,
+        .layers = layers,
+        .levels = numMipmapLevels,
+        .samples = 1,
+        .format = fmt,
+        .dim = dim,
+        .cube = cube,
+    };
+    CUmipmappedArray m = calloc(1, sizeof(*m));
+    if (!m)
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    if (acuda_image_create(g_actx, &m->image, &id, NULL) != ACUDA_SUCCESS) {
+        free(m);
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
+    m->desc = *pMipmappedArrayDesc;
+    m->levels = numMipmapLevels;
+    m->is3d = dim == 3;
+    *pHandle = m;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMipmappedArrayDestroy(CUmipmappedArray hMipmappedArray) {
+    if (!hMipmappedArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    acuda_free(g_actx, hMipmappedArray->image);
+    free(hMipmappedArray);
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuMipmappedArrayGetLevel(CUarray *pLevelArray,
+                                  CUmipmappedArray hMipmappedArray,
+                                  unsigned int level) {
+    if (!pLevelArray || !hMipmappedArray || level >= hMipmappedArray->levels)
+        return CUDA_ERROR_INVALID_VALUE;
+    CUarray a = calloc(1, sizeof(*a));
+    if (!a)
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    a->image = hMipmappedArray->image;
+    a->own = 0;
+    a->parent = NULL;
+    a->level = level;
+    a->desc3 = hMipmappedArray->desc;
+    a->desc2.Width = hMipmappedArray->desc.Width;
+    a->desc2.Height = hMipmappedArray->desc.Height;
+    a->desc2.Format = hMipmappedArray->desc.Format;
+    a->desc2.NumChannels = hMipmappedArray->desc.NumChannels;
+    a->is3d = hMipmappedArray->is3d;
+    *pLevelArray = a;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject,
+                           const CUDA_RESOURCE_DESC *pResDesc,
+                           const CUDA_TEXTURE_DESC *pTexDesc,
+                           const CUDA_RESOURCE_VIEW_DESC *pResViewDesc) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!pTexObject || !pResDesc)
+        return CUDA_ERROR_INVALID_VALUE;
+    acuda_buffer_t image = NULL;
+    acuda_buffer_t own_img = NULL;
+    int depth_tex = 0;
+    int is_array = 0;
+    if (pResDesc->resType == CU_RESOURCE_TYPE_ARRAY) {
+        CUarray a = pResDesc->res.array.hArray;
+        if (!a)
+            return CUDA_ERROR_INVALID_VALUE;
+        image = a->image;
+        depth_tex = (a->desc3.Flags & CUDA_ARRAY3D_DEPTH_TEXTURE) != 0;
+        is_array = 1;
+    } else if (pResDesc->resType == CU_RESOURCE_TYPE_MIPMAPPED_ARRAY) {
+        CUmipmappedArray m = pResDesc->res.mipmap.hMipmappedArray;
+        if (!m)
+            return CUDA_ERROR_INVALID_VALUE;
+        image = m->image;
+        depth_tex = (m->desc.Flags & CUDA_ARRAY3D_DEPTH_TEXTURE) != 0;
+        is_array = 1;
+    } else if (pResDesc->resType == CU_RESOURCE_TYPE_LINEAR) {
+        // Linear textures snapshot the backing memory into a 1D image.
+        uint32_t fmt = 0;
+        if (driver_array_format(pResDesc->res.linear.format,
+                                pResDesc->res.linear.numChannels, 0,
+                                &fmt) != 0)
+            return CUDA_ERROR_NOT_SUPPORTED;
+        size_t elem = (size_t)driver_elem_bytes(fmt);
+        size_t bytes = pResDesc->res.linear.sizeInBytes;
+        if (elem == 0 || bytes < elem)
+            return CUDA_ERROR_INVALID_VALUE;
+        void *host = NULL;
+        if (host_for(pResDesc->res.linear.devPtr, bytes, &host) !=
+            CUDA_SUCCESS)
+            return CUDA_ERROR_INVALID_VALUE;
+        acuda_image_desc id = {
+            .width = (uint32_t)(bytes / elem),
+            .height = 1,
+            .depth = 1,
+            .layers = 1,
+            .levels = 1,
+            .samples = 1,
+            .format = fmt,
+            .dim = 1,
+            .cube = 0,
+        };
+        acuda_status_t icst = acuda_image_create(g_actx, &own_img, &id,
+                                                         host);
+        if (icst != ACUDA_SUCCESS) {
+            ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexObjectCreate(linear): image create failed st=%d w=%u fmt=%d bytes=%zu\n",
+                        (int)icst, (unsigned)id.width, (int)fmt, bytes);
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        }
+        image = own_img;
+    } else if (pResDesc->resType == CU_RESOURCE_TYPE_PITCH2D) {
+        uint32_t fmt = 0;
+        if (driver_array_format(pResDesc->res.pitch2D.format,
+                                pResDesc->res.pitch2D.numChannels, 0,
+                                &fmt) != 0)
+            return CUDA_ERROR_NOT_SUPPORTED;
+        size_t elem = (size_t)driver_elem_bytes(fmt);
+        size_t w = pResDesc->res.pitch2D.width;
+        size_t h = pResDesc->res.pitch2D.height;
+        size_t pitch = pResDesc->res.pitch2D.pitchInBytes;
+        size_t row = w * elem;
+        if (elem == 0 || w == 0 || h == 0 || row > pitch)
+            return CUDA_ERROR_INVALID_VALUE;
+        void *host = NULL;
+        if (host_for(pResDesc->res.pitch2D.devPtr, pitch * h, &host) !=
+            CUDA_SUCCESS)
+            return CUDA_ERROR_INVALID_VALUE;
+        unsigned char *tight = malloc(row * h);
+        if (!tight)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        for (size_t y = 0; y < h; y++)
+            memcpy(tight + y * row,
+                   (const unsigned char *)host + y * pitch, row);
+        acuda_image_desc id = {
+            .width = (uint32_t)w,
+            .height = (uint32_t)h,
+            .depth = 1,
+            .layers = 1,
+            .levels = 1,
+            .samples = 1,
+            .format = fmt,
+            .dim = 2,
+            .cube = 0,
+        };
+        acuda_status_t ist = acuda_image_create(g_actx, &own_img, &id,
+                                                tight);
+        free(tight);
+        if (ist != ACUDA_SUCCESS)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        image = own_img;
+    } else {
+        return CUDA_ERROR_NOT_SUPPORTED;
+    }
+    (void)pResViewDesc;
+    acuda_sampler_desc sd;
+    memset(&sd, 0, sizeof(sd));
+    CUDA_TEXTURE_DESC td;
+    if (pTexDesc)
+        td = *pTexDesc;
+    else
+        memset(&td, 0, sizeof(td));
+    sd.filter = td.filterMode == CU_TR_FILTER_MODE_LINEAR ? 1u : 0u;
+    sd.mip_filter = td.mipmapFilterMode == CU_TR_FILTER_MODE_LINEAR ? 1u : 0u;
+    for (int i = 0; i < 3; i++) {
+        switch (td.addressMode[i]) {
+        case CU_TR_ADDRESS_MODE_CLAMP: sd.addr[i] = 2; break;
+        case CU_TR_ADDRESS_MODE_MIRROR: sd.addr[i] = 1; break;
+        case CU_TR_ADDRESS_MODE_BORDER: sd.addr[i] = 3; break;
+        default: sd.addr[i] = 0; break;
+        }
+    }
+    // Arrays require normalized coordinates; linear/pitch2D honour the
+    // CU_TRSF_NORMALIZED_COORDINATES flag (bit 1).
+    sd.normalized = is_array ? 1u : ((td.flags & 0x2u) ? 1u : 0u);
+    sd.compare = depth_tex ? 1u : 0u;
+    sd.compare_op = 3; // LESS_OR_EQUAL for depth texture references
+    for (int i = 0; i < 4; i++)
+        sd.border[i] = td.borderColor[i];
+
+    acuda_buffer_t smp = NULL, tex = NULL;
+    if (acuda_sampler_create(g_actx, &smp, &sd) != ACUDA_SUCCESS) {
+        if (own_img)
+            acuda_free(g_actx, own_img);
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
+    if (acuda_texture_create_image(g_actx, &tex, image, smp) !=
+        ACUDA_SUCCESS) {
+        acuda_free(g_actx, smp);
+        if (own_img)
+            acuda_free(g_actx, own_img);
+        return CUDA_ERROR_INVALID_VALUE;
+    }
+    if (g_ntexobjs == g_ctexobjs) {
+        size_t ncap = g_ctexobjs ? g_ctexobjs * 2 : 8;
+        driver_texobj_t *n = realloc(g_texobjs, sizeof(*n) * ncap);
+        if (!n) {
+            acuda_free(g_actx, tex);
+            acuda_free(g_actx, smp);
+            if (own_img)
+                acuda_free(g_actx, own_img);
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        }
+        g_texobjs = n;
+        g_ctexobjs = ncap;
+    }
+    driver_texobj_t *e = &g_texobjs[g_ntexobjs++];
+    memset(e, 0, sizeof(*e));
+    e->id = g_next_texid++;
+    if (e->id == 0)
+        e->id = g_next_texid++;
+    e->tex = tex;
+    e->sampler = smp;
+    e->own_image = own_img;
+    e->res = *pResDesc;
+    e->td = td;
+    *pTexObject = e->id;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexObjectDestroy(CUtexObject texObject) {
+    for (size_t i = 0; i < g_ntexobjs; i++) {
+        if (g_texobjs[i].id != texObject)
+            continue;
+        acuda_free(g_actx, g_texobjs[i].tex);
+        acuda_free(g_actx, g_texobjs[i].sampler);
+        if (g_texobjs[i].own_image)
+            acuda_free(g_actx, g_texobjs[i].own_image);
+        g_texobjs[i] = g_texobjs[--g_ntexobjs];
+        return CUDA_SUCCESS;
+    }
+    return CUDA_ERROR_INVALID_HANDLE;
+}
+
+CUresult ACUDA_CUDAAPI cuTexObjectGetResourceDesc(CUDA_RESOURCE_DESC *pResDesc,
+                                    CUtexObject texObject) {
+    driver_texobj_t *e = driver_tex_find(texObject);
+    if (!pResDesc || !e)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pResDesc = e->res;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexObjectGetTextureDesc(CUDA_TEXTURE_DESC *pTexDesc,
+                                   CUtexObject texObject) {
+    driver_texobj_t *e = driver_tex_find(texObject);
+    if (!pTexDesc || !e)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pTexDesc = e->td;
+    return CUDA_SUCCESS;
+}
+
+// ---- legacy texture references (CUDA 4.x / PhysX 2.8) ----------------
+
+static CUresult texref_rebuild(CUtexref h, int force) {
+    if (!h)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (h->is_array) {
+        if (h->obj) {
+            cuTexObjectDestroy(h->obj);
+            h->obj = 0;
+        }
+        h->built_addr = 0;
+        h->built_bytes = 0;
+    } else if (h->bytes == 0 || !h->fmt_set) {
+        if (h->obj) {
+            cuTexObjectDestroy(h->obj);
+            h->obj = 0;
+        }
+        h->built_addr = 0;
+        h->built_bytes = 0;
+        return CUDA_SUCCESS;
+    } else if (!force && h->obj && h->built_addr == h->addr &&
+               h->built_bytes == h->bytes && h->built_fmt == h->fmt &&
+               h->built_channels == h->channels) {
+        // Bind state unchanged (filter/flag/mipmap re-set): keep the
+        // existing snapshot instead of re-uploading every frame.
+        return CUDA_SUCCESS;
+    } else {
+        if (h->obj) {
+            cuTexObjectDestroy(h->obj);
+            h->obj = 0;
+        }
+        h->built_addr = 0;
+        h->built_bytes = 0;
+    }
+    /* The linear snapshot below copies from the host-visible mirror.
+       Make sure previously submitted work (e.g. a sort that just filled
+       this buffer) has completed first; otherwise the image captures
+       stale bytes and kernels hang on the degenerate data. Only needed
+       when actually (re)building; unchanged binds keep their snapshot. */
+    if (!h->is_array && h->bytes != 0 && h->addr != 0) {
+        CUcontext cc = NULL;
+        if (need_ctx(&cc) == CUDA_SUCCESS)
+            acuda_stream_synchronize(g_actx, NULL);
+    }
+    CUDA_RESOURCE_DESC rd;
+    memset(&rd, 0, sizeof(rd));
+    if (h->is_array) {
+        if (!h->array)
+            return CUDA_SUCCESS;
+        rd.resType = CU_RESOURCE_TYPE_ARRAY;
+        rd.res.array.hArray = h->array;
+    } else {
+        rd.resType = CU_RESOURCE_TYPE_LINEAR;
+        rd.res.linear.devPtr = h->addr;
+        rd.res.linear.format = h->fmt;
+        rd.res.linear.numChannels = (unsigned int)h->channels;
+        rd.res.linear.sizeInBytes = h->bytes;
+    }
+    CUDA_TEXTURE_DESC td;
+    memset(&td, 0, sizeof(td));
+    td.addressMode[0] = h->address_mode[0];
+    td.addressMode[1] = h->address_mode[1];
+    td.addressMode[2] = h->address_mode[2];
+    td.filterMode = h->filter;
+    td.flags = h->flags;
+    td.maxAnisotropy = h->max_aniso ? h->max_aniso : 1;
+    td.mipmapFilterMode = CU_TR_FILTER_MODE_POINT;
+    td.borderColor[0] = td.borderColor[1] = td.borderColor[2] = td.borderColor[3] = 0.0f;
+    CUresult tcr = cuTexObjectCreate(&h->obj, &rd, &td, NULL);
+    ACUDA_DEBUG_PRINT("acuda-trace ?? texref_rebuild(%s) create rc=%d obj=%llx\n",
+                h->name, (int)tcr, (unsigned long long)(uint64_t)h->obj);
+    if (tcr == CUDA_SUCCESS && !h->is_array) {
+        h->built_addr = h->addr;
+        h->built_bytes = h->bytes;
+        h->built_fmt = h->fmt;
+        h->built_channels = h->channels;
+    }
+    return tcr;
+}
+
+CUresult ACUDA_CUDAAPI cuModuleGetTexRef(CUtexref *pTexRef, CUmodule hmod,
+                                          const char *name) {
+    ACUDA_DEBUG_PRINT("acuda-trace ?? cuModuleGetTexRef(%s) mod=%p ntexrefs=%zu\n",
+                name ? name : "(null)", (void *)hmod,
+                hmod ? hmod->ntexrefs : 0);
+    if (!pTexRef || !hmod || !name)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pTexRef = NULL;
+    for (size_t i = 0; i < hmod->ntexrefs; i++) {
+        if (hmod->texrefs[i] &&
+            strcmp(hmod->texrefs[i]->name, name) == 0) {
+            *pTexRef = hmod->texrefs[i];
+            return CUDA_SUCCESS;
+        }
+    }
+    CUtexref tr = calloc(1, sizeof(*tr));
+    if (!tr)
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    tr->mod = hmod;
+    strncpy(tr->name, name, sizeof(tr->name) - 1);
+    tr->filter = CU_TR_FILTER_MODE_POINT;
+    tr->address_mode[0] = tr->address_mode[1] = tr->address_mode[2] =
+        CU_TR_ADDRESS_MODE_WRAP;
+    tr->max_aniso = 1;
+    if (hmod->ntexrefs == hmod->texrefs_cap) {
+        size_t ncap = hmod->texrefs_cap ? hmod->texrefs_cap * 2 : 4;
+        void *np = realloc(hmod->texrefs, ncap * sizeof(*hmod->texrefs));
+        if (!np) {
+            free(tr);
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        }
+        hmod->texrefs = np;
+        hmod->texrefs_cap = ncap;
+    }
+    hmod->texrefs[hmod->ntexrefs++] = tr;
+    *pTexRef = tr;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetAddress_v2(size_t *ByteOffset,
+                                             CUtexref hTexRef,
+                                             CUdeviceptr dptr, size_t bytes) {
+    ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexRefSetAddress(%s mod=%p dptr=%llx bytes=%zu)\n",
+                hTexRef ? hTexRef->name : "(null)",
+                (void *)(hTexRef ? hTexRef->mod : NULL),
+                (unsigned long long)dptr, bytes);
+    if (!hTexRef)
+        return CUDA_ERROR_INVALID_HANDLE;
+    if (ByteOffset)
+        *ByteOffset = 0;
+    if (bytes == 0 && dptr != 0) {
+        // cudart's texture bind path passes size 0; real CUDA binds to the
+        // end of the allocation. Probe the arena for the same extent, but
+        // cap the snapshot: PhysX sub-allocates particle buffers from one
+        // 256 MiB heap, so the raw remainder would build a ~250 MiB image
+        // per texture and exhaust device memory. 16 MiB covers ~1M float4
+        // particles, far above FluidMark's range.
+        size_t cap = 0;
+        if (acuda_arena_capacity((uint64_t)dptr, &cap) == 0 && cap != 0) {
+            size_t want = cap > (16u << 20) ? (16u << 20) : cap;
+            ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexRefSetAddress(%s) size0 -> cap=%zu use=%zu\n",
+                        hTexRef->name, cap, want);
+            bytes = want;
+        }
+    }
+    hTexRef->addr = dptr;
+    hTexRef->bytes = bytes;
+    hTexRef->is_array = 0;
+    hTexRef->array = NULL;
+    return texref_rebuild(hTexRef, 1);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetAddress(size_t *ByteOffset,
+                                          CUtexref hTexRef,
+                                          CUdeviceptr dptr, size_t bytes) {
+    return cuTexRefSetAddress_v2(ByteOffset, hTexRef, dptr, bytes);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetArray(CUtexref hTexRef, CUarray hArray,
+                                        unsigned int Flags) {
+    (void)Flags;
+    if (!hTexRef || !hArray)
+        return CUDA_ERROR_INVALID_VALUE;
+    hTexRef->array = hArray;
+    hTexRef->is_array = 1;
+    hTexRef->addr = 0;
+    hTexRef->bytes = 0;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetFormat(CUtexref hTexRef, CUarray_format fmt,
+                                         int NumPackedComponents) {
+    ACUDA_DEBUG_PRINT("acuda-trace ?? cuTexRefSetFormat(%s fmt=%d nch=%d)\n",
+                hTexRef ? hTexRef->name : "(null)", (int)fmt,
+                NumPackedComponents);
+    if (!hTexRef || NumPackedComponents < 1 || NumPackedComponents > 4)
+        return CUDA_ERROR_INVALID_VALUE;
+    hTexRef->fmt = fmt;
+    hTexRef->channels = NumPackedComponents;
+    hTexRef->fmt_set = 1;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetFlags(CUtexref hTexRef, unsigned int Flags) {
+    if (!hTexRef)
+        return CUDA_ERROR_INVALID_HANDLE;
+    hTexRef->flags = Flags;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetFilterMode(CUtexref hTexRef,
+                                             CUfilter_mode fm) {
+    if (!hTexRef || (fm != CU_TR_FILTER_MODE_POINT &&
+                     fm != CU_TR_FILTER_MODE_LINEAR))
+        return CUDA_ERROR_INVALID_VALUE;
+    hTexRef->filter = fm;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetAddressMode(CUtexref hTexRef, int dim,
+                                              CUaddress_mode am) {
+    if (!hTexRef || dim < 0 || dim > 2 || am > CU_TR_ADDRESS_MODE_BORDER)
+        return CUDA_ERROR_INVALID_VALUE;
+    hTexRef->address_mode[dim] = am;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefSetMaxAnisotropy(CUtexref hTexRef,
+                                                unsigned int maxAniso) {
+    if (!hTexRef)
+        return CUDA_ERROR_INVALID_HANDLE;
+    hTexRef->max_aniso = maxAniso;
+    return texref_rebuild(hTexRef, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetAddress_v2(CUdeviceptr *pdptr,
+                                             CUtexref hTexRef) {
+    if (!pdptr || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pdptr = hTexRef->addr;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetAddress(CUdeviceptr *pdptr,
+                                          CUtexref hTexRef) {
+    return cuTexRefGetAddress_v2(pdptr, hTexRef);
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetArray(CUarray *phArray, CUtexref hTexRef) {
+    if (!phArray || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *phArray = hTexRef->array;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetFormat(CUarray_format *pFormat,
+                                         int *pNumChannels, CUtexref hTexRef) {
+    if (!pFormat || !pNumChannels || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pFormat = hTexRef->fmt;
+    *pNumChannels = hTexRef->channels;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetFlags(unsigned int *pFlags,
+                                        CUtexref hTexRef) {
+    if (!pFlags || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pFlags = hTexRef->flags;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetFilterMode(CUfilter_mode *pfm,
+                                             CUtexref hTexRef) {
+    if (!pfm || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pfm = hTexRef->filter;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetAddressMode(CUaddress_mode *pam,
+                                              CUtexref hTexRef, int dim) {
+    if (!pam || !hTexRef || dim < 0 || dim > 2)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pam = hTexRef->address_mode[dim];
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexRefGetMaxAnisotropy(int *pmaxAniso,
+                                                CUtexref hTexRef) {
+    if (!pmaxAniso || !hTexRef)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pmaxAniso = (int)hTexRef->max_aniso;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuSurfObjectCreate(CUsurfObject *pSurfObject,
+                            const CUDA_RESOURCE_DESC *pResDesc) {
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!pSurfObject || !pResDesc)
+        return CUDA_ERROR_INVALID_VALUE;
+    acuda_buffer_t image = NULL;
+    if (pResDesc->resType == CU_RESOURCE_TYPE_ARRAY) {
+        CUarray a = pResDesc->res.array.hArray;
+        if (!a || !a->image)
+            return CUDA_ERROR_INVALID_VALUE;
+        image = a->image;
+    } else if (pResDesc->resType == CU_RESOURCE_TYPE_MIPMAPPED_ARRAY) {
+        CUmipmappedArray m = pResDesc->res.mipmap.hMipmappedArray;
+        if (!m || !m->image)
+            return CUDA_ERROR_INVALID_VALUE;
+        image = m->image;
+    } else {
+        return CUDA_ERROR_NOT_SUPPORTED;
+    }
+    // Only color arrays get VK_IMAGE_USAGE_STORAGE_BIT; depth, cube and
+    // multisampled images cannot back a surface object.
+    if (image->kind != 2 || !image->is_surface)
+        return CUDA_ERROR_NOT_SUPPORTED;
+    if (g_nsurfobjs == g_csurfobjs) {
+        size_t ncap = g_csurfobjs ? g_csurfobjs * 2 : 8;
+        driver_surfobj_t *n = realloc(g_surfobjs, sizeof(*n) * ncap);
+        if (!n)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        g_surfobjs = n;
+        g_csurfobjs = ncap;
+    }
+    uint32_t slot = 0;
+    for (uint32_t i = 1; i < g_surf_slot_cap; i++)
+        if (!g_surf_slots[i]) {
+            slot = i;
+            break;
+        }
+    if (slot == 0) {
+        uint32_t ncap = g_surf_slot_cap ? g_surf_slot_cap * 2 : 16;
+        acuda_buffer_t *ns =
+            realloc(g_surf_slots, sizeof(*ns) * (size_t)ncap);
+        if (!ns)
+            return CUDA_ERROR_OUT_OF_MEMORY;
+        memset(ns + g_surf_slot_cap, 0,
+               sizeof(*ns) * (size_t)(ncap - g_surf_slot_cap));
+        slot = g_surf_slot_cap ? g_surf_slot_cap : 1;
+        g_surf_slots = ns;
+        g_surf_slot_cap = ncap;
+    }
+    driver_surfobj_t *e = &g_surfobjs[g_nsurfobjs++];
+    memset(e, 0, sizeof(*e));
+    e->id = slot;
+    e->slot = slot;
+    e->image = image;
+    e->res = *pResDesc;
+    g_surf_slots[slot] = image;
+    *pSurfObject = e->id;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuSurfObjectDestroy(CUsurfObject surfObject) {
+    for (size_t i = 0; i < g_nsurfobjs; i++) {
+        if (g_surfobjs[i].id != surfObject)
+            continue;
+        // The array owns the image; surface objects are borrowed views.
+        if (g_surfobjs[i].slot < g_surf_slot_cap)
+            g_surf_slots[g_surfobjs[i].slot] = NULL;
+        g_surfobjs[i] = g_surfobjs[--g_nsurfobjs];
+        return CUDA_SUCCESS;
+    }
+    return CUDA_ERROR_INVALID_HANDLE;
+}
+
+CUresult ACUDA_CUDAAPI cuSurfObjectGetResourceDesc(CUDA_RESOURCE_DESC *pResDesc,
+                                     CUsurfObject surfObject) {
+    driver_surfobj_t *e = driver_surf_find(surfObject);
+    if (!pResDesc || !e)
+        return CUDA_ERROR_INVALID_VALUE;
+    *pResDesc = e->res;
+    return CUDA_SUCCESS;
+}
+

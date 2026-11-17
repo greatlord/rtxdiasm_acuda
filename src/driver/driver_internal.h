@@ -80,7 +80,72 @@ struct CUmod_st {
     } *globals;
     size_t nglobals, globals_cap;
 };
-struct CUtexref_st;
+
+struct CUarray_st {
+    acuda_buffer_t image;
+    CUDA_ARRAY_DESCRIPTOR desc2;
+    CUDA_ARRAY3D_DESCRIPTOR desc3;
+    int is3d;
+    unsigned int level;
+    int own;
+    struct CUarray_st *parent;
+};
+
+struct CUmipmappedArray_st {
+    acuda_buffer_t image;
+    CUDA_ARRAY3D_DESCRIPTOR desc;
+    unsigned int levels;
+    int is3d;
+};
+
+typedef struct {
+    CUtexObject id;
+    acuda_buffer_t tex;
+    acuda_buffer_t sampler;
+    acuda_buffer_t own_image;
+    CUDA_RESOURCE_DESC res;
+    CUDA_TEXTURE_DESC td;
+} driver_texobj_t;
+
+typedef struct {
+    CUsurfObject id;
+    uint32_t slot;
+    acuda_buffer_t image;
+    CUDA_RESOURCE_DESC res;
+} driver_surfobj_t;
+
+struct CUtexref_st {
+    CUmodule mod;
+    char name[ACUDA_ENTRY_NAME_MAX];
+    CUdeviceptr addr;
+    size_t bytes;
+    CUarray array;
+    int is_array;
+    int fmt_set;
+    CUarray_format fmt;
+    int channels;
+    unsigned int flags;
+    CUfilter_mode filter;
+    CUaddress_mode address_mode[3];
+    unsigned int max_aniso;
+    CUtexObject obj;
+    CUdeviceptr built_addr;
+    size_t built_bytes;
+    CUarray_format built_fmt;
+    int built_channels;
+};
+
+extern driver_texobj_t *g_texobjs;
+extern size_t g_ntexobjs, g_ctexobjs;
+extern CUtexObject g_next_texid;
+extern driver_surfobj_t *g_surfobjs;
+extern size_t g_nsurfobjs, g_csurfobjs;
+extern acuda_buffer_t *g_surf_slots;
+extern uint32_t g_surf_slot_cap;
+
+driver_surfobj_t *driver_surf_find(CUsurfObject id);
+void driver_img_type(acuda_buffer_t img, int *dim, int *arrayed, int *isint);
+
 struct CUfunc_st {
     uint32_t magic;
     CUmodule mod;
@@ -134,3 +199,7 @@ CUresult memcpy_d2d(CUdeviceptr dst, CUdeviceptr src, size_t bytes);
 #endif
 
 
+
+
+driver_texobj_t *driver_tex_find(CUtexObject id);
+int driver_elem_bytes(uint32_t fmt);
