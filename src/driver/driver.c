@@ -3962,20 +3962,6 @@ CUresult ACUDA_CUDAAPI cuLibraryEnumerateKernels(void **kernels, unsigned int nu
     (void)kernels; (void)numKernels; (void)library;
     return CUDA_SUCCESS;
 }
-CUresult ACUDA_CUDAAPI cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
-                              CUdeviceptr dptr) {
-    // The runtime only needs a successful answer here; the arena does not
-    // expose per-allocation metadata yet.
-    if (pbase)
-        *pbase = dptr;
-    if (psize)
-        *psize = 0;
-    return CUDA_SUCCESS;
-}
-CUresult ACUDA_CUDAAPI cuMemGetAddressRange_v2(CUdeviceptr *pbase, size_t *psize,
-                                 CUdeviceptr dptr) {
-    return cuMemGetAddressRange(pbase, psize, dptr);
-}
 
 
 
