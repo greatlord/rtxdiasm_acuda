@@ -222,12 +222,7 @@ size_t g_nsurfobjs, g_csurfobjs;
 acuda_buffer_t *g_surf_slots;
 uint32_t g_surf_slot_cap;
 
-driver_surfobj_t *driver_surf_find(CUsurfObject id) {
-    for (size_t i = 0; i < g_nsurfobjs; i++)
-        if (g_surfobjs[i].id == id)
-            return &g_surfobjs[i];
-    return NULL;
-}
+
 
 
 
@@ -306,44 +301,3 @@ CUresult need_ctx(CUcontext *out) {
 
 
 /* ---- Device characterization, primary contexts, misc (torch init path) ---- */
-
-
-#define ACUDA_MAX_DEVICES 8
-CUcontext primary_ctx[ACUDA_MAX_DEVICES];
-int primary_refs[ACUDA_MAX_DEVICES];
-CUmemPool default_pool[ACUDA_MAX_DEVICES];
-
-CUresult check_dev(int dev) {
-    int n = 0;
-    CUresult r = cuDeviceGetCount(&n);
-    if (r != CUDA_SUCCESS)
-        return r;
-    return (dev >= 0 && dev < n) ? CUDA_SUCCESS : CUDA_ERROR_INVALID_DEVICE;
-}
-
-
-
-
-
-
-
-
-/* Stubs for newer driver APIs that may be linked by torch */
-typedef struct CUtensorMap_st *CUtensorMap_t;
-typedef enum { CU_TENSOR_MAP_DATA_TYPE_UINT8_s = 0 } CUtensorMapDataType_s;
-typedef enum { CU_TENSOR_MAP_INTERLEAVE_NONE_s = 0 } CUtensorMapInterleave_s;
-typedef enum { CU_TENSOR_MAP_SWIZZLE_NONE_s = 0 } CUtensorMapSwizzle_s;
-typedef enum { CU_TENSOR_MAP_L2_PROMOTION_NONE_s = 0 } CUtensorMapL2promotion_s;
-typedef enum { CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE_s = 0 } CUtensorMapFloatOOBfill_s;
-
-
-
-/* Multi-device / IPC / graphics-interop copies: no second device here. */
-
-/* Allocation queries. */
-
-
-
-
-/* Array descriptors: forward the versioned queries. */
-

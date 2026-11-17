@@ -281,3 +281,15 @@ CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxReset_v2(CUdevice dev) {
 CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxSetFlags_v2(CUdevice dev, unsigned int flags) {
     return cuDevicePrimaryCtxSetFlags(dev, flags);
 }
+
+CUcontext primary_ctx[ACUDA_MAX_DEVICES];
+int primary_refs[ACUDA_MAX_DEVICES];
+CUmemPool default_pool[ACUDA_MAX_DEVICES];
+
+CUresult check_dev(int dev) {
+    int n = 0;
+    CUresult r = cuDeviceGetCount(&n);
+    if (r != CUDA_SUCCESS)
+        return r;
+    return (dev >= 0 && dev < n) ? CUDA_SUCCESS : CUDA_ERROR_INVALID_DEVICE;
+}

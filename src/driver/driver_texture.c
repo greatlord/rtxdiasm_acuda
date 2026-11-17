@@ -850,3 +850,10 @@ driver_texobj_t *driver_tex_find(CUtexObject id) {
             return &g_texobjs[i];
     return NULL;
 }
+
+driver_surfobj_t *driver_surf_find(CUsurfObject id) {
+    for (size_t i = 0; i < g_nsurfobjs; i++)
+        if (g_surfobjs[i].id == id)
+            return &g_surfobjs[i];
+    return NULL;
+}
