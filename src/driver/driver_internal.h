@@ -280,3 +280,5 @@ CUresult need_actx(void);
 
 int looks_like_ptx(const char *text);
 CUresult load_sass_image(CUmodule *module, const unsigned char *data, size_t size);
+
+CUresult load_fatbin_member(CUmodule *module, const unsigned char *data, size_t size);
