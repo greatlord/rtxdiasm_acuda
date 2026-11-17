@@ -3707,50 +3707,6 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
 
 /* IPC handles: 64-byte structs passed by value, like the real driver. */
 
-/* Exported aliases for clients that bind these names directly. */
-CUresult ACUDA_CUDAAPI cuModuleGetGlobal(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod,
-                           const char *name) {
-    return acuda_stub_cuModuleGetGlobal(dptr, bytes, hmod, name);
-}
-CUresult ACUDA_CUDAAPI cuModuleGetGlobal_v2(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod,
-                              const char *name) {
-    return acuda_stub_cuModuleGetGlobal(dptr, bytes, hmod, name);
-}
-CUresult ACUDA_CUDAAPI cuOccupancyMaxActiveBlocksPerMultiprocessor(
-    int *numBlocks, CUfunction func, int blockSize, size_t dynamicSMemSize) {
-    return acuda_stub_cuOccupancyMaxActiveBlocksPerMultiprocessor(
-        numBlocks, func, blockSize, dynamicSMemSize);
-}
-CUresult ACUDA_CUDAAPI cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
-    int *numBlocks, CUfunction func, int blockSize, size_t dynamicSMemSize,
-    unsigned int flags) {
-    return acuda_stub_cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
-        numBlocks, func, blockSize, dynamicSMemSize, flags);
-}
-CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSize(
-    int *minGridSize, int *maxBlockSize, CUfunction func,
-    size_t blockSizeLimit, size_t dynamicSMemSize) {
-    return acuda_stub_cuOccupancyMaxPotentialBlockSize(
-        minGridSize, maxBlockSize, func, blockSizeLimit, dynamicSMemSize);
-}
-CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSizeWithFlags(
-    int *minGridSize, int *maxBlockSize, CUfunction func,
-    size_t blockSizeLimit, size_t dynamicSMemSize, unsigned int flags) {
-    return acuda_stub_cuOccupancyMaxPotentialBlockSizeWithFlags(
-        minGridSize, maxBlockSize, func, blockSizeLimit, dynamicSMemSize,
-        flags);
-}
-CUresult ACUDA_CUDAAPI cuTensorMapEncodeTiled(
-    void *tensorMap, int tensorDataType, unsigned int tensorRank,
-    void *globalAddress, const unsigned long long *globalDim,
-    const unsigned long long *globalStrides, const unsigned int *boxDim,
-    const unsigned int *elementStrides, int interleave, int swizzle,
-    int l2Promotion, int oobFill) {
-    return acuda_stub_cuTensorMapEncodeTiled(
-        tensorMap, tensorDataType, tensorRank, globalAddress, globalDim,
-        globalStrides, boxDim, elementStrides, interleave, swizzle,
-        l2Promotion, oobFill);
-}
 
 CUresult ACUDA_CUDAAPI cuModuleGetLoadingMode(int *mode) {
     if (!mode)
