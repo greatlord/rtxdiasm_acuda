@@ -1,4 +1,4 @@
-﻿#include "driver_internal.h"
+#include "acuda/driver/driver_internal.h"
 
 /* Diagnostics: PhysX-era capability gates may key off total device memory
  * (the 32-bit default is 512 MiB; real cards of the era had 1+ GiB).

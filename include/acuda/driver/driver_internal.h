@@ -1,4 +1,4 @@
-﻿#ifndef ACUDA_DRIVER_INTERNAL_H
+#ifndef ACUDA_DRIVER_INTERNAL_H
 #define ACUDA_DRIVER_INTERNAL_H
 
 #ifndef _GNU_SOURCE
@@ -14,8 +14,8 @@
 #include <intrin.h>
 #endif
 #include "internal.h"
-#include "arena.h"
-#include "rtxdisam_bridge.h"
+#include "acuda/driver/arena.h"
+#include "acuda/driver/rtxdisam_bridge.h"
 #include "acuda/driver.h"
 #include "acuda/compiler.h"
 #include "acuda/context.h"

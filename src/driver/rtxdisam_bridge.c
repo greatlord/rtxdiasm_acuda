@@ -10,7 +10,7 @@
 // rtxdisam_native and ask it to lift the image to PTX. The dependency is
 // deliberately optional: a missing library leaves the existing clean
 // CUDA_ERROR_INVALID_IMAGE path intact.
-#include "rtxdisam_bridge.h"
+#include "acuda/driver/rtxdisam_bridge.h"
 
 #include <stdint.h>
 #include <stdio.h>

@@ -1,4 +1,4 @@
-﻿#include "driver_internal.h"
+#include "acuda/driver/driver_internal.h"
 #include <stdlib.h>
 
 CUresult ACUDA_CUDAAPI cuStreamCreate(CUstream *phStream, unsigned int flags) {

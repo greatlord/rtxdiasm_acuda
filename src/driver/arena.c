@@ -6,7 +6,7 @@
 #else
 #include <sys/mman.h>
 #endif
-#include "arena.h"
+#include "acuda/driver/arena.h"
 
 typedef struct {
     size_t offset, size; // free span within arena

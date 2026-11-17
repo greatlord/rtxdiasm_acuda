@@ -1,5 +1,5 @@
-﻿#include "driver_internal.h"
-#include "rtxdisam_bridge.h"
+#include "acuda/driver/driver_internal.h"
+#include "acuda/driver/rtxdisam_bridge.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

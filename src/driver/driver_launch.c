@@ -1,4 +1,4 @@
-﻿#include "driver_internal.h"
+#include "acuda/driver/driver_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -213,7 +213,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     /* One parameter-model fetch serves the launch-info log, the packed
      * argument walk, and the launch below.  acuda_kernel_info_t is
      * ~283 KiB (per-parameter name tables); keep exactly one live copy
-     * â€” worker threads that drive PhysX do not have stack to spare. */
+     * — worker threads that drive PhysX do not have stack to spare. */
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(f->k);
     if (!info)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_UNKNOWN, __LINE__); return CUDA_ERROR_UNKNOWN; }
