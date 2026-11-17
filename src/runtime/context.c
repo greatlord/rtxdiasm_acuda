@@ -20,8 +20,8 @@
 #define acuda_strdup strdup
 #endif
 
-#if !defined(VK_API_VERSION_1_3)
-#error "ACuda requires Vulkan headers with Vulkan 1.3 support"
+#if !defined(VK_API_VERSION_1_4)
+#error "ACuda requires Vulkan headers with Vulkan 1.4 support"
 #endif
 
 #define ACUDA_VALIDATION_LAYER "VK_LAYER_KHRONOS_validation"
@@ -238,7 +238,7 @@ static int has_device_ext(VkPhysicalDevice dev, const char *want) {
     return found;
 }
 
-// Vulkan 1.3 core features this backend relies on. maintenance4
+// Vulkan 1.4 core features this backend relies on. maintenance4
 // (LocalSizeId) and synchronization2 (the 1.3 barrier API) are
 // required; the integer dot product is optional and only enables the
 // native dp4a path.
@@ -263,7 +263,7 @@ static int device_is_dozen(VkPhysicalDevice dev) {
 static int has_vk13_core(VkPhysicalDevice dev) {
     VkPhysicalDeviceProperties p;
     vkGetPhysicalDeviceProperties(dev, &p);
-    if (p.apiVersion < VK_API_VERSION_1_3)
+    if (p.apiVersion < VK_API_VERSION_1_4)
         return 0;
     VkPhysicalDeviceVulkan13Features f;
     query_vk13(dev, &f);
@@ -1123,7 +1123,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "acuda",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
-        .apiVersion = VK_API_VERSION_1_3,
+        .apiVersion = VK_API_VERSION_1_4,
     };
     const char *layer = ACUDA_VALIDATION_LAYER;
     const char *ext = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
@@ -1152,7 +1152,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     if (vr != VK_SUCCESS) {
         if (vr == VK_ERROR_INCOMPATIBLE_DRIVER)
             fprintf(stderr,
-                    "ACuda: Vulkan 1.3 is required, but the loader/driver "
+                    "ACuda: Vulkan 1.4 is required, but the loader/driver "
                     "refused the instance\n");
         free(ctx);
         return acuda_from_vk(vr);
@@ -1295,7 +1295,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     }
     if (!found) {
         fprintf(stderr,
-                "ACuda: no Vulkan 1.3 compute device with maintenance4 + "
+                "ACuda: no Vulkan 1.4 compute device with maintenance4 + "
                 "synchronization2 support found\n");
         free(ctx->devices);
         free(ctx->device_original);
@@ -1696,7 +1696,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT i64imgen = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,
     };
-    // shaderIntegerDotProduct is optional in Vulkan 1.3. It only
+    // shaderIntegerDotProduct is optional in Vulkan 1.4. It only
     // selects the native dp4a lowering; the compiler keeps the exact
     // fallback when it is absent (or disabled by the env knob).
     int dot_ok = v13q.shaderIntegerDotProduct != VK_FALSE;

@@ -488,7 +488,7 @@ static acuda_status_t ms_fill(acuda_context_t ctx, acuda_buffer_t b) {
         .dependencyCount = 1,
         .pDependencies = &dep,
     };
-    // Prefer Vulkan 1.3 dynamic rendering; the render pass remains as a
+    // Prefer Vulkan 1.4 dynamic rendering; the render pass remains as a
     // fallback for devices that do not expose the feature.
     int dyn = ctx->dynamic_rendering_ok;
     VkRenderPass rp = VK_NULL_HANDLE;
