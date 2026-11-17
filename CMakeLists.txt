@@ -43,6 +43,7 @@ add_library(acuda_runtime STATIC
   src/runtime/context_query.c
   src/runtime/context_highperf.c
   src/runtime/context_probe.c
+  src/runtime/context_setup.c
   src/runtime/stream.c
   src/runtime/memory.c
   src/runtime/texture_image.c
