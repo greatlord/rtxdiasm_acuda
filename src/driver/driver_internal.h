@@ -208,3 +208,39 @@ typedef void (ACUDA_CUDAAPI *acuda_stream_cb_t)(CUstream hStream, CUresult statu
 
 CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y, size_t z, void *host, size_t wbytes, size_t h, size_t depth, size_t pitch);
 CUresult driver_memcpy_common(size_t src_xb, size_t src_y, size_t src_z, CUmemorytype src_type, const void *src_host, CUdeviceptr src_dev, CUarray src_array, size_t src_pitch, size_t src_height, size_t dst_xb, size_t dst_y, size_t dst_z, CUmemorytype dst_type, void *dst_host, CUdeviceptr dst_dev, CUarray dst_array, size_t dst_pitch, size_t dst_height, size_t wbytes, size_t h, size_t depth);
+
+#if defined(_WIN32)
+int acuda_host_heap_init(size_t need);
+#endif
+
+#if defined(_WIN32) && !defined(_WIN64)
+#include <stdio.h>
+static inline void acuda_trace_va(const char *tag) {
+    if (!getenv("ACUDA_TRACE"))
+        return;
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned char *p = (unsigned char *)0x10000;
+    size_t total_free = 0, largest = 0, committed = 0;
+    while ((uintptr_t)p < (uintptr_t)0x80000000u) {
+        if (VirtualQuery(p, &mbi, sizeof(mbi)) != sizeof(mbi))
+            break;
+        if (mbi.State == MEM_FREE) {
+            total_free += mbi.RegionSize;
+            if (mbi.RegionSize > largest)
+                largest = mbi.RegionSize;
+        } else if (mbi.State == MEM_COMMIT) {
+            committed += mbi.RegionSize;
+        }
+        unsigned char *next =
+            (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
+        if (next <= p)
+            break;
+        p = next;
+    }
+    fprintf(stderr,
+            "acuda-va %s: free=%zu largest=%zu committed=%zu\n",
+            tag, total_free, largest, committed);
+}
+#else
+static inline void acuda_trace_va(const char *tag) { (void)tag; }
+#endif
