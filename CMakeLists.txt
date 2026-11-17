@@ -109,6 +109,7 @@ add_library(acuda_driver SHARED
   src/driver/driver_context.c
   src/driver/driver_memset.c
   src/driver/driver_memcpy.c
+  src/driver/driver_vmm.c
   src/driver/arena.c
   ${ACUDA_TRACE_SOURCE_INTERNAL}
   src/driver/rtxdisam_bridge.c
