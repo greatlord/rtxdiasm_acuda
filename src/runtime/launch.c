@@ -757,8 +757,3 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
                 (int)st, (unsigned long long)s->last_submitted);
     return st;
 }
-
-
-// Common host-call service loop. `handles` is non-NULL when the caller
-// has host-side buffer handles (needed to map global pointer arguments);
-// the raw driver path has only VkBuffers and passes NULL.
