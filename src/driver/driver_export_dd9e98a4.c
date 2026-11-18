@@ -146,27 +146,29 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(
  *                          cudaMemcpyKind kind, cudaStream_t stream)
  * ACuda's device memory is directly addressable host memory, so the async
  * copies are executed synchronously, exactly like ACuda's cudart does. */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    int kind = (int)(intptr_t)d;
-    size_t count = (size_t)c;
-    (void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
+        void *dst, void *src, void *count, void *kind, void *stream,
+        void *unused_f, void *unused_g, void *unused_h) {
+    int copy_kind = (int)(intptr_t)kind;
+    size_t bytes = (size_t)count;
+    (void)stream; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    if ((!a || !b) && count)
+    if ((!dst || !src) && bytes)
         return CUDA_ERROR_INVALID_VALUE;
-    if (!count)
+    if (!bytes)
         return CUDA_SUCCESS;
-    switch (kind) {
+    switch (copy_kind) {
     case 0: /* cudaMemcpyHostToHost */
-        memmove(a, b, count);
+        memmove(dst, src, bytes);
         return CUDA_SUCCESS;
     case 1: /* cudaMemcpyHostToDevice */
-        return cuMemcpyHtoD((CUdeviceptr)(uintptr_t)a, b, count);
+        return cuMemcpyHtoD((CUdeviceptr)(uintptr_t)dst, src, bytes);
     case 2: /* cudaMemcpyDeviceToHost */
-        return cuMemcpyDtoH(a, (CUdeviceptr)(uintptr_t)b, count);
+        return cuMemcpyDtoH(dst, (CUdeviceptr)(uintptr_t)src, bytes);
     case 3: /* cudaMemcpyDeviceToDevice */
-        return cuMemcpyDtoD((CUdeviceptr)(uintptr_t)a, (CUdeviceptr)(uintptr_t)b,
-                            count);
+        return cuMemcpyDtoD((CUdeviceptr)(uintptr_t)dst,
+                            (CUdeviceptr)(uintptr_t)src, bytes);
     default:
         return CUDA_ERROR_INVALID_VALUE;
     }
