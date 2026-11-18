@@ -60,11 +60,14 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_attribute(
 }
 
 /* id 0x14: cudaMalloc(void **devPtr, size_t size) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(
+        void *devPtr, void *size, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuMemAlloc((CUdeviceptr *)a, (size_t)b);
+    return cuMemAlloc((CUdeviceptr *)devPtr, (size_t)size);
 }
 
 /* id 0x19: cudaMallocHost(void **ptr, size_t size) */
