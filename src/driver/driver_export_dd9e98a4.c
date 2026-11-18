@@ -49,11 +49,14 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
 }
 
 /* id 0xc8: cudaDeviceGetAttribute(int *value, int attr, int device) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_attribute(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_attribute(
+        void *value, void *attr, void *device, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuDeviceGetAttribute((int *)a, (int)(intptr_t)b, (CUdevice)(intptr_t)c);
+    return cuDeviceGetAttribute((int *)value, (int)(intptr_t)attr,
+                                (CUdevice)(intptr_t)device);
 }
 
 /* id 0x14: cudaMalloc(void **devPtr, size_t size) */
