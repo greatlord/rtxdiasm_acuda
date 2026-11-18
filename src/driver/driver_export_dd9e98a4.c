@@ -175,13 +175,16 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
 }
 
 /* id 0x16: cudaFree(void *devPtr) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(
+        void *devPtr, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    if (!a)
+    if (!devPtr)
         return CUDA_SUCCESS;
-    return cuMemFree((CUdeviceptr)(uintptr_t)a);
+    return cuMemFree((CUdeviceptr)(uintptr_t)devPtr);
 }
 
 /* id 0x1a: cudaFreeHost(void *ptr) */
