@@ -34,14 +34,17 @@ static int acuda_dd9e98a4_driver_ready(void) {
     return state == 1;
 }
 
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
+        void *count, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     CUresult r;
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    r = cuDeviceGetCount((int *)a);
-    ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0x3 cudaGetDeviceCount -> %d (count=%d)\n",
-            (int)r, a ? *(int *)a : -1);
+    r = cuDeviceGetCount((int *)count);
+    ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 id=0x3 cudaGetDeviceCount -> %d (count=%d)\n",
+                      (int)r, count ? *(int *)count : -1);
     return r;
 }
 
