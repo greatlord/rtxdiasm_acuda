@@ -188,63 +188,86 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(
 }
 
 /* id 0x1a: cudaFreeHost(void *ptr) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
-    free(a);
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(
+        void *ptr, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    free(ptr);
     return CUDA_SUCCESS;
 }
 
 /* id 0xa5: cudaDeviceSynchronize(void) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_synchronize(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_synchronize(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
     return cuCtxSynchronize();
 }
 
 /* id 0x85: cudaEventCreate(cudaEvent_t *event) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create(
+        void *event, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventCreate((CUevent *)a, 0);
+    return cuEventCreate((CUevent *)event, 0);
 }
 
 /* id 0x87: cudaEventRecord(cudaEvent_t event, cudaStream_t stream) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
+        void *event, void *stream, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventRecord((CUevent)a, (CUstream)b);
+    return cuEventRecord((CUevent)event, (CUstream)stream);
 }
 
 /* id 0x8a: cudaEventQuery(cudaEvent_t event) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_query(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_query(
+        void *event, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventQuery((CUevent)a);
+    return cuEventQuery((CUevent)event);
 }
 
 /* id 0x1e6: cudaEventElapsedTime(float *ms, cudaEvent_t start, cudaEvent_t end) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_elapsed_time(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_elapsed_time(
+        void *ms, void *start, void *end, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventElapsedTime((float *)a, (CUevent)b, (CUevent)c);
+    return cuEventElapsedTime((float *)ms, (CUevent)start, (CUevent)end);
 }
 
 /* id 0x88: cudaEventDestroy(cudaEvent_t event) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_destroy(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_destroy(
+        void *event, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventDestroy((CUevent)a);
+    return cuEventDestroy((CUevent)event);
 }
 
 /* id 0xab / 0xac: cudaProfilerStart() / cudaProfilerStop() */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
 }
 
