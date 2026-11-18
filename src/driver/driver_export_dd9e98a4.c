@@ -71,16 +71,18 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(
 }
 
 /* id 0x19: cudaMallocHost(void **ptr, size_t size) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    size_t size = (size_t)b;
-    (void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
-    if (!a)
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
+        void *ptr, void *size, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!ptr)
         return CUDA_ERROR_INVALID_VALUE;
-    *(void **)a = NULL;
+    *(void **)ptr = NULL;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    *(void **)a = malloc(size ? size : 1);
-    return *(void **)a ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
+    *(void **)ptr = malloc((size_t)size ? (size_t)size : 1);
+    return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
 }
 
 /* id 0x10: cudaSetDevice(int device) */
