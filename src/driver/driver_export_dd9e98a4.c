@@ -367,59 +367,65 @@ static ACUDA_DD9E98A4_TLS acuda_dd9e98a4_launch_config
     g_dd9e98a4_configs[16];
 static ACUDA_DD9E98A4_TLS unsigned g_dd9e98a4_config_depth;
 
-/* id 0x1f6: __cudaPushCallConfiguration(dim3 *grid, dim3 *block,
- *                                       size_t sharedMem, void *stream) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_push_config(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+/* id 0x1f6: __cudaPushCallConfiguration(dim3 *gridDim, dim3 *blockDim,
+ *                                       size_t sharedMem, cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_push_config(
+        void *gridDim, void *blockDim, void *sharedMem, void *stream,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_launch_config *cfg;
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 push config\n");
-    (void)e;(void)f;(void)g;(void)h;
-    if (!a || !b || g_dd9e98a4_config_depth >= 16)
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!gridDim || !blockDim || g_dd9e98a4_config_depth >= 16)
         return CUDA_ERROR_INVALID_VALUE;
     cfg = &g_dd9e98a4_configs[g_dd9e98a4_config_depth++];
-    cfg->grid = *(const acuda_dd9e98a4_dim3 *)a;
-    cfg->block = *(const acuda_dd9e98a4_dim3 *)b;
-    cfg->shared = (size_t)c;
-    cfg->stream = d;
+    cfg->grid = *(const acuda_dd9e98a4_dim3 *)gridDim;
+    cfg->block = *(const acuda_dd9e98a4_dim3 *)blockDim;
+    cfg->shared = (size_t)sharedMem;
+    cfg->stream = stream;
     return CUDA_SUCCESS;
 }
 
-/* id 0x1f7: __cudaPopCallConfiguration(dim3 *grid, dim3 *block,
- *                                      size_t *sharedMem, void **stream) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+/* id 0x1f7: __cudaPopCallConfiguration(dim3 *gridDim, dim3 *blockDim,
+ *                                      size_t *sharedMem, cudaStream_t *stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
+        void *gridDim, void *blockDim, void *sharedMem, void *stream,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_launch_config *cfg;
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 pop config\n");
-    (void)e;(void)f;(void)g;(void)h;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (g_dd9e98a4_config_depth == 0)
         return CUDA_ERROR_INVALID_VALUE;
     cfg = &g_dd9e98a4_configs[--g_dd9e98a4_config_depth];
-    if (a)
-        *(acuda_dd9e98a4_dim3 *)a = cfg->grid;
-    if (b)
-        *(acuda_dd9e98a4_dim3 *)b = cfg->block;
-    if (c)
-        *(size_t *)c = cfg->shared;
-    if (d)
-        *(void **)d = cfg->stream;
+    if (gridDim)
+        *(acuda_dd9e98a4_dim3 *)gridDim = cfg->grid;
+    if (blockDim)
+        *(acuda_dd9e98a4_dim3 *)blockDim = cfg->block;
+    if (sharedMem)
+        *(size_t *)sharedMem = cfg->shared;
+    if (stream)
+        *(void **)stream = cfg->stream;
     return CUDA_SUCCESS;
 }
 
-/* id 0x1f9: cudaLaunchKernel(const void *func, dim3 *grid, dim3 *block,
- *                            void **args, size_t sharedMem, void *stream) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    const acuda_dd9e98a4_dim3 *grid = (const acuda_dd9e98a4_dim3 *)b;
-    const acuda_dd9e98a4_dim3 *block = (const acuda_dd9e98a4_dim3 *)c;
+/* id 0x1f9: cudaLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
+ *                            void **args, size_t sharedMem, cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
+        void *func, void *gridDim, void *blockDim, void *args, void *sharedMem,
+        void *stream, void *unused_g, void *unused_h) {
+    const acuda_dd9e98a4_dim3 *grid = (const acuda_dd9e98a4_dim3 *)gridDim;
+    const acuda_dd9e98a4_dim3 *block = (const acuda_dd9e98a4_dim3 *)blockDim;
     acuda_dd9e98a4_kernel *k = NULL;
     acuda_dd9e98a4_fatbin *fb;
     CUfunction fn = NULL;
     CUresult r;
     unsigned i;
-    (void)g;(void)h;
+    (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    if (!a || !grid || !block)
+    if (!func || !grid || !block)
         return CUDA_ERROR_INVALID_VALUE;
     for (i = 0; i < g_dd9e98a4_nkernels; i++) {
-        if (g_dd9e98a4_kernels[i].host_fn == a) {
+        if (g_dd9e98a4_kernels[i].host_fn == func) {
             k = &g_dd9e98a4_kernels[i];
             break;
         }
@@ -441,8 +447,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(void *a, void *b,
     if (r != CUDA_SUCCESS)
         return r;
     return cuLaunchKernel(fn, grid->x, grid->y, grid->z, block->x, block->y,
-                          block->z, (unsigned int)(size_t)e, (CUstream)f, d,
-                          NULL);
+                          block->z, (unsigned int)(size_t)sharedMem,
+                          (CUstream)stream, args, NULL);
 }
 
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
@@ -477,22 +483,28 @@ static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     }
 }
 
-static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
+        void *request, void *arg_b, void *arg_c, void *arg_d, void *arg_e,
+        void *arg_f, void *arg_g, void *arg_h) {
     static int n = 0;
     unsigned int id = 0xFFFFFFFFu, sub = 0;
-    if (a) {
-        const unsigned char *p = (const unsigned char *)a;
-        id = (unsigned int)p[8] | ((unsigned int)p[9] << 8) | ((unsigned int)p[10] << 16) | ((unsigned int)p[11] << 24);
-        sub = (unsigned int)p[12] | ((unsigned int)p[13] << 8) | ((unsigned int)p[14] << 16) | ((unsigned int)p[15] << 24);
+    if (request) {
+        const unsigned char *p = (const unsigned char *)request;
+        id = (unsigned int)p[8] | ((unsigned int)p[9] << 8) |
+             ((unsigned int)p[10] << 16) | ((unsigned int)p[11] << 24);
+        sub = (unsigned int)p[12] | ((unsigned int)p[13] << 8) |
+              ((unsigned int)p[14] << 16) | ((unsigned int)p[15] << 24);
     }
     if (n < 80) {
-        ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x sub=%u a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n",
-                n, id, sub, a,b,c,d,e,f,g,h);
+        ACUDA_DEBUG_PRINT(
+                "ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x sub=%u a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n",
+                n, id, sub, request, arg_b, arg_c, arg_d, arg_e, arg_f, arg_g,
+                arg_h);
     } else if (n == 80) {
-        ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4_dispatch ... (%d calls so far)\n", n);
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch ... (%d calls so far)\n", n);
     }
     n++;
-    (void)f;
+    (void)arg_f;
     return acuda_dd9e98a4_get_id_stub(id);
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_slot01(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
