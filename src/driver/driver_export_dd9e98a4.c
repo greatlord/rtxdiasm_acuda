@@ -86,13 +86,16 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
 }
 
 /* id 0x10: cudaSetDevice(int device) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
+        void *device, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     CUcontext ctx = NULL;
     CUresult r;
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    r = cuDevicePrimaryCtxRetain(&ctx, (CUdevice)(intptr_t)a);
+    r = cuDevicePrimaryCtxRetain(&ctx, (CUdevice)(intptr_t)device);
     if (r != CUDA_SUCCESS)
         return r;
     return cuCtxSetCurrent(ctx);
