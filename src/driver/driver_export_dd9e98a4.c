@@ -507,8 +507,308 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
                           (CUstream)stream, args, NULL);
 }
 
+
+/* id 0x5: cudaChooseDevice(int *device, const struct cudaDeviceProp *prop) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_choose_device(
+        void *device, void *prop, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)prop; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (device)
+        *(int *)device = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xa: cudaGetLastError(void) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb: cudaPeekAtLastError(void) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_peek_at_last_error(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xc: cudaGetErrorString(cudaError_t error) -> const char * */
+static const char *ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string_runtime(
+        void *error, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    switch ((int)(intptr_t)error) {
+    case 0: return "no error";
+    case 1: return "invalid argument";
+    case 2: return "out of memory";
+    case 3: return "initialization error";
+    case 201: return "invalid device context";
+    case 700: return "an illegal memory access was encountered";
+    default: return "unknown error";
+    }
+}
+
+/* id 0x12: cudaSetValidDevices(int *device_arr, int len) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_valid_devices(
+        void *device_arr, void *len, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device_arr; (void)len; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x13: cudaSetDeviceFlags(unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device_flags(
+        void *flags, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)flags; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xd4: cudaGetDeviceFlags(unsigned int *flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_flags(
+        void *flags, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (flags)
+        *(unsigned int *)flags = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x81: cudaStreamCreate(cudaStream_t *pStream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create(
+        void *pStream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!pStream)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(CUstream *)pStream = NULL;
+    return cuStreamCreate((CUstream *)pStream, 0);
+}
+
+/* id 0xc6: cudaStreamCreateWithFlags(cudaStream_t *pStream, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_flags(
+        void *pStream, void *flags, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!pStream)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(CUstream *)pStream = NULL;
+    return cuStreamCreate((CUstream *)pStream, (unsigned int)(uintptr_t)flags);
+}
+
+/* id 0xca: cudaStreamCreateWithPriority(cudaStream_t *pStream, unsigned int flags, int priority) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_priority(
+        void *pStream, void *flags, void *priority, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)priority; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!pStream)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(CUstream *)pStream = NULL;
+    return cuStreamCreate((CUstream *)pStream, (unsigned int)(uintptr_t)flags);
+}
+
+/* id 0xa6: cudaDeviceGetLimit(size_t *pValue, enum cudaLimit limit) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_limit(
+        void *pValue, void *limit, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!pValue)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(size_t *)pValue = 0;
+    return cuCtxGetLimit((size_t *)pValue, (int)(intptr_t)limit);
+}
+
+/* id 0xa7: cudaDeviceSetLimit(enum cudaLimit limit, size_t value) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_limit(
+        void *limit, void *value, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return cuCtxSetLimit((int)(intptr_t)limit, (size_t)(uintptr_t)value);
+}
+
+/* id 0xa8: cudaDeviceGetCacheConfig(enum cudaFuncCache *pCacheConfig) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_cache_config(
+        void *pCacheConfig, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (pCacheConfig)
+        *(int *)pCacheConfig = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xa9: cudaDeviceSetCacheConfig(enum cudaFuncCache cacheConfig) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_cache_config(
+        void *cacheConfig, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)cacheConfig; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xad: cudaDeviceGetByPCIBusId(int *device, const char *pciBusId) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_by_pci_bus_id(
+        void *device, void *pciBusId, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pciBusId; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (device)
+        *(int *)device = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xae: cudaDeviceGetPCIBusId(char *pciBusId, int len, int device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_pci_bus_id(
+        void *pciBusId, void *len, void *device, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    int n = (int)(intptr_t)len;
+    (void)device; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (pciBusId && n > 0) {
+        const char *id = "0000:00:00.0";
+        int i = 0;
+        for (; id[i] && i < n - 1; i++)
+            ((char *)pciBusId)[i] = id[i];
+        ((char *)pciBusId)[i] = '\0';
+    }
+    return CUDA_SUCCESS;
+}
+
+/* id 0xcd: cudaDeviceGetStreamPriorityRange(int *leastPriority, int *greatestPriority) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_stream_priority_range(
+        void *leastPriority, void *greatestPriority, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (leastPriority)
+        *(int *)leastPriority = 0;
+    if (greatestPriority)
+        *(int *)greatestPriority = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb0: cudaIpcGetEventHandle(cudaIpcEventHandle_t *handle, cudaEvent_t event) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_event_handle(
+        void *handle, void *event, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)event; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (handle)
+        memset(handle, 0, 64);
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb2: cudaIpcGetMemHandle(cudaIpcMemHandle_t *handle, void *devPtr) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_mem_handle(
+        void *handle, void *devPtr, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)devPtr; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (handle)
+        memset(handle, 0, 64);
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb4: cudaIpcCloseMemHandle(void *devPtr) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_close_mem_handle(
+        void *devPtr, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)devPtr; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb7: cudaDeviceGetSharedMemConfig(enum cudaSharedMemConfig *pConfig) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_shared_mem_config(
+        void *pConfig, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (pConfig)
+        *(int *)pConfig = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb8: cudaDeviceSetSharedMemConfig(enum cudaSharedMemConfig config) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
+        void *config, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)config; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
+    case 0x5: return (void*)&acuda_dd9e98a4_api_choose_device;
+    case 0xa: return (void*)&acuda_dd9e98a4_api_get_last_error;
+    case 0xb: return (void*)&acuda_dd9e98a4_api_peek_at_last_error;
+    case 0xc: return (void*)&acuda_dd9e98a4_api_get_error_string_runtime;
+    case 0x12: return (void*)&acuda_dd9e98a4_api_set_valid_devices;
+    case 0x13: return (void*)&acuda_dd9e98a4_api_set_device_flags;
+    case 0x81: return (void*)&acuda_dd9e98a4_api_stream_create;
+    case 0xa6: return (void*)&acuda_dd9e98a4_api_device_get_limit;
+    case 0xa7: return (void*)&acuda_dd9e98a4_api_device_set_limit;
+    case 0xa8: return (void*)&acuda_dd9e98a4_api_device_get_cache_config;
+    case 0xa9: return (void*)&acuda_dd9e98a4_api_device_set_cache_config;
+    case 0xad: return (void*)&acuda_dd9e98a4_api_device_get_by_pci_bus_id;
+    case 0xae: return (void*)&acuda_dd9e98a4_api_device_get_pci_bus_id;
+    case 0xb0: return (void*)&acuda_dd9e98a4_api_ipc_get_event_handle;
+    case 0xb2: return (void*)&acuda_dd9e98a4_api_ipc_get_mem_handle;
+    case 0xb4: return (void*)&acuda_dd9e98a4_api_ipc_close_mem_handle;
+    case 0xb7: return (void*)&acuda_dd9e98a4_api_device_get_shared_mem_config;
+    case 0xb8: return (void*)&acuda_dd9e98a4_api_device_set_shared_mem_config;
+    case 0xc6: return (void*)&acuda_dd9e98a4_api_stream_create_with_flags;
+    case 0xca: return (void*)&acuda_dd9e98a4_api_stream_create_with_priority;
+    case 0xcd: return (void*)&acuda_dd9e98a4_api_device_get_stream_priority_range;
+    case 0xd4: return (void*)&acuda_dd9e98a4_api_get_device_flags;
     case 0x10: return (void*)&acuda_dd9e98a4_api_set_device;
     case 0x11: return (void*)&acuda_dd9e98a4_api_get_device;
     case 0x14: return (void*)&acuda_dd9e98a4_api_malloc;
