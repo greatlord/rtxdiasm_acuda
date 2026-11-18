@@ -240,8 +240,8 @@ CUresult ACUDA_CUDAAPI cuOccupancyMaxActiveBlocksPerMultiprocessor(int *numBlock
 CUresult ACUDA_CUDAAPI cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(int *numBlocks, CUfunction func, int blockSize, size_t dynamicSMemSize, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSize(int *minGridSize, int *maxBlockSize, CUfunction func, size_t blockSizeLimit, size_t dynamicSMemSize);
 CUresult ACUDA_CUDAAPI cuOccupancyMaxPotentialBlockSizeWithFlags(int *minGridSize, int *maxBlockSize, CUfunction func, size_t blockSizeLimit, size_t dynamicSMemSize, unsigned int flags);
-CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdeviceptr ptr);
-CUresult ACUDA_CUDAAPI cuPointerGetAttributes(unsigned int numAttributes, int *attributes, void **data, CUdeviceptr ptr);
+CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, CUpointer_attribute attribute, CUdeviceptr ptr);
+CUresult ACUDA_CUDAAPI cuPointerGetAttributes(unsigned int numAttributes, CUpointer_attribute *attributes, void **data, CUdeviceptr ptr);
 CUresult ACUDA_CUDAAPI cuProfilerInitialize(void *a1, void *a2, void *a3);
 CUresult ACUDA_CUDAAPI cuProfilerStart(void);
 CUresult ACUDA_CUDAAPI cuProfilerStop(void);

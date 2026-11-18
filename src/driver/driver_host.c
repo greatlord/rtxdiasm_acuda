@@ -2,49 +2,52 @@
 #include <stdlib.h>
 #include <string.h>
 
-CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdeviceptr ptr) {
+CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data,
+                                              CUpointer_attribute attribute,
+                                              CUdeviceptr ptr) {
     if (!data)
         return CUDA_ERROR_INVALID_VALUE;
     size_t cap = 0;
     int device = acuda_arena_capacity((uint64_t)ptr, &cap) == 0;
     switch (attribute) {
-    case 1: { // CU_POINTER_ATTRIBUTE_CONTEXT
+    case CU_POINTER_ATTRIBUTE_CONTEXT: {
         CUcontext *out = (CUcontext *)data;
         return need_ctx(out) == CUDA_SUCCESS ? CUDA_SUCCESS
                                              : CUDA_ERROR_NOT_INITIALIZED;
     }
-    case 2: // MEMORY_TYPE
-        *(int *)data = device ? 2 : 1; // CU_MEMORYTYPE_DEVICE / HOST
+    case CU_POINTER_ATTRIBUTE_MEMORY_TYPE:
+        *(CUmemorytype *)data =
+            device ? CU_MEMORYTYPE_DEVICE : CU_MEMORYTYPE_HOST;
         return CUDA_SUCCESS;
-    case 3: // DEVICE_POINTER
+    case CU_POINTER_ATTRIBUTE_DEVICE_POINTER:
         *(CUdeviceptr *)data = ptr;
         return CUDA_SUCCESS;
-    case 4: // HOST_POINTER (arena memory is host-mapped)
+    case CU_POINTER_ATTRIBUTE_HOST_POINTER:
         *(void **)data = (void *)(uintptr_t)ptr;
         return CUDA_SUCCESS;
-    case 8:  // IS_MANAGED
-    case 10: // IS_LEGACY_CUDA_IPC_CAPABLE
-    case 15: // IS_GPU_DIRECT_RDMA_CAPABLE
-    case 21: // IS_HW_DECOMPRESS_CAPABLE
+    case CU_POINTER_ATTRIBUTE_IS_MANAGED:
+    case CU_POINTER_ATTRIBUTE_IS_LEGACY_CUDA_IPC_CAPABLE:
+    case CU_POINTER_ATTRIBUTE_IS_GPU_DIRECT_RDMA_CAPABLE:
+    case CU_POINTER_ATTRIBUTE_IS_HW_DECOMPRESS_CAPABLE:
         *(int *)data = 0;
         return CUDA_SUCCESS;
-    case 7:  // BUFFER_ID
-    case 20: // MEMORY_BLOCK_ID
+    case CU_POINTER_ATTRIBUTE_BUFFER_ID:
+    case CU_POINTER_ATTRIBUTE_MEMORY_BLOCK_ID:
         *(unsigned long long *)data = (unsigned long long)ptr;
         return CUDA_SUCCESS;
-    case 9: // DEVICE_ORDINAL
+    case CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL:
         *(int *)data = 0;
         return CUDA_SUCCESS;
-    case 16: // ACCESS_FLAGS
-        *(unsigned int *)data = 3; // READWRITE
+    case CU_POINTER_ATTRIBUTE_ACCESS_FLAGS:
+        *(unsigned int *)data = 3; /* read/write */
         return CUDA_SUCCESS;
-    case 11: // RANGE_START_ADDR
+    case CU_POINTER_ATTRIBUTE_RANGE_START_ADDR:
         *(CUdeviceptr *)data = ptr;
         return CUDA_SUCCESS;
-    case 12: // RANGE_SIZE
+    case CU_POINTER_ATTRIBUTE_RANGE_SIZE:
         *(size_t *)data = cap ? cap : 0;
         return CUDA_SUCCESS;
-    case 13: // MAPPED
+    case CU_POINTER_ATTRIBUTE_MAPPED:
         *(int *)data = device ? 1 : 0;
         return CUDA_SUCCESS;
     default:
@@ -53,8 +56,9 @@ CUresult ACUDA_CUDAAPI cuPointerGetAttribute(void *data, int attribute, CUdevice
 }
 
 CUresult ACUDA_CUDAAPI cuPointerGetAttributes(unsigned int numAttributes,
-                                int *attributes, void **data,
-                                CUdeviceptr ptr) {
+                                              CUpointer_attribute *attributes,
+                                              void **data,
+                                              CUdeviceptr ptr) {
     if (numAttributes && (!attributes || !data))
         return CUDA_ERROR_INVALID_VALUE;
     for (unsigned int i = 0; i < numAttributes; i++) {
