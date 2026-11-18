@@ -818,8 +818,143 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
 }
 
 
+
+/* id 0x83: cudaStreamSynchronize(cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize(
+        void *stream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return cuStreamSynchronize((CUstream)stream);
+}
+
+/* id 0x84: cudaStreamQuery(cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query(
+        void *stream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return cuStreamQuery((CUstream)stream);
+}
+
+/* id 0xc9: cudaStreamDestroy(cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_destroy(
+        void *stream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!stream)
+        return CUDA_SUCCESS;
+    return cuStreamDestroy_v2((CUstream)stream);
+}
+
+/* id 0xcb: cudaStreamGetPriority(cudaStream_t stream, int *priority) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority(
+        void *stream, void *priority, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!priority)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(int *)priority = 0;
+    return cuStreamGetPriority((CUstream)stream, (int *)priority);
+}
+
+/* id 0xcc: cudaStreamGetFlags(cudaStream_t stream, unsigned int *flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags(
+        void *stream, void *flags, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!flags)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(unsigned int *)flags = 0;
+    return cuStreamGetFlags((CUstream)stream, (unsigned int *)flags);
+}
+
+/* id 0xed: cudaStreamGetPriority_ptsz(cudaStream_t stream, int *priority) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority_ptsz(
+        void *stream, void *priority, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_stream_get_priority(stream, priority, unused_c,
+                                                  unused_d, unused_e, unused_f,
+                                                  unused_g, unused_h);
+}
+
+/* id 0xee: cudaStreamGetFlags_ptsz(cudaStream_t stream, unsigned int *flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags_ptsz(
+        void *stream, void *flags, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_stream_get_flags(stream, flags, unused_c,
+                                               unused_d, unused_e, unused_f,
+                                               unused_g, unused_h);
+}
+
+/* id 0xef: cudaStreamSynchronize_ptsz(cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize_ptsz(
+        void *stream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_stream_synchronize(stream, unused_b, unused_c,
+                                                  unused_d, unused_e, unused_f,
+                                                  unused_g, unused_h);
+}
+
+/* id 0xf0: cudaStreamQuery_ptsz(cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query_ptsz(
+        void *stream, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_stream_query(stream, unused_b, unused_c,
+                                           unused_d, unused_e, unused_f,
+                                           unused_g, unused_h);
+}
+
+/* id 0x1e0: cudaStreamGetDevice(cudaStream_t stream, int *device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device(
+        void *stream, void *device, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!device)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(int *)device = 0;
+    return cuCtxGetDevice((CUdevice *)device);
+}
+
+/* id 0x1e1: cudaStreamGetDevice_ptsz(cudaStream_t stream, int *device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device_ptsz(
+        void *stream, void *device, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_stream_get_device(stream, device, unused_c,
+                                                unused_d, unused_e, unused_f,
+                                                unused_g, unused_h);
+}
+
+
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
+    case 0x83: return (void*)&acuda_dd9e98a4_api_stream_synchronize;
+    case 0x84: return (void*)&acuda_dd9e98a4_api_stream_query;
+    case 0xc9: return (void*)&acuda_dd9e98a4_api_stream_destroy;
+    case 0xcb: return (void*)&acuda_dd9e98a4_api_stream_get_priority;
+    case 0xcc: return (void*)&acuda_dd9e98a4_api_stream_get_flags;
+    case 0xed: return (void*)&acuda_dd9e98a4_api_stream_get_priority_ptsz;
+    case 0xee: return (void*)&acuda_dd9e98a4_api_stream_get_flags_ptsz;
+    case 0xef: return (void*)&acuda_dd9e98a4_api_stream_synchronize_ptsz;
+    case 0xf0: return (void*)&acuda_dd9e98a4_api_stream_query_ptsz;
+    case 0x1e0: return (void*)&acuda_dd9e98a4_api_stream_get_device;
+    case 0x1e1: return (void*)&acuda_dd9e98a4_api_stream_get_device_ptsz;
     case 0x5: return (void*)&acuda_dd9e98a4_api_choose_device;
     case 0x1f: return (void*)&acuda_dd9e98a4_api_memcpy;
     case 0xa: return (void*)&acuda_dd9e98a4_api_get_last_error;
