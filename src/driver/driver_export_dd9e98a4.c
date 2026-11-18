@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_export_dd9e98a4.h"
+#include "acuda/driver/driver_export_dd9e98a4_types.h"
 #include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_stub.h"
 #include "acuda/runtime_api.h"
@@ -277,24 +278,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(
  * the host stub address as the function key, which is exactly what ACuda's
  * cudart does for statically linked executables. */
 
-typedef struct {
-    unsigned int x, y, z;
-} acuda_dd9e98a4_dim3;
 
-#define ACUDA_DD9E98A4_MAX_FATBINS 8
-#define ACUDA_DD9E98A4_MAX_FUNCS 256
-
-typedef struct {
-    const void *blob;
-    CUmodule module;
-    int state; /* 0 = not loaded, 1 = loaded, -1 = failed */
-} acuda_dd9e98a4_fatbin;
-
-typedef struct {
-    const void *host_fn;
-    const char *device_name; /* owned by the executable image */
-    acuda_dd9e98a4_fatbin *fatbin;
-} acuda_dd9e98a4_kernel;
 
 static acuda_dd9e98a4_fatbin g_dd9e98a4_fatbins[ACUDA_DD9E98A4_MAX_FATBINS];
 static unsigned g_dd9e98a4_nfatbins;
@@ -378,18 +362,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_kernel(
 }
 
 /* Pushed <<<grid, block, shared, stream>>> configuration. */
-typedef struct {
-    acuda_dd9e98a4_dim3 grid;
-    acuda_dd9e98a4_dim3 block;
-    size_t shared;
-    void *stream;
-} acuda_dd9e98a4_launch_config;
-
-#if defined(_MSC_VER)
-#define ACUDA_DD9E98A4_TLS __declspec(thread)
-#else
-#define ACUDA_DD9E98A4_TLS __thread
-#endif
 
 static ACUDA_DD9E98A4_TLS acuda_dd9e98a4_launch_config
     g_dd9e98a4_configs[16];
