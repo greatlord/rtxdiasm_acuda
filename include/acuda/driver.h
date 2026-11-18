@@ -352,6 +352,8 @@ CUresult ACUDA_CUDAAPI cuDeviceGetName(char *name, int len, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceComputeCapability(int *major, int *minor, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceGetProperties(CUdevprop *prop, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceTotalMem(size_t *bytes, CUdevice dev);
+struct cudaDeviceProp;
+CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop, int device);
 CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev);
 
 CUresult ACUDA_CUDAAPI cuCtxCreate_v2(CUcontext *pctx, unsigned int flags, CUdevice dev);

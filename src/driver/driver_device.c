@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/runtime_api.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -722,4 +723,160 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
         *value = 0;
         return CUDA_SUCCESS;
     }
+}
+
+static void acuda_query_attr_int(int *out, int attr, CUdevice dev) {
+    int v = 0;
+    if (cuDeviceGetAttribute(&v, attr, dev) == CUDA_SUCCESS)
+        *out = v;
+}
+
+CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop, int device) {
+    if (!prop)
+        return CUDA_ERROR_INVALID_VALUE;
+    int count = 0;
+    CUresult r = cuDeviceGetCount(&count);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (device < 0 || device >= count)
+        return CUDA_ERROR_INVALID_DEVICE;
+    memset(prop, 0, sizeof(*prop));
+
+    {
+        char name[256] = {0};
+        if (cuDeviceGetName(name, (int)sizeof(name), (CUdevice)device) == CUDA_SUCCESS) {
+            strncpy(prop->name, name, sizeof(prop->name) - 1);
+            prop->name[sizeof(prop->name) - 1] = '\0';
+        }
+    }
+    cuDeviceComputeCapability(&prop->major, &prop->minor, (CUdevice)device);
+    cuDeviceTotalMem(&prop->totalGlobalMem, (CUdevice)device);
+
+    /* UUID (deterministic, matches cuDeviceGetUuid) */
+    {
+        CUuuid uuid;
+        if (cuDeviceGetUuid(&uuid, (CUdevice)device) == CUDA_SUCCESS)
+            memcpy(&prop->uuid, &uuid, sizeof(prop->uuid));
+    }
+    prop->luidDeviceNodeMask = 0;
+
+    acuda_query_attr_int(&prop->maxThreadsPerBlock, 1, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxThreadsDim[0], 2, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxThreadsDim[1], 3, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxThreadsDim[2], 4, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxGridSize[0], 5, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxGridSize[1], 6, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxGridSize[2], 7, (CUdevice)device);
+    {
+        int v = 0;
+        if (cuDeviceGetAttribute(&v, 8, (CUdevice)device) == CUDA_SUCCESS)
+            prop->sharedMemPerBlock = (size_t)v;
+        v = 0;
+        if (cuDeviceGetAttribute(&v, 9, (CUdevice)device) == CUDA_SUCCESS)
+            prop->totalConstMem = (size_t)v;
+    }
+    acuda_query_attr_int(&prop->warpSize, 10, (CUdevice)device);
+    {
+        int v = 0;
+        if (cuDeviceGetAttribute(&v, 11, (CUdevice)device) == CUDA_SUCCESS)
+            prop->memPitch = (size_t)v;
+    }
+    acuda_query_attr_int(&prop->regsPerBlock, 12, (CUdevice)device);
+    acuda_query_attr_int(&prop->clockRate, 13, (CUdevice)device);
+    {
+        int v = 0;
+        if (cuDeviceGetAttribute(&v, 14, (CUdevice)device) == CUDA_SUCCESS)
+            prop->textureAlignment = (size_t)v;
+        v = 0;
+        if (cuDeviceGetAttribute(&v, 51, (CUdevice)device) == CUDA_SUCCESS)
+            prop->texturePitchAlignment = (size_t)v;
+    }
+    acuda_query_attr_int(&prop->multiProcessorCount, 16, (CUdevice)device);
+    acuda_query_attr_int(&prop->kernelExecTimeoutEnabled, 17, (CUdevice)device);
+    acuda_query_attr_int(&prop->integrated, 18, (CUdevice)device);
+    acuda_query_attr_int(&prop->canMapHostMemory, 19, (CUdevice)device);
+    acuda_query_attr_int(&prop->computeMode, 20, (CUdevice)device);
+    acuda_query_attr_int(&prop->concurrentKernels, 31, (CUdevice)device);
+    acuda_query_attr_int(&prop->pciBusID, 33, (CUdevice)device);
+    acuda_query_attr_int(&prop->pciDeviceID, 34, (CUdevice)device);
+    acuda_query_attr_int(&prop->memoryClockRate, 36, (CUdevice)device);
+    acuda_query_attr_int(&prop->memoryBusWidth, 37, (CUdevice)device);
+    acuda_query_attr_int(&prop->l2CacheSize, 38, (CUdevice)device);
+    acuda_query_attr_int(&prop->maxThreadsPerMultiProcessor, 39, (CUdevice)device);
+    acuda_query_attr_int(&prop->asyncEngineCount, 40, (CUdevice)device);
+    acuda_query_attr_int(&prop->unifiedAddressing, 41, (CUdevice)device);
+    acuda_query_attr_int(&prop->pciDomainID, 50, (CUdevice)device);
+    {
+        int v = 0;
+        if (cuDeviceGetAttribute(&v, 81, (CUdevice)device) == CUDA_SUCCESS)
+            prop->sharedMemPerMultiprocessor = (size_t)v;
+    }
+    acuda_query_attr_int(&prop->regsPerMultiprocessor, 82, (CUdevice)device);
+
+    /* Defaults / capabilities (reasonable values consistent with ACuda driver) */
+    prop->deviceOverlap = 1;
+    prop->textureAlignment = prop->textureAlignment ? prop->textureAlignment : 512;
+    prop->surfaceAlignment = 512;
+    prop->ECCEnabled = 0;
+    prop->tccDriver = 0;
+    prop->streamPrioritiesSupported = 0;
+    prop->globalL1CacheSupported = 1;
+    prop->localL1CacheSupported = 1;
+    prop->managedMemory = 0;
+    prop->isMultiGpuBoard = 0;
+    prop->multiGpuBoardGroupID = 0;
+    prop->hostNativeAtomicSupported = 0;
+    prop->singleToDoublePrecisionPerfRatio = 0;
+    prop->pageableMemoryAccess = 1;
+    prop->concurrentManagedAccess = 0;
+    prop->computePreemptionSupported = 0;
+    prop->canUseHostPointerForRegisteredMem = 0;
+    prop->cooperativeLaunch = 0;
+    prop->cooperativeMultiDeviceLaunch = 0;
+    prop->sharedMemPerBlockOptin = prop->sharedMemPerBlock;
+    prop->pageableMemoryAccessUsesHostPageTables = 1;
+    prop->directManagedMemAccessFromHost = 0;
+    prop->maxBlocksPerMultiProcessor = 32;
+    prop->accessPolicyMaxWindowSize = 0;
+    prop->reservedSharedMemPerBlock = 0;
+    prop->hostRegisterSupported = 1;
+    prop->sparseCudaArraySupported = 0;
+    prop->hostRegisterReadOnlySupported = 0;
+    prop->timelineSemaphoreInteropSupported = 1;
+    prop->memoryPoolsSupported = 1;
+    prop->gpuDirectRDMASupported = 0;
+    prop->gpuDirectRDMAFlushWritesOptions = 0;
+    prop->gpuDirectRDMAWritesOrdering = 0;
+    prop->memoryPoolSupportedHandleTypes = 0;
+    prop->deferredMappingCudaArraySupported = 0;
+    prop->ipcEventSupported = 0;
+    prop->clusterLaunch = 0;
+    prop->unifiedFunctionPointers = 0;
+
+    /* Texture/surface limits (sensible defaults) */
+    prop->maxTexture1D = 131072;
+    prop->maxTexture1DMipmap = 32768;
+    prop->maxTexture1DLinear = 134217728;
+    prop->maxTexture2D[0] = 131072; prop->maxTexture2D[1] = 65536;
+    prop->maxTexture2DMipmap[0] = 32768; prop->maxTexture2DMipmap[1] = 32768;
+    prop->maxTexture2DLinear[0] = 131072; prop->maxTexture2DLinear[1] = 65000; prop->maxTexture2DLinear[2] = 2097120;
+    prop->maxTexture2DGather[0] = 32768; prop->maxTexture2DGather[1] = 32768;
+    prop->maxTexture3D[0] = 16384; prop->maxTexture3D[1] = 16384; prop->maxTexture3D[2] = 16384;
+    prop->maxTexture3DAlt[0] = 8192; prop->maxTexture3DAlt[1] = 8192; prop->maxTexture3DAlt[2] = 32768;
+    prop->maxTextureCubemap = 32768;
+    prop->maxTexture1DLayered[0] = 32768; prop->maxTexture1DLayered[1] = 2048;
+    prop->maxTexture2DLayered[0] = 32768; prop->maxTexture2DLayered[1] = 32768; prop->maxTexture2DLayered[2] = 2048;
+    prop->maxTextureCubemapLayered[0] = 32768; prop->maxTextureCubemapLayered[1] = 2046;
+    prop->maxSurface1D = 32768;
+    prop->maxSurface2D[0] = 32768; prop->maxSurface2D[1] = 32768;
+    prop->maxSurface3D[0] = 16384; prop->maxSurface3D[1] = 16384; prop->maxSurface3D[2] = 16384;
+    prop->maxSurface1DLayered[0] = 32768; prop->maxSurface1DLayered[1] = 2048;
+    prop->maxSurface2DLayered[0] = 32768; prop->maxSurface2DLayered[1] = 32768; prop->maxSurface2DLayered[2] = 2048;
+    prop->maxSurfaceCubemap = 32768;
+    prop->maxSurfaceCubemapLayered[0] = 32768; prop->maxSurfaceCubemapLayered[1] = 2046;
+
+    if (prop->warpSize == 0) prop->warpSize = 32;
+    if (prop->maxThreadsPerBlock == 0) prop->maxThreadsPerBlock = 1024;
+    if (prop->multiProcessorCount == 0) prop->multiProcessorCount = 40;
+    return CUDA_SUCCESS;
 }

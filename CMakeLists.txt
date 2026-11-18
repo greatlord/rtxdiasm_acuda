@@ -118,6 +118,8 @@ add_library(acuda_driver SHARED
   src/driver/driver_compat_stubs.c
   src/driver/driver_stub_funcs.c
   src/driver/driver_export.c
+  src/driver/driver_export_dd9e98a4.c
+  src/driver/driver_export_dd9e98a4_stubs.c
   src/driver/driver_error.c
   src/driver/driver_texture.c
   src/driver/driver_procaddr.c
