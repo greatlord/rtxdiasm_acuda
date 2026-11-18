@@ -162,6 +162,39 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(
                       (unsigned char)(uintptr_t)value, (size_t)count);
 }
 
+/* id 0x1f: cudaMemcpy(void *dst, const void *src, size_t count,
+ *                       cudaMemcpyKind kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
+        void *dst, void *src, void *count, void *kind,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    int copy_kind = (int)(intptr_t)kind;
+    size_t bytes = (size_t)count;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if ((!dst || !src) && bytes)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (!bytes)
+        return CUDA_SUCCESS;
+    switch (copy_kind) {
+    case 0: /* cudaMemcpyHostToHost */
+        memcpy(dst, src, bytes);
+        return CUDA_SUCCESS;
+    case 1: /* cudaMemcpyHostToDevice */
+        return cuMemcpyHtoD_v2((CUdeviceptr)(uintptr_t)dst, src, bytes);
+    case 2: /* cudaMemcpyDeviceToHost */
+        return cuMemcpyDtoH_v2(dst, (CUdeviceptr)(uintptr_t)src, bytes);
+    case 3: /* cudaMemcpyDeviceToDevice */
+        return cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst,
+                               (CUdeviceptr)(uintptr_t)src, bytes);
+    case 4: /* cudaMemcpyDefault */
+        memcpy(dst, src, bytes);
+        return CUDA_SUCCESS;
+    default:
+        return CUDA_ERROR_INVALID_VALUE;
+    }
+}
+
 /* id 0x29: cudaMemcpyAsync(void *dst, const void *src, size_t count,
  *                          cudaMemcpyKind kind, cudaStream_t stream)
  * ACuda's device memory is directly addressable host memory, so the async
@@ -788,6 +821,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
     case 0x5: return (void*)&acuda_dd9e98a4_api_choose_device;
+    case 0x1f: return (void*)&acuda_dd9e98a4_api_memcpy;
     case 0xa: return (void*)&acuda_dd9e98a4_api_get_last_error;
     case 0xb: return (void*)&acuda_dd9e98a4_api_peek_at_last_error;
     case 0xc: return (void*)&acuda_dd9e98a4_api_get_error_string_runtime;
