@@ -126,17 +126,20 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string(
 /* --- memory, events, synchronisation, profiler ------------------------- */
 
 /* id 0x31: cudaMemset(void *devPtr, int value, size_t count) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memset(%p,%d,%zu)\n", a, (int)(intptr_t)b, (size_t)c);
-    (void)d;(void)e;(void)f;(void)g;(void)h;
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(
+        void *devPtr, void *value, void *count, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memset(%p,%d,%zu)\n",
+                      devPtr, (int)(intptr_t)value, (size_t)count);
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
-    if (!a)
+    if (!devPtr)
         return CUDA_ERROR_INVALID_VALUE;
-    if (!c)
+    if (!(size_t)count)
         return CUDA_SUCCESS;
-    return cuMemsetD8((CUdeviceptr)(uintptr_t)a, (unsigned char)(uintptr_t)b,
-                      (size_t)c);
+    return cuMemsetD8((CUdeviceptr)(uintptr_t)devPtr,
+                      (unsigned char)(uintptr_t)value, (size_t)count);
 }
 
 /* id 0x29: cudaMemcpyAsync(void *dst, const void *src, size_t count,
