@@ -302,66 +302,78 @@ static acuda_dd9e98a4_kernel g_dd9e98a4_kernels[ACUDA_DD9E98A4_MAX_FUNCS];
 static unsigned g_dd9e98a4_nkernels;
 
 /* id 0x1ee: __cudaRegisterFatBinary(void *fatCubin) -> handle */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(
+        void *fatCubin, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     unsigned i;
-    (void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
-    if (!a)
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!fatCubin)
         return CUDA_ERROR_INVALID_VALUE;
     /* The hybrid runtime keeps the returned handle in a 32-bit field, so a
      * pointer cannot be handed back; use a 1-based index instead. */
     for (i = 0; i < g_dd9e98a4_nfatbins; i++) {
-        if (g_dd9e98a4_fatbins[i].blob == a)
+        if (g_dd9e98a4_fatbins[i].blob == fatCubin)
             return (CUresult)(i + 1);
     }
     if (g_dd9e98a4_nfatbins >= ACUDA_DD9E98A4_MAX_FATBINS)
         return CUDA_ERROR_OUT_OF_MEMORY;
     i = g_dd9e98a4_nfatbins++;
-    g_dd9e98a4_fatbins[i].blob = a;
+    g_dd9e98a4_fatbins[i].blob = fatCubin;
     g_dd9e98a4_fatbins[i].module = NULL;
     g_dd9e98a4_fatbins[i].state = 0;
-    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 register fatbin %p -> %u\n", a,
-                      i + 1);
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 register fatbin %p -> %u\n",
+                      fatCubin, i + 1);
     return (CUresult)(i + 1);
 }
 
-/* id 0x1ef: __cudaRegisterFatBinaryEnd(void **handle) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary_end(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
+/* id 0x1ef: __cudaRegisterFatBinaryEnd(void **fatCubinHandle) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary_end(
+        void *fatCubinHandle, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)fatCubinHandle; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
 }
 
-/* id 0x1f3: __cudaRegisterFunction(handle, hostFun, deviceFun, deviceName,
- *                                  threadLimit, tid, bid, bDim, gDim, wSize) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_function(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+/* id 0x1f3: __cudaRegisterFunction(fatCubinHandle, hostFun, deviceFun,
+ *          deviceName, thread_limit, tid, bid, bDim, gDim, wSize) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_function(
+        void *fatCubinHandle, void *hostFun, void *deviceFun, void *deviceName,
+        void *thread_limit, void *tid, void *bid, void *bDim) {
     acuda_dd9e98a4_kernel *k;
-    (void)c;(void)e;(void)f;(void)g;(void)h;
-    if (!a || !b || !d)
+    (void)deviceFun; (void)thread_limit; (void)tid; (void)bid; (void)bDim;
+    if (!fatCubinHandle || !hostFun || !deviceName)
         return CUDA_ERROR_INVALID_VALUE;
     if (g_dd9e98a4_nkernels >= ACUDA_DD9E98A4_MAX_FUNCS)
         return CUDA_ERROR_OUT_OF_MEMORY;
     k = &g_dd9e98a4_kernels[g_dd9e98a4_nkernels++];
-    k->host_fn = b;
-    k->device_name = (const char *)d;
+    k->host_fn = hostFun;
+    k->device_name = (const char *)deviceName;
     k->fatbin = NULL;
     {
-        unsigned h = (unsigned)(uintptr_t)a;
-        if (h >= 1 && h <= g_dd9e98a4_nfatbins)
-            k->fatbin = &g_dd9e98a4_fatbins[h - 1];
+        unsigned idx = (unsigned)(uintptr_t)fatCubinHandle;
+        if (idx >= 1 && idx <= g_dd9e98a4_nfatbins)
+            k->fatbin = &g_dd9e98a4_fatbins[idx - 1];
         else if (g_dd9e98a4_nfatbins)
             k->fatbin = &g_dd9e98a4_fatbins[g_dd9e98a4_nfatbins - 1];
     }
-    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 register kernel %p -> %s\n", b,
-                      k->device_name);
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 register kernel %p -> %s\n",
+                      hostFun, k->device_name);
     return CUDA_SUCCESS;
 }
 
 /* id 0x1f8: __cudaGetKernel(void **kernel, const void *func) */
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_kernel(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 get kernel slot=%p func=%p\n", a, b);
-    (void)c;(void)d;(void)e;(void)f;(void)g;(void)h;
-    if (!a || !b)
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_kernel(
+        void *kernel, void *func, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 get kernel slot=%p func=%p\n",
+                      kernel, func);
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!kernel || !func)
         return CUDA_ERROR_INVALID_VALUE;
-    *(const void **)a = b;
+    *(const void **)kernel = func;
     return CUDA_SUCCESS;
 }
 
