@@ -102,6 +102,25 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
     return cuCtxSetCurrent(ctx);
 }
 
+/* id 0x11: cudaGetDevice(int *device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device(
+        void *device, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    CUdevice d = 0;
+    CUresult r;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!device)
+        return CUDA_ERROR_INVALID_VALUE;
+    r = cuCtxGetDevice(&d);
+    if (r != CUDA_SUCCESS)
+        return r;
+    *(int *)device = (int)d;
+    return CUDA_SUCCESS;
+}
+
 /* id 0x1b8: cudaGetDeviceProperties(struct cudaDeviceProp *prop, int device) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_properties(
         void *prop, void *device, void *unused_c, void *unused_d,
@@ -198,6 +217,17 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(
     return CUDA_SUCCESS;
 }
 
+/* id 0xa4: cudaDeviceReset(void) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_reset(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return cuCtxSynchronize();
+}
+
 /* id 0xa5: cudaDeviceSynchronize(void) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_synchronize(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
@@ -220,6 +250,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create(
     return cuEventCreate((CUevent *)event, 0);
 }
 
+/* id 0x86: cudaEventCreateWithFlags(cudaEvent_t *event, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create_with_flags(
+        void *event, void *flags, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!event)
+        return CUDA_ERROR_INVALID_VALUE;
+    return cuEventCreate((CUevent *)event, (unsigned int)(uintptr_t)flags);
+}
+
 /* id 0x87: cudaEventRecord(cudaEvent_t event, cudaStream_t stream) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
         void *event, void *stream, void *unused_c, void *unused_d,
@@ -229,6 +272,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
     return cuEventRecord((CUevent)event, (CUstream)stream);
+}
+
+/* id 0x89: cudaEventSynchronize(cudaEvent_t event) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_synchronize(
+        void *event, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!event)
+        return CUDA_ERROR_INVALID_VALUE;
+    return cuEventSynchronize((CUevent)event);
 }
 
 /* id 0x8a: cudaEventQuery(cudaEvent_t event) */
@@ -454,6 +510,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
     case 0x10: return (void*)&acuda_dd9e98a4_api_set_device;
+    case 0x11: return (void*)&acuda_dd9e98a4_api_get_device;
     case 0x14: return (void*)&acuda_dd9e98a4_api_malloc;
     case 0x19: return (void*)&acuda_dd9e98a4_api_malloc_host;
     case 0x1b8: return (void*)&acuda_dd9e98a4_api_get_device_properties;
@@ -465,9 +522,12 @@ static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     case 0x29: return (void*)&acuda_dd9e98a4_api_memcpy_async;
     case 0x31: return (void*)&acuda_dd9e98a4_api_memset;
     case 0x85: return (void*)&acuda_dd9e98a4_api_event_create;
+    case 0x86: return (void*)&acuda_dd9e98a4_api_event_create_with_flags;
     case 0x87: return (void*)&acuda_dd9e98a4_api_event_record;
     case 0x88: return (void*)&acuda_dd9e98a4_api_event_destroy;
+    case 0x89: return (void*)&acuda_dd9e98a4_api_event_synchronize;
     case 0x8a: return (void*)&acuda_dd9e98a4_api_event_query;
+    case 0xa4: return (void*)&acuda_dd9e98a4_api_device_reset;
     case 0xa5: return (void*)&acuda_dd9e98a4_api_device_synchronize;
     case 0xab: return (void*)&acuda_dd9e98a4_api_profiler_noop;
     case 0xac: return (void*)&acuda_dd9e98a4_api_profiler_noop;
