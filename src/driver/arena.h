@@ -1,6 +1,7 @@
 // Driver-internal arena allocator: real addresses for CUdeviceptr.
-// One PROT_NONE virtual reservation (collision-free window); committed
-// arenas underneath are host-visible Vulkan buffers, persistently mapped.
+// Committed arenas are host-visible Vulkan buffers, persistently mapped;
+// the mapped address itself is the app-visible CUdeviceptr (32-bit hosts
+// have no address space to spare for a separate pointer window).
 // Sub-allocations become individual VkBuffers bound into arena memory,
 // so the existing launch path works via a raw (buffer+offset) entry.
 // Single-threaded (matches driver).
@@ -51,6 +52,8 @@ int acuda_arena_capacity(uint64_t virt, size_t *remain_out);
 // Resolves to (buffer, buffer-offset) for descriptor binding.
 int acuda_arena_bind(uint64_t virt, size_t size, VkBuffer *buf_out,
                      size_t *offset_out);
+// Returns base/size of allocation containing virt. 0 ok, -1 unknown.
+int acuda_arena_lookup(uint64_t virt, uint64_t *base_out, size_t *size_out);
 size_t acuda_arena_live(void);
 
 #endif
