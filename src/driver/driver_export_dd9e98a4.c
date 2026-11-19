@@ -310,9 +310,16 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
     size_t bytes = (size_t)count;
     CUresult _r;
     acuda_dd9e98a4_htrace("memcpy_async", dst, src, (long long)bytes, 0);
-    (void)stream; (void)unused_f; (void)unused_g; (void)unused_h;
+    (void)unused_f; (void)unused_g; (void)unused_h;
     if ((!dst || !src) && bytes) { _r = CUDA_ERROR_INVALID_VALUE; goto out; }
     if (!bytes) { _r = CUDA_SUCCESS; goto out; }
+    /* Async copies are implemented synchronously but must be ordered with
+     * prior work on the specified stream (host-visible memory). */
+    if (stream) {
+        _r = cuStreamSynchronize((CUstream)stream);
+        if (_r != CUDA_SUCCESS)
+            goto out;
+    }
     switch (copy_kind) {
     case 0: /* cudaMemcpyHostToHost */
         memmove(dst, src, bytes);
