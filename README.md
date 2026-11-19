@@ -358,7 +358,8 @@ These variables allow developers to modify ACuda behavior without changing appli
 | `ACUDA_PTX_NO_DYNAMIC_RENDERING` | Disable the dynamic-rendering-dependent path. |
 | `ACUDA_PTX_NO_FLOAT_CONTROLS` | Disable floating-point control features. |
 | `ACUDA_PTX_NO_FMA` | Disable the hardware/FMA path and use an alternative implementation. |
-| `ACUDA_FMA_PROBE_OFF` | Skip FMA correctness probes and keep the hardware FMA path enabled when supported, even if the driver would fail the probes. |
+| `ACUDA_FMA_PROBE` | Re-enable FMA correctness probes at init and allow ACuda to fall back to the portable path if probes fail. By default probes are skipped and hardware FMA is selected whenever the Vulkan capability exists. |
+| `ACUDA_FMA_PROBE_OFF` | Deprecated/ignored (probes are skipped by default; hardware FMA is preferred when available). |
 | `ACUDA_PTX_NO_FULL_SUBGROUPS` | Disable assumptions about full subgroup execution. |
 | `ACUDA_PTX_NO_INT64_IMAGE` | Disable the 64-bit integer image path. |
 | `ACUDA_PTX_NO_SSBO8` | Disable 8-bit storage-buffer functionality. |

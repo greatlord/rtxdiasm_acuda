@@ -606,6 +606,9 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
                 (int)fcprops.shaderSignedZeroInfNanPreserveFloat64);
     int fma64_ok = 0;
     int fma_ok = has_shader_fma(ctx->phys, &fma64_ok);
+    if (getenv("ACUDA_DEBUG_FMA"))
+        fprintf(stderr, "ACuda: shader FMA detect f32=%d f64=%d\n",
+                fma_ok, fma64_ok);
     if (getenv("ACUDA_PTX_NO_FMA")) {
         fma_ok = 0;
         fma64_ok = 0;
@@ -887,7 +890,10 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     acuda_warmup_gpu(ctx);
     // Optional sustained keep-busy (opt-in via ACUDA_HIGH_PERF=1).
     acuda_start_high_perf(ctx);
-    int fma_probe_off = getenv("ACUDA_FMA_PROBE_OFF") != NULL;
+    /* Always prefer hardware FMA when the Vulkan capability exists.
+     * Correctness probes are skipped by default (overrideable via
+     * ACUDA_FMA_PROBE=1 to re-enable probing/fallback selection). */
+    int fma_probe_off = getenv("ACUDA_FMA_PROBE") == NULL;
     int had_fma = fma_ok;
     if (fma_ok && !fma_probe_off) {
         if (!probe_shader_fma(ctx) || !probe_shader_fma_rn(ctx)) {
@@ -916,6 +922,11 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     acuda_compiler_set_shader_fma(&ctx->compiler_caps, fma_ok);
     acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, fma64_ok);
     acuda_compiler_set_soft_fma(&ctx->compiler_caps, getenv("ACUDA_PTX_NO_FMA") != NULL);
+    if (getenv("ACUDA_DEBUG_FMA"))
+        fprintf(stderr,
+                "ACuda: shader FMA final f32=%d f64=%d probe_off=%d soft=%d\n",
+                fma_ok, fma64_ok, fma_probe_off,
+                getenv("ACUDA_PTX_NO_FMA") != NULL);
     {
         int f16_native = f16_ok;
         if (getenv("ACUDA_F16_EMULATED"))
