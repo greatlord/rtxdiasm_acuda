@@ -244,23 +244,32 @@ static int acuda_dd9e98a4_driver_ready(void) {
         fflush(stderr);
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
+            /* Mark ready early: cuInit succeeded and driver core is initialized.
+             * Primary-ctx retain/set may re-enter driver paths; keeping dd9e98a4
+             * in "initial" state during that window breaks recovery/canaries and
+             * can lead to repeated implicit-init attempts. */
+            g_dd9e98a4_ready.state = 1;
+            g_dd9e98a4_ready.ever_ready = 1;
+            g_dd9e98a4_was_ready = 1;
+            g_dd9e98a4_init_magic = 0xDDE998A4u;
+            g_dd9e98a4_init_completed_once = 1;
+            g_dd9e98a4_state0_logged = 0;
             CUcontext ctx = NULL;
-            r = cuDevicePrimaryCtxRetain(&ctx, 0);
-            if (r == CUDA_SUCCESS)
-                r = cuCtxSetCurrent(ctx);
+            CUresult rctx = cuDevicePrimaryCtxRetain(&ctx, 0);
+            if (rctx == CUDA_SUCCESS)
+                rctx = cuCtxSetCurrent(ctx);
+            if (rctx != CUDA_SUCCESS) {
+                fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init ctx setup failed r=%d (continuing as ready)\n", (int)rctx);
+                fflush(stderr);
+            }
         }
         fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p) caller=%p self=%p seq=%lld\n",
                 (int)r, g_init, (void *)&g_init, g_actx,
                 g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
                 g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready, _iira, (void *)(uintptr_t)&acuda_dd9e98a4_driver_ready, _myseq);
         fflush(stderr);
-        g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
-        if (g_dd9e98a4_ready.state == 1) {
-            g_dd9e98a4_ready.ever_ready = 1;
-            g_dd9e98a4_was_ready = 1;
-            g_dd9e98a4_init_magic = 0xDDE998A4u;
-            g_dd9e98a4_init_completed_once = 1;
-            g_dd9e98a4_state0_logged = 0;
+        if (r != CUDA_SUCCESS) {
+            g_dd9e98a4_ready.state = -1;
         }
     }
     if (g_dd9e98a4_ready.state == 1) {
