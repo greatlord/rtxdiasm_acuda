@@ -622,10 +622,21 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
                 (int)fcprops.shaderSignedZeroInfNanPreserveFloat64);
     int fma64_ok = 0;
     int fma_ok = has_shader_fma(ctx->phys, &fma64_ok);
+    int fma_cap_f32 = fma_ok;
+    int fma_cap_f64 = fma64_ok;
+    int fma_mode = 0; /* 0=auto (probe), 1=prefer hardware, 2=always software */
+    {
+        const char *fm = getenv("ACUDA_FMA");
+        if (fm && *fm) {
+            if (strcmp(fm, "1") == 0) fma_mode = 1;
+            else if (strcmp(fm, "2") == 0) fma_mode = 2;
+            else fma_mode = 0;
+        }
+    }
     if (getenv("ACUDA_DEBUG_FMA"))
-        fprintf(stderr, "ACuda: shader FMA detect f32=%d f64=%d\n",
-                fma_ok, fma64_ok);
-    if (getenv("ACUDA_PTX_NO_FMA")) {
+        fprintf(stderr, "ACuda: shader FMA detect f32=%d f64=%d mode=%d\n",
+                fma_ok, fma64_ok, fma_mode);
+    if (fma_mode == 2) {
         fma_ok = 0;
         fma64_ok = 0;
     }
@@ -906,10 +917,9 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     acuda_warmup_gpu(ctx);
     // Optional sustained keep-busy (opt-in via ACUDA_HIGH_PERF=1).
     acuda_start_high_perf(ctx);
-    /* Always prefer hardware FMA when the Vulkan capability exists.
-     * Correctness probes are skipped by default (overrideable via
-     * ACUDA_FMA_PROBE=1 to re-enable probing/fallback selection). */
-    int fma_probe_off = getenv("ACUDA_FMA_PROBE") == NULL;
+    /* ACUDA_FMA: 0=auto (probe when capability exists), 1=prefer hardware
+     * when capability exists (skip probes), 2=always software. */
+    int fma_probe_off = (fma_mode != 0);
     int had_fma = fma_ok;
     if (fma_ok && !fma_probe_off) {
         if (!probe_shader_fma(ctx) || !probe_shader_fma_rn(ctx)) {
@@ -917,7 +927,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
             acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
         }
     }
-    if (had_fma && !fma_ok)
+    if (had_fma && !fma_ok && fma_mode == 0)
         fprintf(stderr,
                 "ACuda: VK_KHR_shader_fma miscompiles fused f32 "
                 "rounding here; using the portable fallback\n");
@@ -930,19 +940,18 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         if (!fma64_ok)
             acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, 0);
     }
-    if (had_fma64 && !fma64_ok && fma_ok)
+    if (had_fma64 && !fma64_ok && fma_ok && fma_mode == 0)
         fprintf(stderr,
                 "ACuda: VK_KHR_shader_fma f64 miscompiles directed f64 "
                 "rounding here; f64 uses the portable fallback\n");
     // Tell the compiler which directed-rounding path this device needs.
     acuda_compiler_set_shader_fma(&ctx->compiler_caps, fma_ok);
     acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, fma64_ok);
-    acuda_compiler_set_soft_fma(&ctx->compiler_caps, getenv("ACUDA_PTX_NO_FMA") != NULL);
+    acuda_compiler_set_soft_fma(&ctx->compiler_caps, fma_mode == 2 ? 1 : 0);
     if (getenv("ACUDA_DEBUG_FMA"))
         fprintf(stderr,
-                "ACuda: shader FMA final f32=%d f64=%d probe_off=%d soft=%d\n",
-                fma_ok, fma64_ok, fma_probe_off,
-                getenv("ACUDA_PTX_NO_FMA") != NULL);
+                "ACuda: shader FMA final f32=%d f64=%d mode=%d soft=%d\n",
+                fma_ok, fma64_ok, fma_mode, fma_mode == 2 ? 1 : 0);
     {
         int f16_native = f16_ok;
         if (getenv("ACUDA_F16_EMULATED"))

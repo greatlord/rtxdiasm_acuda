@@ -347,7 +347,7 @@ These variables allow developers to modify ACuda behavior without changing appli
 | `ACUDA_COOPMAT` | Enable cooperative matrix functionality. |
 | `ACUDA_NO_COOPMAT` | Disable cooperative matrix functionality. |
 | `ACUDA_HIGH_PERF` | Enable the high-performance execution path. |
-| `ACUDA_SPIRV_FMA_SHADER` | Control FMA-related shader/SPIR-V behavior. |
+| `ACUDA_FMA` | FMA selection: `0` = auto (probe when Vulkan shader-FMA capability exists, use hardware only if probes pass, otherwise portable/software), `1` = prefer hardware when capability exists (skip probe-fail fallback; fall back to software if capability absent), `2` = always software/portable. Default: `0`. |
 | `ACUDA_NO_SURF_ALIAS` | Disable surface aliasing. |
 | `ACUDA_NO_HOST_HEAP` | Disable the host heap path. |
 | `ACUDA_PTX_NO_ATOMIC_F32_ADD` | Disable PTX floating-point 32-bit atomic addition support. |
@@ -357,9 +357,7 @@ These variables allow developers to modify ACuda behavior without changing appli
 | `ACUDA_PTX_NO_DOT_PRODUCT` | Disable dot-product instruction support. |
 | `ACUDA_PTX_NO_DYNAMIC_RENDERING` | Disable the dynamic-rendering-dependent path. |
 | `ACUDA_PTX_NO_FLOAT_CONTROLS` | Disable floating-point control features. |
-| `ACUDA_PTX_NO_FMA` | Disable the hardware/FMA path and use an alternative implementation. |
-| `ACUDA_FMA_PROBE` | Re-enable FMA correctness probes at init and allow ACuda to fall back to the portable path if probes fail. By default probes are skipped and hardware FMA is selected whenever the Vulkan capability exists. |
-| `ACUDA_FMA_PROBE_OFF` | Deprecated/ignored (probes are skipped by default; hardware FMA is preferred when available). |
+| `ACUDA_SPIRV_FMA_SHADER` | Control FMA-related shader/SPIR-V behavior. |
 | `ACUDA_PTX_NO_FULL_SUBGROUPS` | Disable assumptions about full subgroup execution. |
 | `ACUDA_PTX_NO_INT64_IMAGE` | Disable the 64-bit integer image path. |
 | `ACUDA_PTX_NO_SSBO8` | Disable 8-bit storage-buffer functionality. |
