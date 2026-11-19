@@ -1385,6 +1385,23 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_semaphore(
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 
+/* id 0x124: cudaLaunchHostFunc(cudaStream_t stream, cudaHostFn_t fn, void *userData)
+ * Used by statically linked cudart (CUDA 13.5). Synchronous backend: drain the
+ * stream, then invoke the host function. */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_host_func(
+        void *stream, void *fn, void *userData, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_launch_host_func");
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!fn)
+        return CUDA_ERROR_INVALID_VALUE;
+    CUresult r = cuStreamSynchronize((CUstream)stream);
+    if (r != CUDA_SUCCESS)
+        return r;
+    ((void (*)(void *))fn)(userData);
+    return CUDA_SUCCESS;
+}
+
 /* id 0x1d1: cudaDeviceRegisterAsyncNotification(int device, cudaAsyncCallback callbackFunc,
  *           void* userData, cudaAsyncCallbackHandle_t* callback) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_register_async_notification(
@@ -1483,12 +1500,22 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     /* 0xFF: Device P2P attribute */
     case 0xff: return (void *)&acuda_dd9e98a4_api_device_get_p2p_attribute;
 
-    /* 0x112–0x116: External memory and semaphore APIs */
+    /* 0x112-0x116: External memory and semaphore APIs */
     case 0x112: return (void *)&acuda_dd9e98a4_api_import_external_memory;
     case 0x113: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_buffer;
     case 0x114: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array;
     case 0x115: return (void *)&acuda_dd9e98a4_api_destroy_external_memory;
     case 0x116: return (void *)&acuda_dd9e98a4_api_import_external_semaphore;
+
+    /* 0x11c, 0x124, 0x1dc, 0x1fa, 0x226: Host function launch (cudaLaunchHostFunc).
+     * CUDA 13.5 statically linked cudart (simpleCallback) resolves 0x11c for
+     * the cached cudaLaunchHostFunc entry used by the runtime wrapper. */
+    case 0x11c:
+    case 0x124:
+    case 0x1dc:
+    case 0x1fa:
+    case 0x226:
+        return (void *)&acuda_dd9e98a4_api_launch_host_func;
 
     /* 0x13C–0x147: Stream capture */
     case 0x13c: return (void *)&acuda_dd9e98a4_api_stream_begin_capture_ptsz;
