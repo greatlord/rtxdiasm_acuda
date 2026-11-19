@@ -245,6 +245,22 @@ int has_vk13_core(VkPhysicalDevice dev) {
 
 // Guaranteed-fused OpFmaKHR for directed-rounding residuals. Optional:
 // devices without VK_KHR_shader_fma use the compiler's integer fallback.
+#ifndef VK_KHR_SHADER_FMA_EXTENSION_NAME
+#define VK_KHR_SHADER_FMA_EXTENSION_NAME "VK_KHR_shader_fma"
+#endif
+#if !defined(VK_KHR_shader_fma)
+typedef struct VkPhysicalDeviceShaderFmaFeaturesKHR {
+    VkStructureType sType;
+    void*           pNext;
+    VkBool32        shaderFmaFloat32;
+    VkBool32        shaderFmaFloat64;
+    VkBool32        shaderFmaInt64;
+} VkPhysicalDeviceShaderFmaFeaturesKHR;
+#endif
+#ifndef VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR ((VkStructureType)1000579000)
+#endif
+
 int has_shader_fma(VkPhysicalDevice dev, int *f64_ok) {
     *f64_ok = 0;
 #if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)

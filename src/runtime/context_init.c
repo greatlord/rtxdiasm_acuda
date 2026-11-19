@@ -25,6 +25,22 @@
 #error "ACuda requires Vulkan headers with Vulkan 1.4 support"
 #endif
 
+#ifndef VK_KHR_SHADER_FMA_EXTENSION_NAME
+#define VK_KHR_SHADER_FMA_EXTENSION_NAME "VK_KHR_shader_fma"
+#endif
+#if !defined(VK_KHR_shader_fma)
+typedef struct VkPhysicalDeviceShaderFmaFeaturesKHR {
+    VkStructureType sType;
+    void*           pNext;
+    VkBool32        shaderFmaFloat32;
+    VkBool32        shaderFmaFloat64;
+    VkBool32        shaderFmaInt64;
+} VkPhysicalDeviceShaderFmaFeaturesKHR;
+#endif
+#ifndef VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR ((VkStructureType)1000579000)
+#endif
+
 
 // Some drivers expose VK_KHR_shader_fma but still algebraically
 // simplify fma(1, -a, a+b) to b (observed on RADV), which would make
