@@ -1,4 +1,4 @@
-#include "acuda/driver/driver_export_dd9e98a4.h"
+﻿#include "acuda/driver/driver_export_dd9e98a4.h"
 #include "acuda/driver/driver_export_dd9e98a4_types.h"
 #include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_stub.h"
@@ -942,8 +942,138 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device_ptsz(
 }
 
 
+
+/* id 0xf2: cudaEventRecord_ptsz(cudaEvent_t event, cudaStream_t stream) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record_ptsz(
+        void *event, void *stream, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    return acuda_dd9e98a4_api_event_record(event, stream, unused_c, unused_d,
+                                           unused_e, unused_f, unused_g, unused_h);
+}
+
+/* id 0x13c: cudaStreamBeginCapture_ptsz(cudaStream_t stream, cudaStreamCaptureMode mode) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_begin_capture_ptsz(
+        void *stream, void *mode, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)stream; (void)mode; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    /* Stream capture not implemented; report not supported to avoid
+     * leaving capture state inconsistent. */
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x13e: cudaStreamIsCapturing_ptsz(cudaStream_t stream, enum cudaStreamCaptureStatus *pCaptureStatus) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_is_capturing_ptsz(
+        void *stream, void *captureStatus, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!captureStatus)
+        return CUDA_ERROR_INVALID_VALUE;
+    /* cudaStreamCaptureStatusNone = 0 */
+    *(int *)captureStatus = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x140: cudaStreamEndCapture_ptsz(cudaStream_t stream, cudaGraph_t *pGraph) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_end_capture_ptsz(
+        void *stream, void *pGraph, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pGraph)
+        *(void **)pGraph = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x147: cudaThreadExchangeStreamCaptureMode(enum cudaStreamCaptureMode *mode) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_thread_exchange_stream_capture_mode(
+        void *mode, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    /* Keep mode unchanged (e.g. relaxed/global/thread-local as passed). */
+    (void)mode;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x151: cudaCtxResetPersistingL2Cache(void) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache(
+        void *unused_a, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x156: cudaStreamCopyAttributes_ptsz(cudaStream_t dst, cudaStream_t src) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_copy_attributes_ptsz(
+        void *dst, void *src, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)dst; (void)src; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x174: cudaDeviceGetDefaultMemPool(cudaMemPool_t *memPool, int device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_default_mempool(
+        void *memPool, void *device, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!memPool)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(void **)memPool = (void *)(uintptr_t)1;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x181: cudaDeviceSetMemPool(int device, cudaMemPool_t memPool) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_mempool(
+        void *device, void *memPool, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)memPool; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x182: cudaDeviceGetMemPool(cudaMemPool_t *memPool, int device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_mempool(
+        void *memPool, void *device, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!memPool)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(void **)memPool = (void *)(uintptr_t)1;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x1ba: cudaStreamGetId_ptsz(cudaStream_t stream, unsigned long long *streamId) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_id_ptsz(
+        void *stream, void *streamId, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!streamId)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(unsigned long long *)streamId = (unsigned long long)(uintptr_t)stream;
+    return CUDA_SUCCESS;
+}
+
+
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
+    case 0xf2: return (void*)&acuda_dd9e98a4_api_event_record_ptsz;
+    case 0x13c: return (void*)&acuda_dd9e98a4_api_stream_begin_capture_ptsz;
+    case 0x13e: return (void*)&acuda_dd9e98a4_api_stream_is_capturing_ptsz;
+    case 0x140: return (void*)&acuda_dd9e98a4_api_stream_end_capture_ptsz;
+    case 0x147: return (void*)&acuda_dd9e98a4_api_thread_exchange_stream_capture_mode;
+    case 0x151: return (void*)&acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache;
+    case 0x156: return (void*)&acuda_dd9e98a4_api_stream_copy_attributes_ptsz;
+    case 0x174: return (void*)&acuda_dd9e98a4_api_device_get_default_mempool;
+    case 0x181: return (void*)&acuda_dd9e98a4_api_device_set_mempool;
+    case 0x182: return (void*)&acuda_dd9e98a4_api_device_get_mempool;
+    case 0x1ba: return (void*)&acuda_dd9e98a4_api_stream_get_id_ptsz;
     case 0x83: return (void*)&acuda_dd9e98a4_api_stream_synchronize;
     case 0x84: return (void*)&acuda_dd9e98a4_api_stream_query;
     case 0xc9: return (void*)&acuda_dd9e98a4_api_stream_destroy;
