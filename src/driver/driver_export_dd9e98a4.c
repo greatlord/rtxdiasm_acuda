@@ -65,7 +65,7 @@ int acuda_dd9e98a4_ready_state(void) {
 
 int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
 
-static int acuda_dd9e98a4_driver_ready(void) {
+int acuda_dd9e98a4_driver_ready(void) {
 #if defined(_WIN32)
     {
         static int _errmode_set = 0;

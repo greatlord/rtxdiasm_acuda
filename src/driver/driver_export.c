@@ -49,8 +49,11 @@ static void acuda_log_caller(const char *tag) {
 CUresult ACUDA_CUDAAPI cuGetExportTable(const void **ppExportTable,
                           const struct CUuuid_st *pExportTableId) {
     acuda_log_caller("cuGetExportTable");
-    if (acuda_export_table_is_dd9e98a4(pExportTableId))
+    if (acuda_export_table_is_dd9e98a4(pExportTableId)) {
+        if (!acuda_dd9e98a4_driver_ready())
+            return CUDA_ERROR_NOT_INITIALIZED;
         return acuda_export_table_get_dd9e98a4(ppExportTable);
+    }
 
     if (!ppExportTable || !pExportTableId) {
         ACUDA_DEBUG_PRINT( "ACuda-debug: cuGetExportTable -> INVALID_VALUE (pp=%p id=%p)\n",

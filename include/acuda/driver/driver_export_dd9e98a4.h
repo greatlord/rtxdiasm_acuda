@@ -22,6 +22,10 @@ void *acuda_dd9e98a4_get_generic_stub(unsigned int id);
  * corruption detected (and logs). For diagnostic use from hot paths. */
 int acuda_dd9e98a4_check_ready_canary(const char *where);
 
+/* Ensure dd9e98a4 driver/interface is ready (implicit init for hybrid runtime).
+ * Returns 1 if ready, 0 on init failure. */
+int acuda_dd9e98a4_driver_ready(void);
+
 /* Diagnostic getters. */
 int acuda_dd9e98a4_ready_state(void);
 int acuda_dd9e98a4_was_ready_flag(void);
