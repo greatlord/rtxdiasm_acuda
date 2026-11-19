@@ -25,9 +25,9 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
  * primary context before serving interface requests. */
 extern int g_init;
 extern acuda_context_t g_actx;
+static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
 static unsigned g_dd9e98a4_nfatbins;
 static unsigned g_dd9e98a4_nkernels;
-static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
 static struct {
     unsigned int canary1;
     int state; /* 0 unknown, 1 ok, -1 failed */
