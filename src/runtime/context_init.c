@@ -887,23 +887,26 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     acuda_warmup_gpu(ctx);
     // Optional sustained keep-busy (opt-in via ACUDA_HIGH_PERF=1).
     acuda_start_high_perf(ctx);
+    int fma_probe_off = getenv("ACUDA_FMA_PROBE_OFF") != NULL;
     int had_fma = fma_ok;
-    if (fma_ok && !probe_shader_fma(ctx)) {
-        fma_ok = 0;
-        acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
-    }
-    if (fma_ok && !probe_shader_fma_rn(ctx)) {
-        fma_ok = 0;
-        acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
+    if (fma_ok && !fma_probe_off) {
+        if (!probe_shader_fma(ctx) || !probe_shader_fma_rn(ctx)) {
+            fma_ok = 0;
+            acuda_compiler_set_shader_fma(&ctx->compiler_caps, 0);
+        }
     }
     if (had_fma && !fma_ok)
         fprintf(stderr,
                 "ACuda: VK_KHR_shader_fma miscompiles fused f32 "
                 "rounding here; using the portable fallback\n");
     int had_fma64 = fma64_ok;
-    if (fma64_ok && (!fma_ok || !ctx->f64_ok || !probe_shader_fma64(ctx))) {
-        fma64_ok = 0;
-        acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, 0);
+    if (fma64_ok) {
+        if (!fma_ok || !ctx->f64_ok)
+            fma64_ok = 0;
+        else if (!fma_probe_off && !probe_shader_fma64(ctx))
+            fma64_ok = 0;
+        if (!fma64_ok)
+            acuda_compiler_set_shader_fma_f64(&ctx->compiler_caps, 0);
     }
     if (had_fma64 && !fma64_ok && fma_ok)
         fprintf(stderr,
