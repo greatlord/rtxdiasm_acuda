@@ -84,8 +84,19 @@ CUresult ACUDA_CUDAAPI cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
 
 CUresult ACUDA_CUDAAPI cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
                               CUdeviceptr dptr) {
-    // The runtime only needs a successful answer here; the arena does not
-    // expose per-allocation metadata yet.
+    // PhysX 2.8.4 calls this ~138k times during a benchmark to map a
+    // sub-pointer back to its allocation (fluid solver heap).  Report the
+    // real arena allocation and fall back to {dptr, 0} for untracked
+    // pointers, which is what the runtime tolerated before.
+    uint64_t base = 0;
+    size_t size = 0;
+    if (acuda_arena_lookup((uint64_t)dptr, &base, &size) == 0) {
+        if (pbase)
+            *pbase = (CUdeviceptr)base;
+        if (psize)
+            *psize = size;
+        return CUDA_SUCCESS;
+    }
     if (pbase)
         *pbase = dptr;
     if (psize)

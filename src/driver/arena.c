@@ -26,10 +26,6 @@ typedef struct {
 } alloc_t;
 
 static acuda_context_t g_ctx;
-static unsigned char *g_virt; // PROT_NONE reservation, ARENA_MAX * SIZE
-#if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-static unsigned char *g_big_virt; // PROT_NONE reservation for the big slot
-#endif
 static arena_t g_arenas[ACUDA_ARENA_SLOTS];
 static span_t *g_spans[ACUDA_ARENA_SLOTS];
 static size_t g_nspans[ACUDA_ARENA_SLOTS], g_span_cap[ACUDA_ARENA_SLOTS];
@@ -49,93 +45,35 @@ static size_t arena_vsize(int idx) {
     return (size_t)ACUDA_ARENA_SIZE;
 }
 
-// Base virtual address of one arena slot's window.
+// Base virtual address of one arena slot's window.  On 32-bit hosts the
+// app-visible CUdeviceptr is the Vulkan mapping itself: a separate PROT_NONE
+// window would cost another 32 MiB (small) / 272 MiB (big) of the already
+// exhausted 2 GiB address space.  Mappings are stable for the lifetime of the
+// VkDeviceMemory, so they are valid, collision-free tokens.
 static uint64_t arena_vbase(int idx) {
-#if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-    if (idx == ACUDA_ARENA_BIG_INDEX)
-        return (uint64_t)(uintptr_t)g_big_virt;
-#endif
-    return (uint64_t)(uintptr_t)g_virt + (uint64_t)(unsigned)idx * (uint64_t)ACUDA_ARENA_SIZE;
+    return (uint64_t)(uintptr_t)g_arenas[idx].mapped;
 }
 
 int acuda_arena_boot(acuda_context_t ctx) {
     g_ctx = ctx;
-    if (!g_virt) {
-        size_t bytes = ACUDA_ARENA_SIZE * ACUDA_ARENA_MAX;
-#if defined(_WIN32)
-        void *p = VirtualAlloc(NULL, bytes, MEM_RESERVE, PAGE_NOACCESS);
-#else
-        void *p = mmap(NULL, bytes, PROT_NONE,
-                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-        if (p == MAP_FAILED)
-            p = NULL;
-#endif
-        if (!p)
-            return -1;
-        g_virt = p;
-    }
-    // Commit the small-object arena and the large-object arena now, while
-    // the 32-bit address space is still unfragmented.  Deferring a 32 MiB
-    // host-visible commit until the fluid solver asks for its first large
-    // buffer makes it fail with VK_ERROR_OUT_OF_DEVICE_MEMORY even though
-    // the heap is empty: the loader cannot find a free 32 MiB window in
-    // the low 2 GiB anymore.  Committing all four slots up front leaves
-    // too little address space for PhysX's own 16 MiB host buffer.
+    // No PROT_NONE pointer window: the app-visible CUdeviceptr is taken
+    // directly from the persistent Vulkan mapping (see arena_vbase).  On a
+    // non-LAA 32-bit client the 2 GiB address space is the scarce resource;
+    // the old windows alone cost 4*32 MiB + 272 MiB of it.
+    //
+    // Commit the small-object arenas now, while the address space is still
+    // unfragmented.  Deferring a 32 MiB host-visible commit until the fluid
+    // solver asks for its first large buffer used to fail with
+    // VK_ERROR_OUT_OF_DEVICE_MEMORY even though the heap was empty.
     for (int i = 0; i < 2 && i < ACUDA_ARENA_MAX; i++) {
         if (!g_arenas[i].committed)
             (void)commit_arena(i); // best effort; retried on demand
     }
 #if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-    // Reserve the big slot above 2 GiB when the process is large-address
-    // aware so the low region stays contiguous for the NVIDIA driver.
-    // Committed eagerly: a late 256 MiB host-visible commit would face
-    // the same fragmentation the small arenas avoid by booting early.
-    // ACUDA_BIG_ARENA_LOW=1 forces the legacy anywhere-placement for
-    // A/B testing (some 2011-era code mis-handles pointers >= 2 GiB).
-    {
-        size_t bytes = (size_t)ACUDA_ARENA_BIG_SIZE;
-        void *p = NULL;
-        int force_low = 0;
-        {
-            const char *s = getenv("ACUDA_BIG_ARENA_LOW");
-            force_low = (s && *s) ? 1 : 0;
-        }
-#if defined(_WIN32)
-        if (!force_low) {
-            MEMORY_BASIC_INFORMATION mbi;
-            unsigned char *q = (unsigned char *)0x80000000u;
-            uintptr_t best = 0;
-            while ((uintptr_t)q < (uintptr_t)0xFFFFFFFFu) {
-                if (VirtualQuery(q, &mbi, sizeof(mbi)) != sizeof(mbi))
-                    break;
-                if (mbi.State == MEM_FREE && mbi.RegionSize >= bytes)
-                    best = (uintptr_t)mbi.BaseAddress;
-                {
-                    unsigned char *next =
-                        (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
-                    if (next <= q)
-                        break;
-                    q = next;
-                }
-            }
-            if (best)
-                p = VirtualAlloc((void *)best, bytes, MEM_RESERVE,
-                                 PAGE_NOACCESS);
-        }
-        if (!p)
-            p = VirtualAlloc(NULL, bytes, MEM_RESERVE, PAGE_NOACCESS);
-#else
-        (void)force_low;
-        p = mmap(NULL, bytes, PROT_NONE,
-                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-        if (p == MAP_FAILED)
-            p = NULL;
-#endif
-        if (p) {
-            g_big_virt = p;
-            (void)commit_arena(ACUDA_ARENA_BIG_INDEX); // best effort
-        }
-    }
+    // Committed eagerly: a late 256 MiB host-visible commit faces the same
+    // fragmentation the small arenas avoid by booting early.  The mapping
+    // (272 MiB) is the only address-space cost now -- no extra window.
+    (void)commit_arena(ACUDA_ARENA_BIG_INDEX); // best effort
 #endif
     return 0;
 }
@@ -160,24 +98,6 @@ void acuda_arena_shutdown(void) {
     g_allocs = NULL;
     g_nallocs = g_acap = 0;
     g_live = 0;
-#if defined(_WIN32)
-    if (g_virt)
-        VirtualFree(g_virt, 0, MEM_RELEASE);
-#else
-    if (g_virt)
-        munmap(g_virt, ACUDA_ARENA_SIZE * ACUDA_ARENA_MAX);
-#endif
-    g_virt = NULL;
-#if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-#if defined(_WIN32)
-    if (g_big_virt)
-        VirtualFree(g_big_virt, 0, MEM_RELEASE);
-#else
-    if (g_big_virt)
-        munmap(g_big_virt, (size_t)ACUDA_ARENA_BIG_SIZE);
-#endif
-    g_big_virt = NULL;
-#endif
 }
 
 static int commit_arena(int idx) {
@@ -249,6 +169,12 @@ static int commit_arena(int idx) {
         g_arenas[idx].mem = mem;
         g_arenas[idx].mapped = mapped;
         g_arenas[idx].committed = 1;
+        if (getenv("ACUDA_TRACE"))
+            fprintf(stderr,
+                    "acuda-arena commit[%d] mapped=%p size=%llu %s\n",
+                    idx, mapped, (unsigned long long)req.size,
+                    ((uintptr_t)mapped >= (uintptr_t)0x80000000u)
+                        ? "(above 2GiB)" : "(below 2GiB)");
         g_spans[idx] = malloc(sizeof(span_t));
         if (!g_spans[idx]) {
             vkUnmapMemory(g_ctx->device, mem);
@@ -502,6 +428,18 @@ int acuda_arena_capacity(uint64_t virt, size_t *remain_out) {
     return -1;
 }
 
+
+int acuda_arena_lookup(uint64_t virt, uint64_t *base_out, size_t *size_out) {
+    for (size_t i = 0; i < g_nallocs; i++) {
+        if (virt >= g_allocs[i].virt &&
+            virt < g_allocs[i].virt + g_allocs[i].size) {
+            if (base_out) *base_out = g_allocs[i].virt;
+            if (size_out) *size_out = g_allocs[i].size;
+            return 0;
+        }
+    }
+    return -1;
+}
 size_t acuda_arena_live(void) {
     return g_live;
 }

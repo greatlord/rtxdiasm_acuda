@@ -297,6 +297,9 @@ typedef struct CUDA_MEMCPY3D_st {
 #define CUDA_ERROR_INVALID_DEVICE 101
 #define CUDA_ERROR_INVALID_IMAGE 200
 #define CUDA_ERROR_INVALID_CONTEXT 201
+/* No loaded module/kernel matches the installed device; NVIDIA returns this
+ * when a module carries no PTX and none of its cubins match the GPU. */
+#define CUDA_ERROR_NO_BINARY_FOR_GPU 209
 #define CUDA_ERROR_INVALID_HANDLE 400
 #define CUDA_ERROR_NOT_FOUND 500
 #define CUDA_ERROR_NOT_READY 600

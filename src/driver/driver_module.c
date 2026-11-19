@@ -624,9 +624,16 @@ CUresult load_sass_image(CUmodule *module, const unsigned char *data,
         return CUDA_ERROR_INVALID_VALUE;
     *module = NULL;
     if (cubin_backend() == 1) {
+        /* Backend 1 can only compile PTX.  NVIDIA's driver answers
+         * CUDA_ERROR_NO_BINARY_FOR_GPU when a module carries no PTX for the
+         * installed device; verified for PhysX 2.8.4's SASS-only fatbins
+         * (sm_10/sm_11/sm_20/sm_30 cubins, no PTX): the raw cuModuleLoadData
+         * call and cudart's per-fatbin registration hook both return 209.
+         * PhysX detects its GPU regardless, so report the same code instead
+         * of INVALID_IMAGE; the caller can then take its real-driver path. */
         ACUDA_DEBUG_PRINT("acuda-trace .. backend=1 (C parser only): "
-                    "refusing the rtxdisam SASS lift\n");
-        return CUDA_ERROR_INVALID_IMAGE;
+                    "no PTX, reporting CUDA_ERROR_NO_BINARY_FOR_GPU\n");
+        return CUDA_ERROR_NO_BINARY_FOR_GPU;
     }
     char err[1024] = {0};
     char target[16];
