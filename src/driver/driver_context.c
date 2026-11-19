@@ -327,8 +327,8 @@ CUresult map_status(acuda_status_t st) {
 }
 
 CUresult need_init(void) {
-    ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p\n", g_init,
-                (void *)&g_init);
+    ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p g_actx=%p\n", g_init,
+                (void *)&g_init, (void *)g_actx);
     if (g_init) {
         if (!acuda_dd9e98a4_check_ready_canary("need_init")) {
             /* canary check already logged */
@@ -348,6 +348,7 @@ CUresult need_actx(void) {
     if (r != CUDA_SUCCESS)
         return r;
     if (!g_actx) {
+        ACUDA_DEBUG_PRINT("acuda-trace !! need_actx: g_actx NULL while g_init=%d, reinitializing\n", g_init);
         acuda_context_t ctx = NULL;
         acuda_status_t st = acuda_init(&ctx);
         if (st != ACUDA_SUCCESS)

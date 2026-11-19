@@ -23,6 +23,7 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
 /* The CUDA 13.x hybrid runtime never calls cuInit() or cuCtxCreate(): it
  * expects the driver interface to be usable right away, so bring up the
  * primary context before serving interface requests. */
+extern int g_init;
 static struct {
     unsigned int canary1;
     int state; /* 0 unknown, 1 ok, -1 failed */
@@ -86,6 +87,23 @@ static int acuda_dd9e98a4_driver_ready(void) {
             fflush(stderr);
             g_dd9e98a4_ready.state = 1;
             g_dd9e98a4_ready.ever_ready = 1;
+            return 1;
+        }
+        /* If driver core is already initialized, dd9e98a4 state was likely
+         * reset/corrupted; avoid re-running implicit init (which can
+         * trigger expensive/dangerous reinit paths). */
+        if (g_init) {
+#if defined(_MSC_VER)
+            void *_ra = _ReturnAddress();
+#else
+            void *_ra = __builtin_return_address(0);
+#endif
+            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but g_init=1, recovering caller=%p\n",
+                    _ra);
+            fflush(stderr);
+            g_dd9e98a4_ready.state = 1;
+            g_dd9e98a4_ready.ever_ready = 1;
+            g_dd9e98a4_was_ready = 1;
             return 1;
         }
 #if defined(_MSC_VER)
