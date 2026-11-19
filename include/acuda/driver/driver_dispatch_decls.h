@@ -191,6 +191,8 @@ CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes);
 CUresult ACUDA_CUDAAPI cuMemGetInfo_v2(size_t *freeBytes, size_t *totalBytes);
 CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned int flags);
+CUresult ACUDA_CUDAAPI cuMemAllocHost(void **pp, size_t bytesize);
+CUresult ACUDA_CUDAAPI cuMemAllocHost_v2(void **pp, size_t bytesize);
 CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer(void **pdst, void *p, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer_v2(void **pdst, void *p, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemHostGetFlags(unsigned int *flags, void *p);

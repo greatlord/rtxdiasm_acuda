@@ -167,6 +167,8 @@ static CUresult lookup_symbol(const char *symbol, void **pfn) {
     ENTRY(cuMemHostGetFlags)
     ENTRY(cuMemHostAlloc)
     ENTRY(cuMemHostAlloc_v2)
+    ENTRY(cuMemAllocHost)
+    ENTRY(cuMemAllocHost_v2)
     ENTRY(cuMemFreeHost)
     ENTRY(cuMemHostRegister)
     ENTRY(cuMemHostRegister_v2)

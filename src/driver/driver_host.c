@@ -319,6 +319,15 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned in
     return cuMemHostAlloc(pp, bytesize, flags);
 }
 
+CUresult ACUDA_CUDAAPI cuMemAllocHost(void **pp, size_t bytesize) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAllocHost(%zu)\n", bytesize);
+    return cuMemHostAlloc(pp, bytesize, 0);
+}
+
+CUresult ACUDA_CUDAAPI cuMemAllocHost_v2(void **pp, size_t bytesize) {
+    return cuMemAllocHost(pp, bytesize);
+}
+
 CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p) {
 #if defined(_WIN32)
     if (p) {
