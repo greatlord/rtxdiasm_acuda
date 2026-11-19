@@ -27,6 +27,7 @@ extern int g_init;
 extern acuda_context_t g_actx;
 static unsigned g_dd9e98a4_nfatbins;
 static unsigned g_dd9e98a4_nkernels;
+static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
 static struct {
     unsigned int canary1;
     int state; /* 0 unknown, 1 ok, -1 failed */
@@ -107,9 +108,25 @@ static int acuda_dd9e98a4_driver_ready(void) {
             g_dd9e98a4_ready.state = 1;
             g_dd9e98a4_ready.ever_ready = 1;
             g_dd9e98a4_was_ready = 1;
-            /* g_init may also have been corrupted; best-effort restore. */
             if (!g_init && g_actx)
                 g_init = 1;
+            g_dd9e98a4_init_magic = 0xDDE998A4u;
+            return 1;
+        }
+        /* Surviving init-magic (stored near fatbin/kernel counters) indicates
+         * init completed earlier and state was selectively corrupted. */
+        if (g_dd9e98a4_init_magic == 0xDDE998A4u) {
+#if defined(_MSC_VER)
+            void *_ra = _ReturnAddress();
+#else
+            void *_ra = __builtin_return_address(0);
+#endif
+            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but init_magic set (fb=%u kern=%u g_init=%d g_actx=%p), recovering caller=%p\n",
+                    g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, g_init, g_actx, _ra);
+            fflush(stderr);
+            g_dd9e98a4_ready.state = 1;
+            g_dd9e98a4_ready.ever_ready = 1;
+            g_dd9e98a4_was_ready = 1;
             return 1;
         }
 #if defined(_MSC_VER)
@@ -138,6 +155,7 @@ static int acuda_dd9e98a4_driver_ready(void) {
         if (g_dd9e98a4_ready.state == 1) {
             g_dd9e98a4_ready.ever_ready = 1;
             g_dd9e98a4_was_ready = 1;
+            g_dd9e98a4_init_magic = 0xDDE998A4u;
         }
     }
     if (g_dd9e98a4_ready.state == 1) {
