@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/driver/driver_export_dd9e98a4.h"
 #include <stdlib.h>
 
 CUresult ctx_push(CUcontext ctx) {
@@ -118,6 +119,7 @@ CUresult ACUDA_CUDAAPI cuCtxGetCurrent(CUcontext *pctx) {
 
 CUresult ACUDA_CUDAAPI cuCtxSetCurrent(CUcontext ctx) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSetCurrent(%p)\n", (void *)ctx);
+    acuda_dd9e98a4_check_ready_canary("cuCtxSetCurrent");
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
     if (!ctx) {
@@ -327,6 +329,15 @@ CUresult map_status(acuda_status_t st) {
 CUresult need_init(void) {
     ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p\n", g_init,
                 (void *)&g_init);
+    if (g_init) {
+        if (!acuda_dd9e98a4_check_ready_canary("need_init")) {
+            /* canary check already logged */
+        }
+        if (acuda_dd9e98a4_ready_state() == 0) {
+            ACUDA_DEBUG_PRINT("acuda-trace ?? need_init: dd9e98a4_state=0 was=%d\n",
+                              acuda_dd9e98a4_was_ready_flag());
+        }
+    }
     return g_init ? CUDA_SUCCESS : CUDA_ERROR_NOT_INITIALIZED;
 }
 

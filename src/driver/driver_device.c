@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/driver/driver_export_dd9e98a4.h"
 #include "acuda/runtime_api.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -421,6 +422,7 @@ CUresult ACUDA_CUDAAPI cuFlushGPUDirectRDMAWrites(int target, int scope) {
 CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev) {
     if (!value)
         return CUDA_ERROR_INVALID_VALUE;
+    acuda_dd9e98a4_check_ready_canary("cuDeviceGetAttribute");
     ACUDA_DEBUG_PRINT("acuda-trace ?? cuDeviceGetAttribute(%d, dev=%d)\n",
                 attrib, dev);
     int n = 0;

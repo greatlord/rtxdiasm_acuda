@@ -22,6 +22,10 @@ void *acuda_dd9e98a4_get_generic_stub(unsigned int id);
  * corruption detected (and logs). For diagnostic use from hot paths. */
 int acuda_dd9e98a4_check_ready_canary(const char *where);
 
+/* Diagnostic getters. */
+int acuda_dd9e98a4_ready_state(void);
+int acuda_dd9e98a4_was_ready_flag(void);
+
 #ifdef __cplusplus
 }
 #endif
