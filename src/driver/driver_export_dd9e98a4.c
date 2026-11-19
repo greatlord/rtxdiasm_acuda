@@ -9,6 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 /* --- dd9e98a4 interface functions mapped to CUDA runtime API entry points ---
  * The CUDA 13.x hybrid runtime resolves these IDs through the dispatcher and
  * tail-calls them from its cuda* wrapper functions (see docs/unknown notes).
@@ -24,7 +28,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
         unsigned int canary1;
         int state; /* 0 unknown, 1 ok, -1 failed */
         unsigned int canary2;
-    } s = { 0xA5C0FFEEu, 0, 0x5EEDFACEu };
+        int ever_ready;
+    } s = { 0xA5C0FFEEu, 0, 0x5EEDFACEu, 0 };
     if (s.canary1 != 0xA5C0FFEEu || s.canary2 != 0x5EEDFACEu ||
         (s.state != 0 && s.state != 1 && s.state != -1)) {
         ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready CORRUPTION "
@@ -33,6 +38,22 @@ static int acuda_dd9e98a4_driver_ready(void) {
         if (getenv("ACUDA_TRACE")) fflush(stderr);
     }
     if (s.state == 0) {
+#if defined(_MSC_VER)
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
+                          s.ever_ready, _ReturnAddress());
+#else
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
+                          s.ever_ready, __builtin_return_address(0));
+#endif
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        if (s.ever_ready) {
+            /* State was zeroed/corrupted after successful init; avoid
+             * re-running implicit init and clobbering driver context. */
+            ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready recovered (skip reinit)\n");
+            if (getenv("ACUDA_TRACE")) fflush(stderr);
+            s.state = 1;
+            return 1;
+        }
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
             CUcontext ctx = NULL;
@@ -43,6 +64,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
         ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 implicit init -> %d\n", (int)r);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
         s.state = (r == CUDA_SUCCESS) ? 1 : -1;
+        if (s.state == 1)
+            s.ever_ready = 1;
     }
     return s.state == 1;
 }
