@@ -29,75 +29,41 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
 extern int g_init;
 extern acuda_context_t g_actx;
 static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
-static int g_dd9e98a4_init_completed_once; /* survives struct corruption */
 static unsigned g_dd9e98a4_nfatbins;
 static unsigned g_dd9e98a4_nkernels;
+static int g_dd9e98a4_was_ready; /* latched once canonical ready observed */
+static int g_dd9e98a4_implicit_init_failed;
 static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b, long long v, int phase);
-static struct {
-    unsigned int canary1;
-    int state; /* 0 unknown, 1 ok, -1 failed */
-    unsigned int canary2;
-    int ever_ready;
-} g_dd9e98a4_ready = { 0xA5C0FFEEu, 0, 0x5EEDFACEu, 0 };
-/* Separate flag so we can detect "struct reset to initial values" even if
- * ever_ready inside the struct is overwritten back to 0. */
-static int g_dd9e98a4_was_ready;
+extern int (*acuda_runtime_canary_hook)(const char *where);
 
 int acuda_dd9e98a4_check_ready_canary(const char *where) {
-    static int reset_initial_logged;
-    int looks_initial = (g_dd9e98a4_ready.canary1 == 0xA5C0FFEEu &&
-                         g_dd9e98a4_ready.canary2 == 0x5EEDFACEu &&
-                         g_dd9e98a4_ready.state == 0 &&
-                         g_dd9e98a4_ready.ever_ready == 0);
-    if (!looks_initial)
-        reset_initial_logged = 0;
-    if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu ||
-        g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
-        (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 &&
-         g_dd9e98a4_ready.state != -1)) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CANARY %s c1=%08x state=%d c2=%08x ever=%d was=%d\n",
+    /* Canonical driver ready state is g_init. Detect resets/corruption where
+     * the interface was ready before but core init markers are gone. */
+    if (g_init) {
+        g_dd9e98a4_was_ready = 1;
+        g_dd9e98a4_init_magic = 0xDDE998A4u;
+        return 1;
+    }
+    if (g_dd9e98a4_was_ready || g_dd9e98a4_init_magic == 0xDDE998A4u) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 READY_RESET %s was=%d magic=0x%x g_init=%d g_actx=%p fb=%u kern=%u\n",
                           where ? where : "?",
-                          g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state,
-                          g_dd9e98a4_ready.canary2, g_dd9e98a4_ready.ever_ready,
-                          g_dd9e98a4_was_ready);
+                          g_dd9e98a4_was_ready, g_dd9e98a4_init_magic,
+                          g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
         return 0;
     }
-    if ((g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) &&
-        g_dd9e98a4_ready.state == 0) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_ZEROED %s ever=%d was=%d initial=%d magic=0x%x init_once=%d\n",
-                          where ? where : "?", g_dd9e98a4_ready.ever_ready,
-                          g_dd9e98a4_was_ready, looks_initial, g_dd9e98a4_init_magic,
-                          g_dd9e98a4_init_completed_once);
-        if (getenv("ACUDA_TRACE")) fflush(stderr);
-        return 0;
-    }
-    /* Catch reset to initial-looking ready struct after successful init.
-     * Fatbin/kernel registration counters alone are not evidence of completed
-     * init (they can be set during pre-init registration). */
-    if (looks_initial &&
-        (g_dd9e98a4_was_ready || g_dd9e98a4_init_completed_once ||
-         g_dd9e98a4_init_magic == 0xDDE998A4u ||
-         g_init || g_actx)) {
-        if (!reset_initial_logged) {
-            reset_initial_logged = 1;
-            ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_RESET_INITIAL %s was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u\n",
-                              where ? where : "?", g_dd9e98a4_was_ready,
-                              g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once,
-                              g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
-            if (getenv("ACUDA_TRACE")) fflush(stderr);
-        }
-        return 0;
-    }
-    return 1;
+    return 1; /* not yet initialized */
 }
 
-int acuda_dd9e98a4_ready_state(void) { return g_dd9e98a4_ready.state; }
-int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
+int acuda_dd9e98a4_ready_state(void) {
+    if (g_init)
+        return 1;
+    if (g_dd9e98a4_implicit_init_failed)
+        return -1;
+    return 0;
+}
 
-static int g_dd9e98a4_corruption_logged;
-static int g_dd9e98a4_state0_logged;
-extern int (*acuda_runtime_canary_hook)(const char *where);
+int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
 
 static int acuda_dd9e98a4_driver_ready(void) {
 #if defined(_WIN32)
@@ -112,148 +78,31 @@ static int acuda_dd9e98a4_driver_ready(void) {
     }
 #endif
     acuda_runtime_canary_hook = acuda_dd9e98a4_check_ready_canary;
-    static long long _dr_seq = 0;
-    long long _myseq = _dr_seq++;
-#if defined(_MSC_VER)
-    void *_entry_ra = _ReturnAddress();
-#else
-    void *_entry_ra = __builtin_return_address(0);
-#endif
-    { const char *_vt = getenv("ACUDA_DD9E98A4_TRACE_VERBOSE"); if (_vt && *_vt) { static int _last_st = 999; if (g_dd9e98a4_ready.state != 1 || _last_st != 1) { fprintf(stderr, "ACuda-debug: dd9e98a4 driver_ready #%lld st=%d ever=%d was=%d g_init=%d g_actx=%p caller=%p\n", _myseq, g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_init, g_actx, _entry_ra); fflush(stderr); } _last_st = g_dd9e98a4_ready.state; } }
-    if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu || g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
-        (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 && g_dd9e98a4_ready.state != -1)) {
-        if (!g_dd9e98a4_corruption_logged) {
-            g_dd9e98a4_corruption_logged = 1;
-            fprintf(stderr, "ACuda-debug: dd9e98a4 CORRUPTION_DETECTED canary c1=%08x state=%d c2=%08x ever=%d was=%d magic=0x%x g_init=%d@%p g_actx=%p fb=%u kern=%u caller=%p self=%p\n",
-                    g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state, g_dd9e98a4_ready.canary2,
-                    g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_dd9e98a4_init_magic,
-                    g_init, (void*)&g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
-                    _entry_ra, (void*)(uintptr_t)&acuda_dd9e98a4_driver_ready);
-            fflush(stderr);
-        }
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready CORRUPTION "
-                          "c1=%08x state=%d c2=%08x\n",
-                          g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state, g_dd9e98a4_ready.canary2);
-        if (getenv("ACUDA_TRACE")) fflush(stderr);
+
+    if (g_init) {
+        g_dd9e98a4_was_ready = 1;
+        g_dd9e98a4_init_magic = 0xDDE998A4u;
+        g_dd9e98a4_implicit_init_failed = 0;
+        return 1;
     }
-    if (g_dd9e98a4_ready.state == 0) {
-        {
-            static long long _s0seq = 0;
-            int prior_init = g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready ||
-                             g_dd9e98a4_init_magic == 0xDDE998A4u ||
-                             g_dd9e98a4_init_completed_once || g_init || g_actx;
-            int has_reg = (g_dd9e98a4_nfatbins || g_dd9e98a4_nkernels);
-            long long _n = _s0seq++;
-            fprintf(stderr, "ACuda-debug: dd9e98a4 driver_ready_state0 #%lld prior_init=%d st=%d ever=%d was=%d magic=0x%x init_once=%d g_init=%d@%p g_actx=%p fb=%u kern=%u caller=%p\n",
-                    _n, prior_init, g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_dd9e98a4_init_magic,
-                    g_dd9e98a4_init_completed_once, g_init, (void*)&g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra);
-            fflush(stderr);
-            if ((prior_init || has_reg) && !g_dd9e98a4_state0_logged) {
-                g_dd9e98a4_state0_logged = 1;
-                fprintf(stderr, "ACuda-debug: dd9e98a4 STATE0_DETECTED #%lld prior_init=%d fb=%u kern=%u caller=%p self=%p\n",
-                        _n, prior_init, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra, (void*)(uintptr_t)&acuda_dd9e98a4_driver_ready);
-                fflush(stderr);
-            }
-            if (!prior_init && !has_reg) {
-                g_dd9e98a4_state0_logged = 0;
-            }
-        }
-        if (g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) {
+
+    /* The CUDA 13.x hybrid runtime never calls cuInit()/cuCtxCreate(): bring up
+     * the driver and a usable primary context on first interface request.
+     * Canonical ready state is g_init (set by cuInit). */
+    {
 #if defined(_MSC_VER)
-            void *_ra = _ReturnAddress();
+        void *_ra = _ReturnAddress();
 #else
-            void *_ra = __builtin_return_address(0);
+        void *_ra = __builtin_return_address(0);
 #endif
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready RESET_TO_INITIAL ever=%d was=%d caller=%p\n",
-                    g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, _ra);
-            fflush(stderr);
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready recovered (skip reinit)\n");
-            fflush(stderr);
-            g_dd9e98a4_ready.state = 1;
-            g_dd9e98a4_ready.ever_ready = 1;
-            g_dd9e98a4_init_completed_once = 1;
-            g_dd9e98a4_state0_logged = 0;
-            return 1;
-        }
-        /* If driver core is already initialized (or runtime context still
-         * exists), dd9e98a4 state was likely reset/corrupted; avoid
-         * re-running implicit init (which can trigger dangerous reinit). */
-        if (g_init || g_actx) {
-#if defined(_MSC_VER)
-            void *_ra = _ReturnAddress();
-#else
-            void *_ra = __builtin_return_address(0);
-#endif
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but g_init=%d g_actx=%p, recovering caller=%p\n",
-                    g_init, g_actx, _ra);
-            fflush(stderr);
-            g_dd9e98a4_ready.state = 1;
-            g_dd9e98a4_ready.ever_ready = 1;
-            g_dd9e98a4_was_ready = 1;
-            if (!g_init && g_actx)
-                g_init = 1;
-            g_dd9e98a4_init_magic = 0xDDE998A4u;
-            g_dd9e98a4_init_completed_once = 1;
-            g_dd9e98a4_state0_logged = 0;
-            return 1;
-        }
-        /* Surviving init-magic (stored near fatbin/kernel counters) indicates
-         * init completed earlier and state was selectively corrupted. */
-        if (g_dd9e98a4_init_magic == 0xDDE998A4u) {
-#if defined(_MSC_VER)
-            void *_ra = _ReturnAddress();
-#else
-            void *_ra = __builtin_return_address(0);
-#endif
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but init_magic set (fb=%u kern=%u g_init=%d g_actx=%p), recovering caller=%p\n",
-                    g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, g_init, g_actx, _ra);
-            fflush(stderr);
-            g_dd9e98a4_ready.state = 1;
-            g_dd9e98a4_ready.ever_ready = 1;
-            g_dd9e98a4_was_ready = 1;
-            g_dd9e98a4_init_completed_once = 1;
-            g_dd9e98a4_state0_logged = 0;
-            return 1;
-        }
-        fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready TAKING_IMPLICIT_INIT st=%d ever=%d was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u caller=%p\n",
-                g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready,
-                g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once, g_init, g_actx,
-                g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra);
-        fflush(stderr);
-#if defined(_MSC_VER)
-        {
-            void *_ra = _ReturnAddress();
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d g_init=%d caller=%p\n",
-                    g_dd9e98a4_ready.ever_ready, g_init, _ra);
+        const char *_vt = getenv("ACUDA_DD9E98A4_TRACE_VERBOSE");
+        if (_vt && *_vt) {
+            fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init start g_init=%d g_actx=%p fb=%u kern=%u caller=%p\n",
+                    g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _ra);
             fflush(stderr);
         }
-#else
-        fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d g_init=%d caller=%p\n",
-                g_dd9e98a4_ready.ever_ready, g_init, __builtin_return_address(0));
-        fflush(stderr);
-#endif
-#if defined(_MSC_VER)
-        void *_iira = _ReturnAddress();
-#else
-        void *_iira = __builtin_return_address(0);
-#endif
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init pre: caller=%p self=%p st=%d was=%d ever=%d magic=0x%x g_init=%d g_actx=%p fb=%u kern=%u\n",
-                _iira, (void *)(uintptr_t)&acuda_dd9e98a4_driver_ready, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
-                g_dd9e98a4_ready.ever_ready, g_dd9e98a4_init_magic,
-                g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
-        fflush(stderr);
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
-            /* Mark ready early: cuInit succeeded and driver core is initialized.
-             * Primary-ctx retain/set may re-enter driver paths; keeping dd9e98a4
-             * in "initial" state during that window breaks recovery/canaries and
-             * can lead to repeated implicit-init attempts. */
-            g_dd9e98a4_ready.state = 1;
-            g_dd9e98a4_ready.ever_ready = 1;
-            g_dd9e98a4_was_ready = 1;
-            g_dd9e98a4_init_magic = 0xDDE998A4u;
-            g_dd9e98a4_init_completed_once = 1;
-            g_dd9e98a4_state0_logged = 0;
             CUcontext ctx = NULL;
             CUresult rctx = cuDevicePrimaryCtxRetain(&ctx, 0);
             if (rctx == CUDA_SUCCESS)
@@ -262,23 +111,21 @@ static int acuda_dd9e98a4_driver_ready(void) {
                 fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init ctx setup failed r=%d (continuing as ready)\n", (int)rctx);
                 fflush(stderr);
             }
+            g_dd9e98a4_was_ready = 1;
+            g_dd9e98a4_init_magic = 0xDDE998A4u;
+            g_dd9e98a4_implicit_init_failed = 0;
+            if (_vt && *_vt) {
+                fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d g_init=%d g_actx=%p caller=%p\n",
+                        (int)r, g_init, g_actx, _ra);
+                fflush(stderr);
+            }
+            return 1;
         }
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p) caller=%p self=%p seq=%lld\n",
-                (int)r, g_init, (void *)&g_init, g_actx,
-                g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
-                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready, _iira, (void *)(uintptr_t)&acuda_dd9e98a4_driver_ready, _myseq);
+        g_dd9e98a4_implicit_init_failed = 1;
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init failed r=%d caller=%p\n", (int)r, _ra);
         fflush(stderr);
-        if (r != CUDA_SUCCESS) {
-            g_dd9e98a4_ready.state = -1;
-        }
+        return 0;
     }
-    if (g_dd9e98a4_ready.state == 1) {
-        g_dd9e98a4_ready.ever_ready = 1;
-        g_dd9e98a4_was_ready = 1;
-        g_dd9e98a4_init_completed_once = 1;
-        g_dd9e98a4_state0_logged = 0;
-    }
-    return g_dd9e98a4_ready.state == 1;
 }
 
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
@@ -1646,99 +1493,128 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_unregister_async_notific
 }
 
 
-static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
-    switch(id){
-    case 0xb1: return (void*)&acuda_dd9e98a4_api_ipc_open_event_handle;
-    case 0xb3: return (void*)&acuda_dd9e98a4_api_ipc_open_mem_handle;
-    case 0xff: return (void*)&acuda_dd9e98a4_api_device_get_p2p_attribute;
-    case 0x112: return (void*)&acuda_dd9e98a4_api_import_external_memory;
-    case 0x113: return (void*)&acuda_dd9e98a4_api_external_memory_get_mapped_buffer;
-    case 0x114: return (void*)&acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array;
-    case 0x115: return (void*)&acuda_dd9e98a4_api_destroy_external_memory;
-    case 0x116: return (void*)&acuda_dd9e98a4_api_import_external_semaphore;
-    case 0x15b: return (void*)&acuda_dd9e98a4_api_device_get_texture1d_linear_max_width;
-    case 0x195: return (void*)&acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes;
-    case 0x1bc: return (void*)&acuda_dd9e98a4_api_init_device;
-    case 0x1d1: return (void*)&acuda_dd9e98a4_api_device_register_async_notification;
-    case 0x1d2: return (void*)&acuda_dd9e98a4_api_device_unregister_async_notification;
-    case 0x209: return (void*)&acuda_dd9e98a4_api_device_get_host_atomic_capabilities;
-    case 0x20a: return (void*)&acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities;
-    case 0xf2: return (void*)&acuda_dd9e98a4_api_event_record_ptsz;
-    case 0x13c: return (void*)&acuda_dd9e98a4_api_stream_begin_capture_ptsz;
-    case 0x13e: return (void*)&acuda_dd9e98a4_api_stream_is_capturing_ptsz;
-    case 0x140: return (void*)&acuda_dd9e98a4_api_stream_end_capture_ptsz;
-    case 0x147: return (void*)&acuda_dd9e98a4_api_thread_exchange_stream_capture_mode;
-    case 0x151: return (void*)&acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache;
-    case 0x156: return (void*)&acuda_dd9e98a4_api_stream_copy_attributes_ptsz;
-    case 0x174: return (void*)&acuda_dd9e98a4_api_device_get_default_mempool;
-    case 0x181: return (void*)&acuda_dd9e98a4_api_device_set_mempool;
-    case 0x182: return (void*)&acuda_dd9e98a4_api_device_get_mempool;
-    case 0x1ba: return (void*)&acuda_dd9e98a4_api_stream_get_id_ptsz;
-    case 0x83: return (void*)&acuda_dd9e98a4_api_stream_synchronize;
-    case 0x84: return (void*)&acuda_dd9e98a4_api_stream_query;
-    case 0xc9: return (void*)&acuda_dd9e98a4_api_stream_destroy;
-    case 0xcb: return (void*)&acuda_dd9e98a4_api_stream_get_priority;
-    case 0xcc: return (void*)&acuda_dd9e98a4_api_stream_get_flags;
-    case 0xed: return (void*)&acuda_dd9e98a4_api_stream_get_priority_ptsz;
-    case 0xee: return (void*)&acuda_dd9e98a4_api_stream_get_flags_ptsz;
-    case 0xef: return (void*)&acuda_dd9e98a4_api_stream_synchronize_ptsz;
-    case 0xf0: return (void*)&acuda_dd9e98a4_api_stream_query_ptsz;
-    case 0x1e0: return (void*)&acuda_dd9e98a4_api_stream_get_device;
-    case 0x1e1: return (void*)&acuda_dd9e98a4_api_stream_get_device_ptsz;
-    case 0x5: return (void*)&acuda_dd9e98a4_api_choose_device;
-    case 0x1f: return (void*)&acuda_dd9e98a4_api_memcpy;
-    case 0xa: return (void*)&acuda_dd9e98a4_api_get_last_error;
-    case 0xb: return (void*)&acuda_dd9e98a4_api_peek_at_last_error;
-    case 0xc: return (void*)&acuda_dd9e98a4_api_get_error_string_runtime;
-    case 0x12: return (void*)&acuda_dd9e98a4_api_set_valid_devices;
-    case 0x13: return (void*)&acuda_dd9e98a4_api_set_device_flags;
-    case 0x81: return (void*)&acuda_dd9e98a4_api_stream_create;
-    case 0xa6: return (void*)&acuda_dd9e98a4_api_device_get_limit;
-    case 0xa7: return (void*)&acuda_dd9e98a4_api_device_set_limit;
-    case 0xa8: return (void*)&acuda_dd9e98a4_api_device_get_cache_config;
-    case 0xa9: return (void*)&acuda_dd9e98a4_api_device_set_cache_config;
-    case 0xad: return (void*)&acuda_dd9e98a4_api_device_get_by_pci_bus_id;
-    case 0xae: return (void*)&acuda_dd9e98a4_api_device_get_pci_bus_id;
-    case 0xb0: return (void*)&acuda_dd9e98a4_api_ipc_get_event_handle;
-    case 0xb2: return (void*)&acuda_dd9e98a4_api_ipc_get_mem_handle;
-    case 0xb4: return (void*)&acuda_dd9e98a4_api_ipc_close_mem_handle;
-    case 0xb7: return (void*)&acuda_dd9e98a4_api_device_get_shared_mem_config;
-    case 0xb8: return (void*)&acuda_dd9e98a4_api_device_set_shared_mem_config;
-    case 0xc6: return (void*)&acuda_dd9e98a4_api_stream_create_with_flags;
-    case 0xca: return (void*)&acuda_dd9e98a4_api_stream_create_with_priority;
-    case 0xcd: return (void*)&acuda_dd9e98a4_api_device_get_stream_priority_range;
-    case 0xd4: return (void*)&acuda_dd9e98a4_api_get_device_flags;
-    case 0x10: return (void*)&acuda_dd9e98a4_api_set_device;
-    case 0x11: return (void*)&acuda_dd9e98a4_api_get_device;
-    case 0x14: return (void*)&acuda_dd9e98a4_api_malloc;
-    case 0x19: return (void*)&acuda_dd9e98a4_api_malloc_host;
-    case 0x1b8: return (void*)&acuda_dd9e98a4_api_get_device_properties;
-    case 0xc8: return (void*)&acuda_dd9e98a4_api_device_get_attribute;
-    case 0xd1: return (void*)&acuda_dd9e98a4_api_get_error_string;
-    case 0x3: return (void*)&acuda_dd9e98a4_api_device_get_count;
-    case 0x16: return (void*)&acuda_dd9e98a4_api_free;
-    case 0x1a: return (void*)&acuda_dd9e98a4_api_free_host;
-    case 0x29: return (void*)&acuda_dd9e98a4_api_memcpy_async;
-    case 0x31: return (void*)&acuda_dd9e98a4_api_memset;
-    case 0x85: return (void*)&acuda_dd9e98a4_api_event_create;
-    case 0x86: return (void*)&acuda_dd9e98a4_api_event_create_with_flags;
-    case 0x87: return (void*)&acuda_dd9e98a4_api_event_record;
-    case 0x88: return (void*)&acuda_dd9e98a4_api_event_destroy;
-    case 0x89: return (void*)&acuda_dd9e98a4_api_event_synchronize;
-    case 0x8a: return (void*)&acuda_dd9e98a4_api_event_query;
-    case 0xa4: return (void*)&acuda_dd9e98a4_api_device_reset;
-    case 0xa5: return (void*)&acuda_dd9e98a4_api_device_synchronize;
-    case 0xab: return (void*)&acuda_dd9e98a4_api_profiler_noop;
-    case 0xac: return (void*)&acuda_dd9e98a4_api_profiler_noop;
-    case 0x1e6: return (void*)&acuda_dd9e98a4_api_event_elapsed_time;
-    case 0x1ee: return (void*)&acuda_dd9e98a4_api_register_fat_binary;
-    case 0x1ef: return (void*)&acuda_dd9e98a4_api_register_fat_binary_end;
-    case 0x1f3: return (void*)&acuda_dd9e98a4_api_register_function;
-    case 0x1f6: return (void*)&acuda_dd9e98a4_api_push_config;
-    case 0x1f7: return (void*)&acuda_dd9e98a4_api_pop_config;
-    case 0x1f8: return (void*)&acuda_dd9e98a4_api_get_kernel;
-    case 0x1f9: return (void*)&acuda_dd9e98a4_api_launch_kernel;
-    default: return acuda_dd9e98a4_get_generic_stub(id);
+static void *acuda_dd9e98a4_get_id(unsigned int id) {
+    switch (id) {
+    /* 0x03–0x31: Device selection, errors, memory management */
+    case 0x03: return (void *)&acuda_dd9e98a4_api_device_get_count;
+    case 0x05: return (void *)&acuda_dd9e98a4_api_choose_device;
+    case 0x0a: return (void *)&acuda_dd9e98a4_api_get_last_error;
+    case 0x0b: return (void *)&acuda_dd9e98a4_api_peek_at_last_error;
+    case 0x0c: return (void *)&acuda_dd9e98a4_api_get_error_string_runtime;
+    case 0x10: return (void *)&acuda_dd9e98a4_api_set_device;
+    case 0x11: return (void *)&acuda_dd9e98a4_api_get_device;
+    case 0x12: return (void *)&acuda_dd9e98a4_api_set_valid_devices;
+    case 0x13: return (void *)&acuda_dd9e98a4_api_set_device_flags;
+    case 0x14: return (void *)&acuda_dd9e98a4_api_malloc;
+    case 0x16: return (void *)&acuda_dd9e98a4_api_free;
+    case 0x19: return (void *)&acuda_dd9e98a4_api_malloc_host;
+    case 0x1a: return (void *)&acuda_dd9e98a4_api_free_host;
+    case 0x1f: return (void *)&acuda_dd9e98a4_api_memcpy;
+    case 0x29: return (void *)&acuda_dd9e98a4_api_memcpy_async;
+    case 0x31: return (void *)&acuda_dd9e98a4_api_memset;
+
+    /* 0x81–0x8A: Stream and event creation/management */
+    case 0x81: return (void *)&acuda_dd9e98a4_api_stream_create;
+    case 0x83: return (void *)&acuda_dd9e98a4_api_stream_synchronize;
+    case 0x84: return (void *)&acuda_dd9e98a4_api_stream_query;
+    case 0x85: return (void *)&acuda_dd9e98a4_api_event_create;
+    case 0x86: return (void *)&acuda_dd9e98a4_api_event_create_with_flags;
+    case 0x87: return (void *)&acuda_dd9e98a4_api_event_record;
+    case 0x88: return (void *)&acuda_dd9e98a4_api_event_destroy;
+    case 0x89: return (void *)&acuda_dd9e98a4_api_event_synchronize;
+    case 0x8a: return (void *)&acuda_dd9e98a4_api_event_query;
+
+    /* 0xA4–0xAE: Device control, configuration, PCI information */
+    case 0xa4: return (void *)&acuda_dd9e98a4_api_device_reset;
+    case 0xa5: return (void *)&acuda_dd9e98a4_api_device_synchronize;
+    case 0xa6: return (void *)&acuda_dd9e98a4_api_device_get_limit;
+    case 0xa7: return (void *)&acuda_dd9e98a4_api_device_set_limit;
+    case 0xa8: return (void *)&acuda_dd9e98a4_api_device_get_cache_config;
+    case 0xa9: return (void *)&acuda_dd9e98a4_api_device_set_cache_config;
+    case 0xab: return (void *)&acuda_dd9e98a4_api_profiler_noop;
+    case 0xac: return (void *)&acuda_dd9e98a4_api_profiler_noop;
+    case 0xad: return (void *)&acuda_dd9e98a4_api_device_get_by_pci_bus_id;
+    case 0xae: return (void *)&acuda_dd9e98a4_api_device_get_pci_bus_id;
+
+    /* 0xB0–0xB8: IPC and shared-memory configuration */
+    case 0xb0: return (void *)&acuda_dd9e98a4_api_ipc_get_event_handle;
+    case 0xb1: return (void *)&acuda_dd9e98a4_api_ipc_open_event_handle;
+    case 0xb2: return (void *)&acuda_dd9e98a4_api_ipc_get_mem_handle;
+    case 0xb3: return (void *)&acuda_dd9e98a4_api_ipc_open_mem_handle;
+    case 0xb4: return (void *)&acuda_dd9e98a4_api_ipc_close_mem_handle;
+    case 0xb7: return (void *)&acuda_dd9e98a4_api_device_get_shared_mem_config;
+    case 0xb8: return (void *)&acuda_dd9e98a4_api_device_set_shared_mem_config;
+
+    /* 0xC6–0xD4: Additional stream/device APIs and error handling */
+    case 0xc6: return (void *)&acuda_dd9e98a4_api_stream_create_with_flags;
+    case 0xc8: return (void *)&acuda_dd9e98a4_api_device_get_attribute;
+    case 0xc9: return (void *)&acuda_dd9e98a4_api_stream_destroy;
+    case 0xca: return (void *)&acuda_dd9e98a4_api_stream_create_with_priority;
+    case 0xcb: return (void *)&acuda_dd9e98a4_api_stream_get_priority;
+    case 0xcc: return (void *)&acuda_dd9e98a4_api_stream_get_flags;
+    case 0xcd: return (void *)&acuda_dd9e98a4_api_device_get_stream_priority_range;
+    case 0xd1: return (void *)&acuda_dd9e98a4_api_get_error_string;
+    case 0xd4: return (void *)&acuda_dd9e98a4_api_get_device_flags;
+
+    /* 0xED–0xF2: Per-thread stream/event APIs */
+    case 0xed: return (void *)&acuda_dd9e98a4_api_stream_get_priority_ptsz;
+    case 0xee: return (void *)&acuda_dd9e98a4_api_stream_get_flags_ptsz;
+    case 0xef: return (void *)&acuda_dd9e98a4_api_stream_synchronize_ptsz;
+    case 0xf0: return (void *)&acuda_dd9e98a4_api_stream_query_ptsz;
+    case 0xf2: return (void *)&acuda_dd9e98a4_api_event_record_ptsz;
+
+    /* 0xFF: Device P2P attribute */
+    case 0xff: return (void *)&acuda_dd9e98a4_api_device_get_p2p_attribute;
+
+    /* 0x112–0x116: External memory and semaphore APIs */
+    case 0x112: return (void *)&acuda_dd9e98a4_api_import_external_memory;
+    case 0x113: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_buffer;
+    case 0x114: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array;
+    case 0x115: return (void *)&acuda_dd9e98a4_api_destroy_external_memory;
+    case 0x116: return (void *)&acuda_dd9e98a4_api_import_external_semaphore;
+
+    /* 0x13C–0x147: Stream capture */
+    case 0x13c: return (void *)&acuda_dd9e98a4_api_stream_begin_capture_ptsz;
+    case 0x13e: return (void *)&acuda_dd9e98a4_api_stream_is_capturing_ptsz;
+    case 0x140: return (void *)&acuda_dd9e98a4_api_stream_end_capture_ptsz;
+    case 0x147: return (void *)&acuda_dd9e98a4_api_thread_exchange_stream_capture_mode;
+
+    /* 0x151–0x174: L2 cache, stream attributes, memory pools */
+    case 0x151: return (void *)&acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache;
+    case 0x156: return (void *)&acuda_dd9e98a4_api_stream_copy_attributes_ptsz;
+    case 0x15b: return (void *)&acuda_dd9e98a4_api_device_get_texture1d_linear_max_width;
+    case 0x174: return (void *)&acuda_dd9e98a4_api_device_get_default_mempool;
+
+    /* 0x181–0x195: Memory-pool and GPUDirect RDMA APIs */
+    case 0x181: return (void *)&acuda_dd9e98a4_api_device_set_mempool;
+    case 0x182: return (void *)&acuda_dd9e98a4_api_device_get_mempool;
+    case 0x195: return (void *)&acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes;
+
+    /* 0x1B8–0x1E6: Device properties, streams and events */
+    case 0x1b8: return (void *)&acuda_dd9e98a4_api_get_device_properties;
+    case 0x1ba: return (void *)&acuda_dd9e98a4_api_stream_get_id_ptsz;
+    case 0x1bc: return (void *)&acuda_dd9e98a4_api_init_device;
+    case 0x1d1: return (void *)&acuda_dd9e98a4_api_device_register_async_notification;
+    case 0x1d2: return (void *)&acuda_dd9e98a4_api_device_unregister_async_notification;
+    case 0x1e0: return (void *)&acuda_dd9e98a4_api_stream_get_device;
+    case 0x1e1: return (void *)&acuda_dd9e98a4_api_stream_get_device_ptsz;
+    case 0x1e6: return (void *)&acuda_dd9e98a4_api_event_elapsed_time;
+
+    /* 0x1EE–0x1F9: Runtime registration and kernel launching */
+    case 0x1ee: return (void *)&acuda_dd9e98a4_api_register_fat_binary;
+    case 0x1ef: return (void *)&acuda_dd9e98a4_api_register_fat_binary_end;
+    case 0x1f3: return (void *)&acuda_dd9e98a4_api_register_function;
+    case 0x1f6: return (void *)&acuda_dd9e98a4_api_push_config;
+    case 0x1f7: return (void *)&acuda_dd9e98a4_api_pop_config;
+    case 0x1f8: return (void *)&acuda_dd9e98a4_api_get_kernel;
+    case 0x1f9: return (void *)&acuda_dd9e98a4_api_launch_kernel;
+
+    /* 0x209–0x20A: Host atomic and peer-to-peer capabilities */
+    case 0x209: return (void *)&acuda_dd9e98a4_api_device_get_host_atomic_capabilities;
+    case 0x20a: return (void *)&acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities;
+
+    default:
+        return acuda_dd9e98a4_get_generic_stub(id);
     }
 }
 
@@ -1790,7 +1666,7 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
     }
     n++;
     (void)arg_f;
-    return acuda_dd9e98a4_get_id_stub(id);
+    return acuda_dd9e98a4_get_id(id);
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_slot01(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 slot01 a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", a,b,c,d,e,f,g,h);
