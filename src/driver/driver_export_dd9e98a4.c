@@ -1061,8 +1061,196 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_id_ptsz(
 }
 
 
+
+/* id 0x1bc: cudaInitDevice(int device, unsigned int deviceFlags, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_init_device(
+        void *device, void *deviceFlags, void *flags, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)deviceFlags; (void)flags;
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xff: cudaDeviceGetP2PAttribute(int *value, enum cudaDeviceP2PAttr attr,
+ *                                     int srcDevice, int dstDevice) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_attribute(
+        void *value, void *attr, void *srcDevice, void *dstDevice,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)attr; (void)srcDevice; (void)dstDevice;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!value)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(int *)value = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x15b: cudaDeviceGetTexture1DLinearMaxWidth(size_t *maxWidthInElements,
+ *          const struct cudaChannelFormatDesc *fmtDesc, int numChannels, int device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_texture1d_linear_max_width(
+        void *maxWidthInElements, void *fmtDesc, void *numChannels, void *device,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)fmtDesc; (void)numChannels; (void)device;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!maxWidthInElements)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(size_t *)maxWidthInElements = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x195: cudaDeviceFlushGPUDirectRDMAWrites(target, scope) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes(
+        void *target, void *scope, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)target; (void)scope; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x209: cudaDeviceGetHostAtomicCapabilities(unsigned int *capabilities,
+ *          const enum cudaAtomicOperation *operations, unsigned int count, int device) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_host_atomic_capabilities(
+        void *capabilities, void *operations, void *count, void *device,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)operations; (void)count; (void)device;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (capabilities)
+        *(unsigned int *)capabilities = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x20a: cudaDeviceGetP2PAtomicCapabilities(unsigned int *capabilities,
+ *          const enum cudaAtomicOperation *operations, unsigned int count,
+ *          int srcDevice, int dstDevice) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities(
+        void *capabilities, void *operations, void *count, void *srcDevice,
+        void *dstDevice, void *unused_f, void *unused_g, void *unused_h) {
+    (void)operations; (void)count; (void)srcDevice; (void)dstDevice;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (capabilities)
+        *(unsigned int *)capabilities = 0;
+    return CUDA_SUCCESS;
+}
+
+/* id 0xb1: cudaIpcOpenEventHandle(cudaEvent_t *event, cudaIpcEventHandle_t handle) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_event_handle(
+        void *event, void *handle, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)handle; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (event)
+        *(void **)event = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0xb3: cudaIpcOpenMemHandle(void **devPtr, cudaIpcMemHandle_t handle, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_mem_handle(
+        void *devPtr, void *handle, void *flags, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)handle; (void)flags; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (devPtr)
+        *(void **)devPtr = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x112: cudaImportExternalMemory(cudaExternalMemory_t *extMem_out,
+ *           const struct cudaExternalMemoryHandleDesc *memHandleDesc) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_memory(
+        void *extMem_out, void *memHandleDesc, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)memHandleDesc; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (extMem_out)
+        *(void **)extMem_out = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x113: cudaExternalMemoryGetMappedBuffer(void **devPtr, cudaExternalMemory_t extMem,
+ *           const struct cudaExternalMemoryBufferDesc *bufferDesc) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_buffer(
+        void *devPtr, void *extMem, void *bufferDesc, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)extMem; (void)bufferDesc; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (devPtr)
+        *(void **)devPtr = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x114: cudaExternalMemoryGetMappedMipmappedArray(cudaMipmappedArray_t *mipmap,
+ *           cudaExternalMemory_t extMem, const struct cudaExternalMemoryMipmappedArrayDesc *mipmapDesc) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array(
+        void *mipmap, void *extMem, void *mipmapDesc, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)extMem; (void)mipmapDesc; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (mipmap)
+        *(void **)mipmap = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x115: cudaDestroyExternalMemory(cudaExternalMemory_t extMem) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_external_memory(
+        void *extMem, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)extMem; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x116: cudaImportExternalSemaphore(cudaExternalSemaphore_t *extSem_out,
+ *           const struct cudaExternalSemaphoreHandleDesc *semHandleDesc) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_semaphore(
+        void *extSem_out, void *semHandleDesc, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)semHandleDesc; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (extSem_out)
+        *(void **)extSem_out = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x1d1: cudaDeviceRegisterAsyncNotification(int device, cudaAsyncCallback callbackFunc,
+ *           void* userData, cudaAsyncCallbackHandle_t* callback) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_register_async_notification(
+        void *device, void *callbackFunc, void *userData, void *callback,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)callbackFunc; (void)userData;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (callback)
+        *(void **)callback = NULL;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x1d2: cudaDeviceUnregisterAsyncNotification(int device, cudaAsyncCallbackHandle_t callback) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_unregister_async_notification(
+        void *device, void *callback, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)device; (void)callback; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+
+
 static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     switch(id){
+    case 0xb1: return (void*)&acuda_dd9e98a4_api_ipc_open_event_handle;
+    case 0xb3: return (void*)&acuda_dd9e98a4_api_ipc_open_mem_handle;
+    case 0xff: return (void*)&acuda_dd9e98a4_api_device_get_p2p_attribute;
+    case 0x112: return (void*)&acuda_dd9e98a4_api_import_external_memory;
+    case 0x113: return (void*)&acuda_dd9e98a4_api_external_memory_get_mapped_buffer;
+    case 0x114: return (void*)&acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array;
+    case 0x115: return (void*)&acuda_dd9e98a4_api_destroy_external_memory;
+    case 0x116: return (void*)&acuda_dd9e98a4_api_import_external_semaphore;
+    case 0x15b: return (void*)&acuda_dd9e98a4_api_device_get_texture1d_linear_max_width;
+    case 0x195: return (void*)&acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes;
+    case 0x1bc: return (void*)&acuda_dd9e98a4_api_init_device;
+    case 0x1d1: return (void*)&acuda_dd9e98a4_api_device_register_async_notification;
+    case 0x1d2: return (void*)&acuda_dd9e98a4_api_device_unregister_async_notification;
+    case 0x209: return (void*)&acuda_dd9e98a4_api_device_get_host_atomic_capabilities;
+    case 0x20a: return (void*)&acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities;
     case 0xf2: return (void*)&acuda_dd9e98a4_api_event_record_ptsz;
     case 0x13c: return (void*)&acuda_dd9e98a4_api_stream_begin_capture_ptsz;
     case 0x13e: return (void*)&acuda_dd9e98a4_api_stream_is_capturing_ptsz;
