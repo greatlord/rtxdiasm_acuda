@@ -23,37 +23,76 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
 /* The CUDA 13.x hybrid runtime never calls cuInit() or cuCtxCreate(): it
  * expects the driver interface to be usable right away, so bring up the
  * primary context before serving interface requests. */
+static struct {
+    unsigned int canary1;
+    int state; /* 0 unknown, 1 ok, -1 failed */
+    unsigned int canary2;
+    int ever_ready;
+} g_dd9e98a4_ready = { 0xA5C0FFEEu, 0, 0x5EEDFACEu, 0 };
+/* Separate flag so we can detect "struct reset to initial values" even if
+ * ever_ready inside the struct is overwritten back to 0. */
+static int g_dd9e98a4_was_ready;
+
+int acuda_dd9e98a4_check_ready_canary(const char *where) {
+    int looks_initial = (g_dd9e98a4_ready.canary1 == 0xA5C0FFEEu &&
+                         g_dd9e98a4_ready.canary2 == 0x5EEDFACEu &&
+                         g_dd9e98a4_ready.state == 0 &&
+                         g_dd9e98a4_ready.ever_ready == 0);
+    if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu ||
+        g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
+        (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 &&
+         g_dd9e98a4_ready.state != -1)) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CANARY %s c1=%08x state=%d c2=%08x ever=%d was=%d\n",
+                          where ? where : "?",
+                          g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state,
+                          g_dd9e98a4_ready.canary2, g_dd9e98a4_ready.ever_ready,
+                          g_dd9e98a4_was_ready);
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        return 0;
+    }
+    if ((g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) &&
+        g_dd9e98a4_ready.state == 0) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_ZEROED %s ever=%d was=%d initial=%d\n",
+                          where ? where : "?", g_dd9e98a4_ready.ever_ready,
+                          g_dd9e98a4_was_ready, looks_initial);
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        return 0;
+    }
+    return 1;
+}
+
 static int acuda_dd9e98a4_driver_ready(void) {
-    static struct {
-        unsigned int canary1;
-        int state; /* 0 unknown, 1 ok, -1 failed */
-        unsigned int canary2;
-        int ever_ready;
-    } s = { 0xA5C0FFEEu, 0, 0x5EEDFACEu, 0 };
-    if (s.canary1 != 0xA5C0FFEEu || s.canary2 != 0x5EEDFACEu ||
-        (s.state != 0 && s.state != 1 && s.state != -1)) {
+    if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu || g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
+        (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 && g_dd9e98a4_ready.state != -1)) {
         ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready CORRUPTION "
                           "c1=%08x state=%d c2=%08x\n",
-                          s.canary1, s.state, s.canary2);
+                          g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state, g_dd9e98a4_ready.canary2);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
     }
-    if (s.state == 0) {
+    if (g_dd9e98a4_ready.state == 0) {
+        if (g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) {
 #if defined(_MSC_VER)
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
-                          s.ever_ready, _ReturnAddress());
+            ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready RESET_TO_INITIAL ever=%d was=%d caller=%p\n",
+                              g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, _ReturnAddress());
 #else
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
-                          s.ever_ready, __builtin_return_address(0));
+            ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready RESET_TO_INITIAL ever=%d was=%d caller=%p\n",
+                              g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, __builtin_return_address(0));
 #endif
-        if (getenv("ACUDA_TRACE")) fflush(stderr);
-        if (s.ever_ready) {
-            /* State was zeroed/corrupted after successful init; avoid
-             * re-running implicit init and clobbering driver context. */
+            if (getenv("ACUDA_TRACE")) fflush(stderr);
             ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready recovered (skip reinit)\n");
             if (getenv("ACUDA_TRACE")) fflush(stderr);
-            s.state = 1;
+            g_dd9e98a4_ready.state = 1;
+            g_dd9e98a4_ready.ever_ready = 1;
             return 1;
         }
+#if defined(_MSC_VER)
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
+                          g_dd9e98a4_ready.ever_ready, _ReturnAddress());
+#else
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
+                          g_dd9e98a4_ready.ever_ready, __builtin_return_address(0));
+#endif
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
             CUcontext ctx = NULL;
@@ -63,11 +102,17 @@ static int acuda_dd9e98a4_driver_ready(void) {
         }
         ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 implicit init -> %d\n", (int)r);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
-        s.state = (r == CUDA_SUCCESS) ? 1 : -1;
-        if (s.state == 1)
-            s.ever_ready = 1;
+        g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
+        if (g_dd9e98a4_ready.state == 1) {
+            g_dd9e98a4_ready.ever_ready = 1;
+            g_dd9e98a4_was_ready = 1;
+        }
     }
-    return s.state == 1;
+    if (g_dd9e98a4_ready.state == 1) {
+        g_dd9e98a4_ready.ever_ready = 1;
+        g_dd9e98a4_was_ready = 1;
+    }
+    return g_dd9e98a4_ready.state == 1;
 }
 
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
@@ -546,6 +591,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
     (void)unused_g; (void)unused_h;
     if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
+    acuda_dd9e98a4_check_ready_canary("api_launch_kernel");
     if (!func || !grid || !block)
         return CUDA_ERROR_INVALID_VALUE;
     for (i = 0; i < g_dd9e98a4_nkernels; i++) {
@@ -570,9 +616,12 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
     r = cuModuleGetFunction(&fn, fb->module, k->device_name);
     if (r != CUDA_SUCCESS)
         return r;
-    return cuLaunchKernel(fn, grid->x, grid->y, grid->z, block->x, block->y,
-                          block->z, (unsigned int)(size_t)sharedMem,
-                          (CUstream)stream, args, NULL);
+    acuda_dd9e98a4_check_ready_canary("api_launch_kernel_pre_cuLaunch");
+    r = cuLaunchKernel(fn, grid->x, grid->y, grid->z, block->x, block->y,
+                       block->z, (unsigned int)(size_t)sharedMem,
+                       (CUstream)stream, args, NULL);
+    acuda_dd9e98a4_check_ready_canary("api_launch_kernel_post_cuLaunch");
+    return r;
 }
 
 

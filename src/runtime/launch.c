@@ -1,10 +1,11 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include "acuda/compiler.h"
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/launch_internal.h"
+#include "acuda/driver/driver_export_dd9e98a4.h"
 #include "acuda/runtime/time_compat.h"
 #if defined(_WIN32)
 #include <windows.h>
@@ -12,6 +13,7 @@
 #include <pthread.h>
 #endif
 #include "acuda/runtime/launch_internal.h"
+#include "acuda/driver/driver_export_dd9e98a4.h"
 
 acuda_status_t launch_raw_once(acuda_context_t ctx,
                                 acuda_kernel_t *kernel,

@@ -18,6 +18,10 @@ CUresult acuda_export_table_get_dd9e98a4(const void **ppExportTable);
 void acuda_dd9e98a4_dump_mem(const char *tag, const void *p, int n);
 void *acuda_dd9e98a4_get_generic_stub(unsigned int id);
 
+/* Returns 1 if dd9e98a4 driver-ready state/canaries look intact, 0 if
+ * corruption detected (and logs). For diagnostic use from hot paths. */
+int acuda_dd9e98a4_check_ready_canary(const char *where);
+
 #ifdef __cplusplus
 }
 #endif

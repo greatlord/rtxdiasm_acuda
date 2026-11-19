@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/driver/driver_export_dd9e98a4.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -186,6 +187,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
         return r;
+    acuda_dd9e98a4_check_ready_canary("cuLaunchKernel_entry");
     ACUDA_DEBUG_PRINT("acuda-trace >> cuLaunchKernel %s\n", f->name);
     {
         // Diagnostic: skip named kernels entirely (pretend success) to
