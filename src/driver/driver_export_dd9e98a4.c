@@ -12,6 +12,9 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 /* --- dd9e98a4 interface functions mapped to CUDA runtime API entry points ---
  * The CUDA 13.x hybrid runtime resolves these IDs through the dispatcher and
@@ -41,10 +44,13 @@ static struct {
 static int g_dd9e98a4_was_ready;
 
 int acuda_dd9e98a4_check_ready_canary(const char *where) {
+    static int reset_initial_logged;
     int looks_initial = (g_dd9e98a4_ready.canary1 == 0xA5C0FFEEu &&
                          g_dd9e98a4_ready.canary2 == 0x5EEDFACEu &&
                          g_dd9e98a4_ready.state == 0 &&
                          g_dd9e98a4_ready.ever_ready == 0);
+    if (!looks_initial)
+        reset_initial_logged = 0;
     if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu ||
         g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
         (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 &&
@@ -66,16 +72,21 @@ int acuda_dd9e98a4_check_ready_canary(const char *where) {
         if (getenv("ACUDA_TRACE")) fflush(stderr);
         return 0;
     }
-    /* Catch full zeroing/reset to initial-looking values after successful init. */
+    /* Catch reset to initial-looking ready struct after successful init.
+     * Fatbin/kernel registration counters alone are not evidence of completed
+     * init (they can be set during pre-init registration). */
     if (looks_initial &&
         (g_dd9e98a4_was_ready || g_dd9e98a4_init_completed_once ||
          g_dd9e98a4_init_magic == 0xDDE998A4u ||
-         g_init || g_actx || g_dd9e98a4_nfatbins || g_dd9e98a4_nkernels)) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_RESET_INITIAL %s was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u\n",
-                          where ? where : "?", g_dd9e98a4_was_ready,
-                          g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once,
-                          g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
-        if (getenv("ACUDA_TRACE")) fflush(stderr);
+         g_init || g_actx)) {
+        if (!reset_initial_logged) {
+            reset_initial_logged = 1;
+            ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_RESET_INITIAL %s was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u\n",
+                              where ? where : "?", g_dd9e98a4_was_ready,
+                              g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once,
+                              g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
+            if (getenv("ACUDA_TRACE")) fflush(stderr);
+        }
         return 0;
     }
     return 1;
@@ -89,6 +100,17 @@ static int g_dd9e98a4_state0_logged;
 extern int (*acuda_runtime_canary_hook)(const char *where);
 
 static int acuda_dd9e98a4_driver_ready(void) {
+#if defined(_WIN32)
+    {
+        static int _errmode_set = 0;
+        if (!_errmode_set) {
+            _errmode_set = 1;
+            SetErrorMode(SetErrorMode(0) | 0x0001u /*SEM_FAILCRITICALERRORS*/ |
+                         0x0002u /*SEM_NOGPFAULTERRORBOX*/ |
+                         0x8000u /*SEM_NOOPENFILEERRORBOX*/);
+        }
+    }
+#endif
     acuda_runtime_canary_hook = acuda_dd9e98a4_check_ready_canary;
     static long long _dr_seq = 0;
     long long _myseq = _dr_seq++;
@@ -193,6 +215,11 @@ static int acuda_dd9e98a4_driver_ready(void) {
             g_dd9e98a4_state0_logged = 0;
             return 1;
         }
+        fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready TAKING_IMPLICIT_INIT st=%d ever=%d was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u caller=%p\n",
+                g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready,
+                g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once, g_init, g_actx,
+                g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra);
+        fflush(stderr);
 #if defined(_MSC_VER)
         {
             void *_ra = _ReturnAddress();

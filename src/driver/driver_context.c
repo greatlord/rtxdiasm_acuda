@@ -338,12 +338,12 @@ CUresult need_init(void) {
     ACUDA_DEBUG_PRINT("acuda-trace ?? need_init g=%d @%p g_actx=%p\n", g_init,
                 (void *)&g_init, (void *)g_actx);
     if (g_init) {
-        if (!acuda_dd9e98a4_check_ready_canary("need_init")) {
-            /* canary check already logged */
-        }
-        if (acuda_dd9e98a4_ready_state() == 0) {
-            ACUDA_DEBUG_PRINT("acuda-trace ?? need_init: dd9e98a4_state=0 was=%d\n",
-                              acuda_dd9e98a4_was_ready_flag());
+        int canary_ok = acuda_dd9e98a4_check_ready_canary("need_init");
+        int st = acuda_dd9e98a4_ready_state();
+        int was = acuda_dd9e98a4_was_ready_flag();
+        if (!canary_ok || st == 0) {
+            ACUDA_DEBUG_PRINT("acuda-trace ?? need_init: canary_ok=%d dd9e98a4_state=%d was=%d\n",
+                              canary_ok, st, was);
         }
     }
     return g_init ? CUDA_SUCCESS : CUDA_ERROR_NOT_INITIALIZED;
