@@ -129,6 +129,10 @@ int probe_shader_fma64(acuda_context_t ctx) {
 // on devices with shaderFloat16, but not universally. Compile/run the
 // same small packed-f16 FMA kernel both ways and keep the faster path.
 int probe_f16_native(acuda_context_t ctx) {
+    if (getenv("ACUDA_TRACE")) {
+        fprintf(stderr, "ACuda-debug: probe_f16_native(ctx=%p)\n", (void *)ctx);
+        fflush(stderr);
+    }
     static const char ptx[] =
         ".version 8.8\n"
         ".target sm_120\n"

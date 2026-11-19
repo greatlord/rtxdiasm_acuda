@@ -148,8 +148,10 @@ static int acuda_dd9e98a4_driver_ready(void) {
             if (r == CUDA_SUCCESS)
                 r = cuCtxSetCurrent(ctx);
         }
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d g_actx=%p fb=%u kern=%u)\n",
-                (int)r, g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p)\n",
+                (int)r, g_init, (void *)&g_init, g_actx,
+                g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
+                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready);
         fflush(stderr);
         g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
         if (g_dd9e98a4_ready.state == 1) {
@@ -1472,6 +1474,8 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         void *request, void *arg_b, void *arg_c, void *arg_d, void *arg_e,
         void *arg_f, void *arg_g, void *arg_h) {
     static int n = 0;
+    static FILE *trace_fp = NULL;
+    static int trace_fp_init = 0;
     unsigned int id = 0xFFFFFFFFu, sub = 0;
     if (request) {
         const unsigned char *p = (const unsigned char *)request;
@@ -1487,6 +1491,29 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
                 arg_h);
     } else if (n == 80) {
         ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch ... (%d calls so far)\n", n);
+    }
+    if (!trace_fp_init) {
+        trace_fp_init = 1;
+        const char *tp = getenv("ACUDA_DD9E98A4_TRACE_FILE");
+        if (tp && tp[0])
+            trace_fp = fopen(tp, "w");
+    }
+    if (trace_fp) {
+        fprintf(trace_fp, "%d 0x%x %u\n", n, id, sub);
+        if ((n % 64) == 0)
+            fflush(trace_fp);
+    }
+    /* Catch corruption between dispatches. */
+    if (g_dd9e98a4_ready.state != 1 && (g_dd9e98a4_was_ready || g_dd9e98a4_ready.ever_ready)) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x saw state=%d (was=%d ever=%d g_init=%d g_actx=%p)\n",
+                          n, id, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
+                          g_dd9e98a4_ready.ever_ready, g_init, g_actx);
+        if (trace_fp) {
+            fprintf(trace_fp, "!CORRUPT %d 0x%x state=%d was=%d ever=%d g_init=%d\n",
+                    n, id, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
+                    g_dd9e98a4_ready.ever_ready, g_init);
+            fflush(trace_fp);
+        }
     }
     n++;
     (void)arg_f;
