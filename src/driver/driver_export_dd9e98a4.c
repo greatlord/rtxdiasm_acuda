@@ -175,6 +175,22 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
     return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
 }
 
+/* id 0x1b: cudaMallocHost/cudaHostAlloc-style host allocation used by
+ * statically linked cudart (CUDA 13.5) internal dispatch. Mirrors 0x19 and
+ * remains compatible with cudaFreeHost (0x1a). */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_host_alloc(
+        void *ptr, void *size, void *flags, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_host_alloc");
+    (void)flags; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_g; (void)unused_h;
+    if (!ptr)
+        return CUDA_ERROR_INVALID_VALUE;
+    *(void **)ptr = NULL;
+    *(void **)ptr = malloc((size_t)size ? (size_t)size : 1);
+    return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
+}
+
 /* id 0x10: cudaSetDevice(int device) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
         void *device, void *unused_b, void *unused_c, void *unused_d,
@@ -1395,7 +1411,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_unregister_async_notific
 
 static void *acuda_dd9e98a4_get_id(unsigned int id) {
     switch (id) {
-    /* 0x03–0x31: Device selection, errors, memory management */
+    /* 0x03-0x31: Device selection, errors, memory management */
     case 0x03: return (void *)&acuda_dd9e98a4_api_device_get_count;
     case 0x05: return (void *)&acuda_dd9e98a4_api_choose_device;
     case 0x0a: return (void *)&acuda_dd9e98a4_api_get_last_error;
@@ -1409,6 +1425,7 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0x16: return (void *)&acuda_dd9e98a4_api_free;
     case 0x19: return (void *)&acuda_dd9e98a4_api_malloc_host;
     case 0x1a: return (void *)&acuda_dd9e98a4_api_free_host;
+    case 0x1b: return (void *)&acuda_dd9e98a4_api_host_alloc;
     case 0x1f: return (void *)&acuda_dd9e98a4_api_memcpy;
     case 0x29: return (void *)&acuda_dd9e98a4_api_memcpy_async;
     case 0x31: return (void *)&acuda_dd9e98a4_api_memset;
