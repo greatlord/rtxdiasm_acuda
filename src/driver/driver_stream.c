@@ -1,5 +1,6 @@
 #include "acuda/driver/driver_internal.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 CUresult ACUDA_CUDAAPI cuStreamCreate(CUstream *phStream, unsigned int flags) {
     if (!phStream)
@@ -43,17 +44,22 @@ CUresult ACUDA_CUDAAPI cuStreamDestroy(CUstream hStream) {
 }
 
 CUresult ACUDA_CUDAAPI cuStreamSynchronize(CUstream hStream) {
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuStreamSynchronize s=%p\n",_n++,(void*)hStream);fflush(_fp);} }
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
-    if (r != CUDA_SUCCESS)
+    if (r != CUDA_SUCCESS) {
+        { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuStreamSynchronize_ret r=%d\n",_n++,(int)r);fflush(_fp);} }
         return r;
+    }
     acuda_stream_t s = NULL;
     if (hStream) {
         if (hStream->ctx != c)
             return CUDA_ERROR_INVALID_HANDLE;
         s = hStream->s;
     }
-    return map_status(acuda_stream_synchronize(g_actx, s));
+    CUresult _ret = map_status(acuda_stream_synchronize(g_actx, s));
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuStreamSynchronize_ret r=%d\n",_n++,(int)_ret);fflush(_fp);} }
+    return _ret;
 }
 
 /* Stream memory operations are accepted as no-ops; the software paths

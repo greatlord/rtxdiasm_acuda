@@ -152,26 +152,28 @@ CUresult ACUDA_CUDAAPI cuMemcpyPeerAsync(CUdeviceptr dst, CUcontext dstCtx,
 
 
  CUresult memcpy_h2d(CUdeviceptr dst, const void *src, size_t bytes) {
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d dst=%llx sz=%zu\n",_n++,(unsigned long long)dst,(size_t)bytes);fflush(_fp);} }
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyHtoD(dst=%llx bytes=%zu)\n",
                 (unsigned long long)dst, bytes);
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
     if (r != CUDA_SUCCESS)
-        return r;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=%d\n",_n++,(int)r);fflush(_fp);} } return r; }
     if (!src)
-        return CUDA_ERROR_INVALID_VALUE;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=%d\n",_n++,(int)CUDA_ERROR_INVALID_VALUE);fflush(_fp);} } return CUDA_ERROR_INVALID_VALUE; }
     if (bytes == 0)
-        return CUDA_SUCCESS;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=0\n",_n++);fflush(_fp);} } return CUDA_SUCCESS; }
     void *host = NULL;
     r = host_for(dst, bytes, &host);
     if (r != CUDA_SUCCESS)
-        return r;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=%d\n",_n++,(int)r);fflush(_fp);} } return r; }
     // Host-visible coherent: plain copy, ordered after default-stream work.
     r = map_status(acuda_stream_synchronize(g_actx, NULL));
     if (r != CUDA_SUCCESS)
-        return r;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=%d\n",_n++,(int)r);fflush(_fp);} } return r; }
     memcpy(host, src, bytes);
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_h2d_ret r=0\n",_n++);fflush(_fp);} }
     return CUDA_SUCCESS;
 }
 
@@ -184,21 +186,22 @@ CUresult ACUDA_CUDAAPI cuMemcpyHtoD(CUdeviceptr dst, const void *src, size_t byt
 }
 
  CUresult memcpy_d2h(void *dst, CUdeviceptr src, size_t bytes) {
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_d2h src=%llx sz=%zu\n",_n++,(unsigned long long)src,(size_t)bytes);fflush(_fp);} }
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyDtoH(dst=%p src=%llx bytes=%zu)\n",
                 dst, (unsigned long long)src, bytes);
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
     if (r != CUDA_SUCCESS)
-        return r;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_d2h_ret r=%d\n",_n++,(int)r);fflush(_fp);} } return r; }
     if (!dst)
-        return CUDA_ERROR_INVALID_VALUE;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_d2h_ret r=%d\n",_n++,(int)CUDA_ERROR_INVALID_VALUE);fflush(_fp);} } return CUDA_ERROR_INVALID_VALUE; }
     if (bytes == 0)
-        return CUDA_SUCCESS;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_d2h_ret r=0\n",_n++);fflush(_fp);} } return CUDA_SUCCESS; }
     void *host = NULL;
     r = host_for(src, bytes, &host);
     if (r != CUDA_SUCCESS)
-        return r;
+        { { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld memcpy_d2h_ret r=%d\n",_n++,(int)r);fflush(_fp);} } return r; }
     r = map_status(acuda_stream_synchronize(g_actx, NULL));
     if (r != CUDA_SUCCESS)
         return r;

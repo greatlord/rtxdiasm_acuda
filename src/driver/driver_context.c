@@ -1,6 +1,7 @@
 #include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_export_dd9e98a4.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 CUresult ctx_push(CUcontext ctx) {
     if (g_depth >= ACUDA_CTX_STACK)
@@ -119,6 +120,11 @@ CUresult ACUDA_CUDAAPI cuCtxGetCurrent(CUcontext *pctx) {
 
 CUresult ACUDA_CUDAAPI cuCtxSetCurrent(CUcontext ctx) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSetCurrent(%p)\n", (void *)ctx);
+    {
+        static FILE *_ctfp = NULL; static int _ctinit = 0; static long long _ctseq = 0;
+        if (!_ctinit) { _ctinit = 1; const char *_ctp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_ctp && _ctp[0]) _ctfp = fopen(_ctp, "a"); }
+        if (_ctfp) { fprintf(_ctfp, "%lld cuCtxSetCurrent 0 ctx=%p depth=%zu\n", _ctseq++, (void*)ctx, (size_t)g_depth); fflush(_ctfp); }
+    }
     acuda_dd9e98a4_check_ready_canary("cuCtxSetCurrent");
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;

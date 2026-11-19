@@ -730,32 +730,49 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
         lprof_pre += (uint64_t)(lprof_now() - lpt0);
         lprof_n++;
     }
-    ACUDA_DEBUG_PRINT("acuda-trace .. launch appending grid=%u\n",
-                      grid_dim_x);
-    st = acuda_stream_append(ctx, s, record_launch, &rec, serialize);
-    free(pushbuf);
-    if (st != ACUDA_SUCCESS) {
-        if (dpool_t)
-            vkDestroyDescriptorPool(ctx->device, dpool_t, NULL);
+    {
+        static FILE *_rtfp = NULL; static int _rtinit = 0; static long long _rtseq = 0;
+        if (!_rtinit) {
+            _rtinit = 1;
+            const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE");
+            if (_rtp && _rtp[0]) {
+                _rtfp = fopen(_rtp, "w");
+                if (!_rtfp) fprintf(stderr, "ACuda-debug: runtime trace fopen failed: %s\n", _rtp);
+            }
+        }
+        if (_rtfp) { fprintf(_rtfp, "%lld append g=%u\n", _rtseq++, grid_dim_x); fflush(_rtfp); }
+        ACUDA_DEBUG_PRINT("acuda-trace .. launch appending grid=%u\n",
+                          grid_dim_x);
+        st = acuda_stream_append(ctx, s, record_launch, &rec, serialize);
+        if (_rtfp) { fprintf(_rtfp, "%lld appended st=%d\n", _rtseq++, (int)st); fflush(_rtfp); }
+        free(pushbuf);
+        if (st != ACUDA_SUCCESS) {
+            if (dpool_t)
+                vkDestroyDescriptorPool(ctx->device, dpool_t, NULL);
+            if (dpool)
+                vkDestroyDescriptorPool(ctx->device, dpool, NULL);
+            if (surf_meta)
+                acuda_free(ctx, surf_meta);
+            return st;
+        }
+        // The command is recorded; its resources must live until the batch
+        // is submitted and completes.
         if (dpool)
-            vkDestroyDescriptorPool(ctx->device, dpool, NULL);
-        if (surf_meta)
-            acuda_free(ctx, surf_meta);
+            st = acuda_stream_track_dpool_pending(ctx, s, dpool);
+        if (st == ACUDA_SUCCESS && dpool_t)
+            st = acuda_stream_track_dpool_pending(ctx, s, dpool_t);
+        if (st == ACUDA_SUCCESS && surf_meta)
+            st = acuda_stream_track_buffer_pending(ctx, s, surf_meta);
+        if (st != ACUDA_SUCCESS) {
+            if (_rtfp) { fprintf(_rtfp, "%lld track_err st=%d\n", _rtseq++, (int)st); fflush(_rtfp); }
+            return st;
+        }
+        ACUDA_DEBUG_PRINT("acuda-trace .. launch flushing\n");
+        if (_rtfp) { fprintf(_rtfp, "%lld flush\n", _rtseq++); fflush(_rtfp); }
+        st = acuda_stream_maybe_flush(ctx, s);
+        ACUDA_DEBUG_PRINT("acuda-trace .. launch flushed st=%d submitted=%llu\n",
+                    (int)st, (unsigned long long)s->last_submitted);
+        if (_rtfp) { fprintf(_rtfp, "%lld flushed st=%d sub=%llu\n", _rtseq++, (int)st, (unsigned long long)s->last_submitted); fflush(_rtfp); }
         return st;
     }
-    // The command is recorded; its resources must live until the batch
-    // is submitted and completes.
-    if (dpool)
-        st = acuda_stream_track_dpool_pending(ctx, s, dpool);
-    if (st == ACUDA_SUCCESS && dpool_t)
-        st = acuda_stream_track_dpool_pending(ctx, s, dpool_t);
-    if (st == ACUDA_SUCCESS && surf_meta)
-        st = acuda_stream_track_buffer_pending(ctx, s, surf_meta);
-    if (st != ACUDA_SUCCESS)
-        return st;
-    ACUDA_DEBUG_PRINT("acuda-trace .. launch flushing\n");
-    st = acuda_stream_maybe_flush(ctx, s);
-    ACUDA_DEBUG_PRINT("acuda-trace .. launch flushed st=%d submitted=%llu\n",
-                (int)st, (unsigned long long)s->last_submitted);
-    return st;
 }

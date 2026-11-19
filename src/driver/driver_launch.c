@@ -174,6 +174,11 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
                         unsigned int blockDimX, unsigned int blockDimY,
                         unsigned int blockDimZ, unsigned int sharedMemBytes,
                         CUstream hStream, void **kernelParams, void **extra) {
+    {
+        static FILE *_dtfp = NULL; static int _dtinit = 0; static long long _dtseq = 0;
+        if (!_dtinit) { _dtinit = 1; const char *_dtp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_dtp && _dtp[0]) _dtfp = fopen(_dtp, "w"); }
+        if (_dtfp) { fprintf(_dtfp, "%lld cuLaunchKernel 0 f=%p g=%ux%ux%u b=%ux%ux%u s=%p k=%p e=%p\n", _dtseq++, (void*)f, gridDimX,gridDimY,gridDimZ, blockDimX,blockDimY,blockDimZ, (void*)hStream, (void*)kernelParams, (void*)extra); if((_dtseq&0x3f)==0) fflush(_dtfp); }
+    }
     if (!f)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_INVALID_HANDLE, __LINE__); return CUDA_ERROR_INVALID_HANDLE; }
     {

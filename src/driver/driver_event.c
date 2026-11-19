@@ -1,5 +1,6 @@
 #include "acuda/driver/driver_internal.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 CUresult ACUDA_CUDAAPI cuEventCreate(CUevent *phEvent, unsigned int flags) {
@@ -44,6 +45,7 @@ CUresult ACUDA_CUDAAPI cuEventDestroy(CUevent hEvent) {
 }
 
 CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuEventRecord e=%p s=%p\n",_n++,(void*)hEvent,(void*)hStream);fflush(_fp);} }
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     CUcontext c = NULL;
@@ -58,10 +60,13 @@ CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
             return CUDA_ERROR_INVALID_HANDLE;
         s = hStream->s;
     }
-    return map_status(acuda_event_record(g_actx, hEvent->e, s));
+    CUresult _ret = map_status(acuda_event_record(g_actx, hEvent->e, s));
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuEventRecord_ret r=%d\n",_n++,(int)_ret);fflush(_fp);} }
+    return _ret;
 }
 
 CUresult ACUDA_CUDAAPI cuEventSynchronize(CUevent hEvent) {
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuEventSynchronize e=%p\n",_n++,(void*)hEvent);fflush(_fp);} }
     if (!hEvent)
         return CUDA_ERROR_INVALID_HANDLE;
     if (need_init() != CUDA_SUCCESS)
@@ -69,7 +74,9 @@ CUresult ACUDA_CUDAAPI cuEventSynchronize(CUevent hEvent) {
     acuda_status_t st = acuda_event_synchronize(g_actx, hEvent->e);
     if (st == ACUDA_ERROR_UNINITIALIZED)
         return CUDA_ERROR_INVALID_VALUE;
-    return map_status(st);
+    CUresult _ret = map_status(st);
+    { static FILE *_fp; static int _i; static long long _n; if(!_i){_i=1; const char*_p=getenv("ACUDA_DRVTRACE"); if(_p&&*_p)_fp=fopen(_p,"a");} if(_fp){fprintf(_fp,"%lld cuEventSynchronize_ret r=%d\n",_n++,(int)_ret);fflush(_fp);} }
+    return _ret;
 }
 
 CUresult ACUDA_CUDAAPI cuEventQuery(CUevent hEvent) {

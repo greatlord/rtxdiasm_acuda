@@ -28,6 +28,7 @@ extern acuda_context_t g_actx;
 static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
 static unsigned g_dd9e98a4_nfatbins;
 static unsigned g_dd9e98a4_nkernels;
+static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b, long long v, int phase);
 static struct {
     unsigned int canary1;
     int state; /* 0 unknown, 1 ok, -1 failed */
@@ -141,6 +142,16 @@ static int acuda_dd9e98a4_driver_ready(void) {
                 g_dd9e98a4_ready.ever_ready, g_init, __builtin_return_address(0));
         fflush(stderr);
 #endif
+#if defined(_MSC_VER)
+        void *_iira = _ReturnAddress();
+#else
+        void *_iira = __builtin_return_address(0);
+#endif
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init pre: caller=%p st=%d was=%d ever=%d magic=0x%x g_init=%d g_actx=%p fb=%u kern=%u\n",
+                _iira, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
+                g_dd9e98a4_ready.ever_ready, g_dd9e98a4_init_magic,
+                g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
+        fflush(stderr);
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
             CUcontext ctx = NULL;
@@ -148,10 +159,10 @@ static int acuda_dd9e98a4_driver_ready(void) {
             if (r == CUDA_SUCCESS)
                 r = cuCtxSetCurrent(ctx);
         }
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p)\n",
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p) caller=%p\n",
                 (int)r, g_init, (void *)&g_init, g_actx,
                 g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
-                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready);
+                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready, _iira);
         fflush(stderr);
         g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
         if (g_dd9e98a4_ready.state == 1) {
@@ -302,9 +313,12 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     int copy_kind = (int)(intptr_t)kind;
     size_t bytes = (size_t)count;
+    acuda_dd9e98a4_htrace("memcpy", dst, src, (long long)bytes, 0);
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("memcpy", dst, src, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
+    }
     if ((!dst || !src) && bytes)
         return CUDA_ERROR_INVALID_VALUE;
     if (!bytes)
@@ -337,27 +351,32 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
         void *unused_f, void *unused_g, void *unused_h) {
     int copy_kind = (int)(intptr_t)kind;
     size_t bytes = (size_t)count;
+    CUresult _r;
+    acuda_dd9e98a4_htrace("memcpy_async", dst, src, (long long)bytes, 0);
     (void)stream; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("memcpy_async", dst, src, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
-    if ((!dst || !src) && bytes)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (!bytes)
-        return CUDA_SUCCESS;
+    }
+    if ((!dst || !src) && bytes) { _r = CUDA_ERROR_INVALID_VALUE; goto out; }
+    if (!bytes) { _r = CUDA_SUCCESS; goto out; }
     switch (copy_kind) {
     case 0: /* cudaMemcpyHostToHost */
         memmove(dst, src, bytes);
-        return CUDA_SUCCESS;
+        _r = CUDA_SUCCESS; break;
     case 1: /* cudaMemcpyHostToDevice */
-        return cuMemcpyHtoD((CUdeviceptr)(uintptr_t)dst, src, bytes);
+        _r = cuMemcpyHtoD((CUdeviceptr)(uintptr_t)dst, src, bytes); break;
     case 2: /* cudaMemcpyDeviceToHost */
-        return cuMemcpyDtoH(dst, (CUdeviceptr)(uintptr_t)src, bytes);
+        _r = cuMemcpyDtoH(dst, (CUdeviceptr)(uintptr_t)src, bytes); break;
     case 3: /* cudaMemcpyDeviceToDevice */
-        return cuMemcpyDtoD((CUdeviceptr)(uintptr_t)dst,
-                            (CUdeviceptr)(uintptr_t)src, bytes);
+        _r = cuMemcpyDtoD((CUdeviceptr)(uintptr_t)dst,
+                          (CUdeviceptr)(uintptr_t)src, bytes); break;
     default:
-        return CUDA_ERROR_INVALID_VALUE;
+        _r = CUDA_ERROR_INVALID_VALUE; break;
     }
+out:
+    acuda_dd9e98a4_htrace("memcpy_async", dst, src, (long long)_r, 1);
+    return _r;
 }
 
 /* id 0x16: cudaFree(void *devPtr) */
@@ -436,9 +455,14 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
+    acuda_dd9e98a4_htrace("evt_record", event, stream, 0, 0);
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("evt_record", event, stream, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuEventRecord((CUevent)event, (CUstream)stream);
+    }
+    CUresult _r = cuEventRecord((CUevent)event, (CUstream)stream);
+    acuda_dd9e98a4_htrace("evt_record", event, stream, (long long)_r, 1);
+    return _r;
 }
 
 /* id 0x89: cudaEventSynchronize(cudaEvent_t event) */
@@ -447,12 +471,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_synchronize(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
+    acuda_dd9e98a4_htrace("evt_sync", event, NULL, 0, 0);
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL event_synchronize event=%p\n", event);
-    if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("evt_sync", event, NULL, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
-    if (!event)
+    }
+    if (!event) {
+        acuda_dd9e98a4_htrace("evt_sync", event, NULL, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
-    return cuEventSynchronize((CUevent)event);
+    }
+    CUresult _r = cuEventSynchronize((CUevent)event);
+    acuda_dd9e98a4_htrace("evt_sync", event, NULL, (long long)_r, 1);
+    return _r;
 }
 
 /* id 0x8a: cudaEventQuery(cudaEvent_t event) */
@@ -570,17 +601,41 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_function(
     return CUDA_SUCCESS;
 }
 
+static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b, long long v, int phase)
+{
+    static FILE *fp = NULL;
+    static int init = 0;
+    static long long seq = 0;
+    if (!init) {
+        const char *p = getenv("ACUDA_DD9E98A4_HANDLER_TRACE_FILE");
+        init = 1;
+        if (p && p[0])
+            fp = fopen(p, "w");
+    }
+    if (!fp)
+        return;
+    fprintf(fp, "%lld %s %d %p %p %lld st=%d g=%d a=%p\n",
+            seq++, name ? name : "?", phase, a, b, v,
+            g_dd9e98a4_ready.state, g_init, g_actx);
+    if ((seq & 0x3f) == 0)
+        fflush(fp);
+}
+
 /* id 0x1f8: __cudaGetKernel(void **kernel, const void *func) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_kernel(
         void *kernel, void *func, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_htrace("get_kern", kernel, func, 0, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 get kernel slot=%p func=%p\n",
                       kernel, func);
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-    if (!kernel || !func)
+    if (!kernel || !func) {
+        acuda_dd9e98a4_htrace("get_kern", kernel, func, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
+    }
     *(const void **)kernel = func;
+    acuda_dd9e98a4_htrace("get_kern", kernel, func, 0, 1);
     return CUDA_SUCCESS;
 }
 
@@ -596,15 +651,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_push_config(
         void *gridDim, void *blockDim, void *sharedMem, void *stream,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_launch_config *cfg;
+    acuda_dd9e98a4_htrace("push_cfg", gridDim, stream, (long long)(size_t)sharedMem, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 push config\n");
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!gridDim || !blockDim || g_dd9e98a4_config_depth >= 16)
+    if (!gridDim || !blockDim || g_dd9e98a4_config_depth >= 16) {
+        acuda_dd9e98a4_htrace("push_cfg", gridDim, stream, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
+    }
     cfg = &g_dd9e98a4_configs[g_dd9e98a4_config_depth++];
     cfg->grid = *(const acuda_dd9e98a4_dim3 *)gridDim;
     cfg->block = *(const acuda_dd9e98a4_dim3 *)blockDim;
     cfg->shared = (size_t)sharedMem;
     cfg->stream = stream;
+    acuda_dd9e98a4_htrace("push_cfg", gridDim, stream, 0, 1);
     return CUDA_SUCCESS;
 }
 
@@ -614,10 +673,13 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
         void *gridDim, void *blockDim, void *sharedMem, void *stream,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_launch_config *cfg;
+    acuda_dd9e98a4_htrace("pop_cfg", gridDim, stream, (long long)g_dd9e98a4_config_depth, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 pop config\n");
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (g_dd9e98a4_config_depth == 0)
+    if (g_dd9e98a4_config_depth == 0) {
+        acuda_dd9e98a4_htrace("pop_cfg", gridDim, stream, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
+    }
     cfg = &g_dd9e98a4_configs[--g_dd9e98a4_config_depth];
     if (gridDim)
         *(acuda_dd9e98a4_dim3 *)gridDim = cfg->grid;
@@ -627,6 +689,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
         *(size_t *)sharedMem = cfg->shared;
     if (stream)
         *(void **)stream = cfg->stream;
+    acuda_dd9e98a4_htrace("pop_cfg", gridDim, stream, 0, 1);
     return CUDA_SUCCESS;
 }
 
@@ -643,19 +706,26 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
     CUresult r;
     unsigned i;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
+    acuda_dd9e98a4_htrace("launch", func, stream, (long long)(size_t)sharedMem, 0);
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("launch", func, stream, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
+    }
     acuda_dd9e98a4_check_ready_canary("api_launch_kernel");
-    if (!func || !grid || !block)
+    if (!func || !grid || !block) {
+        acuda_dd9e98a4_htrace("launch", func, stream, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
+    }
     for (i = 0; i < g_dd9e98a4_nkernels; i++) {
         if (g_dd9e98a4_kernels[i].host_fn == func) {
             k = &g_dd9e98a4_kernels[i];
             break;
         }
     }
-    if (!k || !k->fatbin)
+    if (!k || !k->fatbin) {
+        acuda_dd9e98a4_htrace("launch", func, stream, -2, 1);
         return CUDA_ERROR_NOT_FOUND;
+    }
     fb = k->fatbin;
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 launch %s grid=(%u,%u,%u) block=(%u,%u,%u)\n",
                       k->device_name, grid->x, grid->y, grid->z, block->x,
@@ -665,16 +735,21 @@ if (!acuda_dd9e98a4_driver_ready())
         fb->state = (r == CUDA_SUCCESS) ? 1 : -1;
         ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 module load -> %d\n", (int)r);
     }
-    if (fb->state != 1)
+    if (fb->state != 1) {
+        acuda_dd9e98a4_htrace("launch", func, stream, -3, 1);
         return CUDA_ERROR_INVALID_IMAGE;
+    }
     r = cuModuleGetFunction(&fn, fb->module, k->device_name);
-    if (r != CUDA_SUCCESS)
+    if (r != CUDA_SUCCESS) {
+        acuda_dd9e98a4_htrace("launch", func, stream, (long long)r, 1);
         return r;
+    }
     acuda_dd9e98a4_check_ready_canary("api_launch_kernel_pre_cuLaunch");
     r = cuLaunchKernel(fn, grid->x, grid->y, grid->z, block->x, block->y,
                        block->z, (unsigned int)(size_t)sharedMem,
                        (CUstream)stream, args, NULL);
     acuda_dd9e98a4_check_ready_canary("api_launch_kernel_post_cuLaunch");
+    acuda_dd9e98a4_htrace("launch", func, stream, (long long)r, 1);
     return r;
 }
 
@@ -963,10 +1038,15 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
+    acuda_dd9e98a4_htrace("stream_sync", stream, NULL, 0, 0);
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL stream_synchronize stream=%p\n", stream);
-if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_dd9e98a4_driver_ready()) {
+        acuda_dd9e98a4_htrace("stream_sync", stream, NULL, -999, 1);
         return CUDA_ERROR_NOT_INITIALIZED;
-    return cuStreamSynchronize((CUstream)stream);
+    }
+    CUresult _r = cuStreamSynchronize((CUstream)stream);
+    acuda_dd9e98a4_htrace("stream_sync", stream, NULL, (long long)_r, 1);
+    return _r;
 }
 
 /* id 0x84: cudaStreamQuery(cudaStream_t stream) */
@@ -1469,6 +1549,7 @@ static void *acuda_dd9e98a4_get_id_stub(unsigned int id) {
     default: return acuda_dd9e98a4_get_generic_stub(id);
     }
 }
+
 
 static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         void *request, void *arg_b, void *arg_c, void *arg_d, void *arg_e,
