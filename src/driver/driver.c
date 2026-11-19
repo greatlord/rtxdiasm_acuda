@@ -64,6 +64,51 @@ static unsigned long long acuda_device_mem_total(void) {
 static int acuda_host_heap_init(size_t need);
 #endif
 
+/* Log the calling module/return address of a traced entry point so the
+ * PhysX init path can be followed without a debugger.  retaddr must be
+ * captured with _ReturnAddress() inside the entry point itself. */
+static void acuda_log_caller_at(const char *fn, void *retaddr) {
+#if defined(_M_IX86) && defined(_MSC_VER)
+    MEMORY_BASIC_INFORMATION mbi;
+    char modpath[MAX_PATH] = "?";
+    if (!getenv("ACUDA_TRACE"))
+        return;
+    if (VirtualQuery(retaddr, &mbi, sizeof(mbi)))
+        GetModuleFileNameA((HMODULE)mbi.AllocationBase, modpath, MAX_PATH);
+    fprintf(stderr, "acuda-trace ?? %s caller=%p rva=%Ix mod=%s\n", fn,
+            retaddr, (uintptr_t)retaddr - (uintptr_t)mbi.AllocationBase,
+            modpath);
+#else
+    (void)fn;
+    (void)retaddr;
+#endif
+}
+
+/* Optional full stack walk (ACUDA_TRACE_STACK=1): prints each frame as
+ * module+offset so the caller chain across PhysX/cudart can be resolved
+ * offline without a debugger. */
+static void acuda_log_stack(const char *fn) {
+#if defined(_M_IX86) && defined(_MSC_VER)
+    void *frames[20];
+    USHORT n, i;
+    if (!getenv("ACUDA_TRACE_STACK"))
+        return;
+    n = RtlCaptureStackBackTrace(1, 20, frames, NULL);
+    fprintf(stderr, "acuda-stack %s frames=%u\n", fn, (unsigned)n);
+    for (i = 0; i < n; i++) {
+        MEMORY_BASIC_INFORMATION mbi;
+        char modpath[MAX_PATH] = "?";
+        if (VirtualQuery(frames[i], &mbi, sizeof(mbi)))
+            GetModuleFileNameA((HMODULE)mbi.AllocationBase, modpath, MAX_PATH);
+        fprintf(stderr, "acuda-stack   #%u %p %s+%Ix\n", (unsigned)i,
+                frames[i], modpath,
+                (uintptr_t)frames[i] - (uintptr_t)mbi.AllocationBase);
+    }
+#else
+    (void)fn;
+#endif
+}
+
 #if defined(_WIN32) && !defined(_WIN64)
 // 32-bit host address-space probe: PhysX does not check malloc failures,
 // so a late OOM shows up as an access violation in PhysXCore.  Logging the
@@ -591,8 +636,7 @@ CUresult ACUDA_CUDAAPI cuStreamGetCaptureInfo_v3(void *stream, int *status,
                                    unsigned long long *id, void **graph,
                                    const void **deps, size_t *numDeps,
                                    void **edgeData);
-CUresult ACUDA_CUDAAPI cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
-                              CUdeviceptr dptr);
+CUresult ACUDA_CUDAAPI cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize, CUdeviceptr dptr);
 CUresult ACUDA_CUDAAPI cuMemGetAddressRange_v2(CUdeviceptr *pbase, size_t *psize,
                                  CUdeviceptr dptr);
 CUresult ACUDA_CUDAAPI cuKernelGetFunction(void **pFunc, void *kernel);
@@ -969,6 +1013,9 @@ CUresult ACUDA_CUDAAPI cuDeviceComputeCapability(int *major, int *minor, CUdevic
 }
 
 CUresult ACUDA_CUDAAPI cuDeviceGetProperties(CUdevprop *prop, CUdevice dev) {
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_stack("cuDeviceGetProperties");
+#endif
     ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetProperties(dev=%d)\n", dev);
     if (!prop)
         return CUDA_ERROR_INVALID_VALUE;
@@ -1527,6 +1574,9 @@ CUresult ACUDA_CUDAAPI cuCtxSynchronize(void) {
 
 static CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu)\n", bytesize);
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_caller_at("cuMemAlloc", _ReturnAddress());
+#endif
 #if defined(_WIN32)
     if ((getenv("ACUDA_TRACE") || getenv("ACUDA_HEAP_CHECK")) && !HeapValidate(GetProcessHeap(), 0, NULL))
         fprintf(stderr, "acuda-trace !! HEAP CORRUPT at cuMemAlloc entry bytes=%zu\n", bytesize);
@@ -2348,9 +2398,23 @@ static CUresult load_sass_image(CUmodule *module, const unsigned char *data,
         return CUDA_ERROR_INVALID_VALUE;
     *module = NULL;
     if (cubin_backend() == 1) {
+        const char *attach = getenv("ACUDA_SASS_ATTACH");
+        if (!(attach && *attach && strcmp(attach, "0") != 0)) {
+            /* Backend 1 can only compile PTX.  NVIDIA's own driver reports
+             * CUDA_ERROR_NO_BINARY_FOR_GPU when a module carries no PTX for
+             * the installed device (verified for PhysX 2.8.4's SASS-only
+             * fatbins: cuModuleLoadData and cudart's per-fatbin registration
+             * hook both return 209).  Attaching the SASS image instead makes
+             * the load *succeed*, which pulls CUDA 4.1 runtimes into a
+             * follow-up cuModuleGetFunction that can never be satisfied and
+             * hides the real error from the application. */
+            ACUDA_DEBUG_PRINT("acuda-trace .. backend=1 (C parser only): "
+                        "no PTX, reporting CUDA_ERROR_NO_BINARY_FOR_GPU\n");
+            return CUDA_ERROR_NO_BINARY_FOR_GPU;
+        }
         ACUDA_DEBUG_PRINT("acuda-trace .. backend=1 (C parser only): "
-                    "attaching SASS image without lift\n");
-        /* Backend 1 cannot lift SASS; keep the image attached so callers that
+                    "attaching SASS image without lift (ACUDA_SASS_ATTACH)\n");
+        /* Opt-in legacy behaviour: keep the image attached so callers that
          * can tolerate missing PTX/functions may continue (detection/init). */
         return module_from_sass_image(module, data, size);
     }
@@ -2389,6 +2453,10 @@ CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
                             unsigned int numOptions, CUjit_option *options,
                             void **optionValues) {
     ACUDA_DEBUG_PRINT("acuda-trace >> cuModuleLoadDataEx\n");
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_caller_at("cuModuleLoadDataEx", _ReturnAddress());
+    acuda_log_stack("cuModuleLoadDataEx");
+#endif
     (void)numOptions;
     (void)options;
     (void)optionValues;
@@ -2819,6 +2887,10 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
     if (need_init() != CUDA_SUCCESS)
         return CUDA_ERROR_NOT_INITIALIZED;
     ACUDA_DEBUG_PRINT("acuda-trace >> cuModuleGetFunction(%s)\n", name);
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_caller_at("cuModuleGetFunction", _ReturnAddress());
+    acuda_log_stack("cuModuleGetFunction");
+#endif
     for (size_t i = 0; i < module->nfuncs; i++) {
         if (strcmp(module->funcs[i].name, name) == 0) {
             CUfunction f = malloc(sizeof(*f));
@@ -4488,6 +4560,8 @@ CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer(void **pdst, void *p, unsigned 
 CUresult ACUDA_CUDAAPI cuMemHostGetFlags(unsigned int *flags, void *p);
 CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned int flags);
+CUresult ACUDA_CUDAAPI cuMemAllocHost(void **pp, size_t bytesize);
+CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p);
 CUresult ACUDA_CUDAAPI cuMemHostRegister(void *p, size_t bytesize, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemHostRegister_v2(void *p, size_t bytesize, unsigned int flags);
@@ -4627,6 +4701,7 @@ static CUresult lookup_symbol(const char *symbol, void **pfn) {
     ENTRY(cuDevicePrimaryCtxReset_v2)
     ENTRY(cuDevicePrimaryCtxSetFlags_v2)
     ENTRY(cuCtxGetCurrent)
+    ENTRY(cuCtxAttach)
     ENTRY(cuCtxSetCurrent)
     ENTRY(cuCtxGetDevice)
     ENTRY(cuCtxGetApiVersion)
@@ -4653,6 +4728,7 @@ static CUresult lookup_symbol(const char *symbol, void **pfn) {
     ENTRY(cuMemHostGetDevicePointer)
     ENTRY(cuMemHostGetFlags)
     ENTRY(cuMemHostAlloc)
+    ENTRY(cuMemAllocHost)
     ENTRY(cuMemHostAlloc_v2)
     ENTRY(cuMemFreeHost)
     ENTRY(cuMemHostRegister)
@@ -5139,6 +5215,19 @@ CUresult ACUDA_CUDAAPI cuCtxGetCurrent(CUcontext *pctx) {
     return CUDA_SUCCESS;
 }
 
+/* Legacy CUDA 2.x entry point used by physxcudart_20.dll (PhysX 2.8.4).
+ * Attaches the caller to the current context and hands it back. */
+CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags) {
+    (void)flags;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxAttach\n");
+    if (!pctx)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    *pctx = current_ctx();
+    return *pctx ? CUDA_SUCCESS : CUDA_ERROR_INVALID_CONTEXT;
+}
+
 CUresult ACUDA_CUDAAPI cuCtxSetCurrent(CUcontext ctx) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSetCurrent(%p)\n", (void *)ctx);
     if (need_init() != CUDA_SUCCESS)
@@ -5526,11 +5615,38 @@ static int acuda_host_heap_init(size_t need) {
 #endif
     }
 
+    /* ACUDA_HOST_HEAP_LOW=1 keeps pinned host staging buffers in the low
+     * 2 GiB (32-bit clients that assume app-visible pointers stay below
+     * 0x80000000).  Tried before the above-2GiB preference. */
+    {
+        const char *lows = getenv("ACUDA_HOST_HEAP_LOW");
+        int prefer_low = lows && *lows && strcmp(lows, "0") != 0;
+        if (prefer_low) {
+            void *low = acuda_host_heap_find_high(reserve, 0);
+            if (low && (uintptr_t)low >= (uintptr_t)0x40000000u) {
+                g_host_base = (unsigned char *)VirtualAlloc(low, reserve,
+                                                            MEM_RESERVE,
+                                                            PAGE_NOACCESS);
+                if (g_host_base && getenv("ACUDA_TRACE"))
+                    fprintf(stderr,
+                            "acuda-trace .. host_heap reserve %zu below-2GiB(low-pref) at %p\n",
+                            reserve, (void *)g_host_base);
+            }
+            if (!g_host_base && !grew_for_need) {
+                g_host_base = (unsigned char *)VirtualAlloc(ACUDA_HOST_HEAP_BASE, reserve,
+                                                            MEM_RESERVE, PAGE_NOACCESS);
+                if (g_host_base && getenv("ACUDA_TRACE"))
+                    fprintf(stderr,
+                            "acuda-trace .. host_heap reserve %zu fixed-base(low-pref) at %p\n",
+                            reserve, (void *)g_host_base);
+            }
+        }
+    }
     /* Prefer the LAA region above 2 GiB so the low 2 GiB stays contiguous
      * for the NVIDIA driver and PhysX.  Fall back to the previous order
      * (fixed base, highest free below 2 GiB, anywhere) on failure or on
      * non-LAA processes where no above-2 GiB window exists. */
-    {
+    if (!g_host_base) {
         void *high = acuda_host_heap_find_high(reserve, 1);
         if (high) {
             g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
@@ -5711,6 +5827,10 @@ static int acuda_host_heap_free(void *p) {
 CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int flags) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemHostAlloc(%zu flags=%x)\n",
                 bytesize, flags);
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_caller_at("cuMemHostAlloc", _ReturnAddress());
+    acuda_log_stack("cuMemHostAlloc");
+#endif
     if (!pp)
         return CUDA_ERROR_INVALID_VALUE;
     *pp = NULL;
@@ -5734,11 +5854,23 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int f
         }
         if (!p) {
             size_t need = (bytesize + 0xFFFFu) & ~(size_t)0xFFFFu;
-            void *high = acuda_host_heap_find_high(need, 1);
-            if (high)
-                p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
-                                 PAGE_READWRITE);
+            const char *lows = getenv("ACUDA_HOST_HEAP_LOW");
+            int prefer_low = lows && *lows && strcmp(lows, "0") != 0;
+            void *high = NULL;
+            if (prefer_low) {
+                /* Keep standalone pinned allocations below 2 GiB. */
+                high = acuda_host_heap_find_high(need, 0);
+                if (high && (uintptr_t)high >= (uintptr_t)0x40000000u)
+                    p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
+                                     PAGE_READWRITE);
+            }
             if (!p) {
+                high = acuda_host_heap_find_high(need, 1);
+                if (high)
+                    p = VirtualAlloc(high, need, MEM_COMMIT | MEM_RESERVE,
+                                     PAGE_READWRITE);
+            }
+            if (!p && !prefer_low) {
                 /* try highest free below 2GB (>= 0x40000000 preferred) */
                 high = acuda_host_heap_find_high(need, 0);
                 if (high && (uintptr_t)high >= (uintptr_t)0x40000000u)
@@ -5768,6 +5900,17 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int f
 
 CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned int flags) {
     return cuMemHostAlloc(pp, bytesize, flags);
+}
+
+/* Legacy CUDA 2.x page-locked host allocation.  physxcudart_20.dll resolves
+ * exactly this name (cudaMallocHost), so it must exist even though newer
+ * runtimes only use cuMemHostAlloc. */
+CUresult ACUDA_CUDAAPI cuMemAllocHost(void **pp, size_t bytesize) {
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAllocHost(%zu)\n", bytesize);
+#if defined(_M_IX86) && defined(_MSC_VER)
+    acuda_log_caller_at("cuMemAllocHost", _ReturnAddress());
+#endif
+    return cuMemHostAlloc(pp, bytesize, 0u);
 }
 
 CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p) {
@@ -8324,12 +8467,18 @@ CUresult ACUDA_CUDAAPI cuLibraryEnumerateKernels(void **kernels, unsigned int nu
 }
 CUresult ACUDA_CUDAAPI cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
                               CUdeviceptr dptr) {
-    // The runtime only needs a successful answer here; the arena does not
-    // expose per-allocation metadata yet.
-    if (pbase)
-        *pbase = dptr;
-    if (psize)
-        *psize = 0;
+    uint64_t base = 0;
+    size_t size = 0;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemGetAddressRange(dptr=0x%llx)\n",
+                      (unsigned long long)dptr);
+    if (acuda_arena_lookup((uint64_t)dptr, &base, &size) == 0) {
+        if (pbase) *pbase = (CUdeviceptr)base;
+        if (psize) *psize = size;
+        return CUDA_SUCCESS;
+    }
+    /* Fallback: address may be outside tracked arena allocs (e.g. host/pinned). */
+    if (pbase) *pbase = dptr;
+    if (psize) *psize = 0;
     return CUDA_SUCCESS;
 }
 CUresult ACUDA_CUDAAPI cuMemGetAddressRange_v2(CUdeviceptr *pbase, size_t *psize,
