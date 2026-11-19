@@ -544,7 +544,7 @@ static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b
         return;
     fprintf(fp, "%lld %s %d %p %p %lld st=%d g=%d a=%p\n",
             seq++, name ? name : "?", phase, a, b, v,
-            g_dd9e98a4_ready.state, g_init, g_actx);
+            acuda_dd9e98a4_ready_state(), g_init, g_actx);
     if ((seq & 0x3f) == 0)
         fflush(fp);
 }
@@ -1552,15 +1552,13 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         if ((n % 64) == 0)
             fflush(trace_fp);
     }
-    /* Catch corruption between dispatches. */
-    if (g_dd9e98a4_ready.state != 1 && (g_dd9e98a4_was_ready || g_dd9e98a4_ready.ever_ready)) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x saw state=%d (was=%d ever=%d g_init=%d g_actx=%p)\n",
-                          n, id, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
-                          g_dd9e98a4_ready.ever_ready, g_init, g_actx);
+    /* Catch corruption between dispatches (canonical ready state is g_init). */
+    if (!g_init && g_dd9e98a4_was_ready) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x saw not-ready (was=%d g_init=%d g_actx=%p)\n",
+                          n, id, g_dd9e98a4_was_ready, g_init, g_actx);
         if (trace_fp) {
-            fprintf(trace_fp, "!CORRUPT %d 0x%x state=%d was=%d ever=%d g_init=%d\n",
-                    n, id, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
-                    g_dd9e98a4_ready.ever_ready, g_init);
+            fprintf(trace_fp, "!CORRUPT %d 0x%x was=%d g_init=%d\n",
+                    n, id, g_dd9e98a4_was_ready, g_init);
             fflush(trace_fp);
         }
     }
