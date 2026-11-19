@@ -20,8 +20,19 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
  * expects the driver interface to be usable right away, so bring up the
  * primary context before serving interface requests. */
 static int acuda_dd9e98a4_driver_ready(void) {
-    static int state = 0; /* 0 unknown, 1 ok, -1 failed */
-    if (state == 0) {
+    static struct {
+        unsigned int canary1;
+        int state; /* 0 unknown, 1 ok, -1 failed */
+        unsigned int canary2;
+    } s = { 0xA5C0FFEEu, 0, 0x5EEDFACEu };
+    if (s.canary1 != 0xA5C0FFEEu || s.canary2 != 0x5EEDFACEu ||
+        (s.state != 0 && s.state != 1 && s.state != -1)) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready CORRUPTION "
+                          "c1=%08x state=%d c2=%08x\n",
+                          s.canary1, s.state, s.canary2);
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+    }
+    if (s.state == 0) {
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
             CUcontext ctx = NULL;
@@ -30,9 +41,10 @@ static int acuda_dd9e98a4_driver_ready(void) {
                 r = cuCtxSetCurrent(ctx);
         }
         ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 implicit init -> %d\n", (int)r);
-        state = (r == CUDA_SUCCESS) ? 1 : -1;
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        s.state = (r == CUDA_SUCCESS) ? 1 : -1;
     }
-    return state == 1;
+    return s.state == 1;
 }
 
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
