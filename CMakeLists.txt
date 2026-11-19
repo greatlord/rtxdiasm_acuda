@@ -120,6 +120,24 @@ add_library(acuda_driver SHARED
   src/driver/driver_export.c
   src/driver/driver_export_dd9e98a4.c
   src/driver/driver_export_dd9e98a4_stubs.c
+  src/driver/driver_export_6bd5fb6c.c
+  src/driver/driver_export_6bd5fb6c_stubs.c
+  src/driver/driver_export_a094798c.c
+  src/driver/driver_export_a094798c_stubs.c
+  src/driver/driver_export_42d85a81.c
+  src/driver/driver_export_42d85a81_stubs.c
+  src/driver/driver_export_c693336e.c
+  src/driver/driver_export_c693336e_stubs.c
+  src/driver/driver_export_0ca50b8c.c
+  src/driver/driver_export_0ca50b8c_stubs.c
+  src/driver/driver_export_263e8860.c
+  src/driver/driver_export_263e8860_stubs.c
+  src/driver/driver_export_d4082055.c
+  src/driver/driver_export_d4082055_stubs.c
+  src/driver/driver_export_21318c60.c
+  src/driver/driver_export_21318c60_stubs.c
+  src/driver/driver_export_195bcbf4.c
+  src/driver/driver_export_195bcbf4_stubs.c
   src/driver/driver_error.c
   src/driver/driver_texture.c
   src/driver/driver_procaddr.c
