@@ -170,7 +170,9 @@ acuda_status_t image_begin(acuda_context_t ctx, VkCommandPool *pool,
 void image_end(acuda_context_t ctx, VkCommandPool pool,
                       VkCommandBuffer cmd) {
     // Direct-queue image work must not overtake an open launch batch.
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT teximg->flush_all\n"); fflush(_f); fclose(_f);} } }
     acuda_stream_flush_all(ctx);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT image_end post_flush\n"); fflush(_f); fclose(_f);} } }
     vkEndCommandBuffer(cmd);
     VkCommandBufferSubmitInfo cbi = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -197,6 +199,7 @@ void image_end(acuda_context_t ctx, VkCommandPool pool,
     if (fence)
         vkDestroyFence(ctx->device, fence, NULL);
     vkDestroyCommandPool(ctx->device, pool, NULL);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT image_end out\n"); fflush(_f); fclose(_f);} } }
 }
 
 // Copy one mip level (all layers or the 3D depth) from a staging buffer.

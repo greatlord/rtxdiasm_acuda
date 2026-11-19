@@ -167,15 +167,21 @@ CUresult ACUDA_CUDAAPI cuDriverGetVersion(int *driverVersion) {
 
 CUresult ACUDA_CUDAAPI cuDeviceGetCount(int *count) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetCount\n");
+    { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuDeviceGetCount in\n"); fflush(_f); fclose(_f);} } }
     if (!count)
         return CUDA_ERROR_INVALID_VALUE;
     CUresult r = need_actx();
-    if (r != CUDA_SUCCESS)
+    if (r != CUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuDeviceGetCount out r=%d\n",(int)r); fflush(_f); fclose(_f);} } }
         return r;
+    }
     uint32_t n = 0;
     acuda_status_t st = acuda_device_count(g_actx, &n);
-    if (st != ACUDA_SUCCESS)
-        return map_status(st);
+    if (st != ACUDA_SUCCESS) {
+        CUresult _mr = map_status(st);
+        { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuDeviceGetCount out r=%d\n",(int)_mr); fflush(_f); fclose(_f);} } }
+        return _mr;
+    }
     // Expose only GPUs with compute queues to driver clients; software
     // rasterizers (llvmpipe) confuse client heuristics. Matches ZLUDA.
     // TODO: filter by queue support instead of clamping to 1.
@@ -183,6 +189,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetCount(int *count) {
         n = 1;
     *count = (int)n;
     ACUDA_DEBUG_PRINT("acuda-trace .. cuDeviceGetCount -> %d\n", (int)n);
+    { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuDeviceGetCount out r=0 n=%d\n",(int)n); fflush(_f); fclose(_f);} } }
     return CUDA_SUCCESS;
 }
 
@@ -420,6 +427,7 @@ CUresult ACUDA_CUDAAPI cuFlushGPUDirectRDMAWrites(int target, int scope) {
 }
 
 CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev) {
+    { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuDeviceGetAttribute in attr=%d dev=%d\n",attrib,dev); fflush(_f); fclose(_f);} } }
     if (!value)
         return CUDA_ERROR_INVALID_VALUE;
     acuda_dd9e98a4_check_ready_canary("cuDeviceGetAttribute");

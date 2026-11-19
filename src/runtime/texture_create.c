@@ -197,6 +197,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
         else if (desc->layers > 6 && desc->layers % 6 == 0)
             vt = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
         else {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:200\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return ACUDA_ERROR_INVALID_VALUE;
         }
@@ -219,6 +220,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
     image_range(b, &vci.subresourceRange);
     VkResult vr = vkCreateImageView(ctx->device, &vci, NULL, &b->view);
     if (vr != VK_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:222\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return acuda_from_vk(vr);
     }
@@ -234,6 +236,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
         svci.image = b->ms_src_image;
         vr = vkCreateImageView(ctx->device, &svci, NULL, &b->ms_src_view);
         if (vr != VK_SUCCESS) {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:237\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return acuda_from_vk(vr);
         }
@@ -250,6 +253,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         st = image_begin(ctx, &pool, &cmd);
         if (st != ACUDA_SUCCESS) {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:253\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return st;
         }
@@ -285,6 +289,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
     if (st != ACUDA_SUCCESS) {
         ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: stage malloc failed st=%d bytes=%zu\n",
                     (int)st, upload_bytes);
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:288\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return st;
     }
@@ -293,6 +298,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
         ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: upload memcpy failed st=%d bytes=%zu\n",
                     (int)st, bytes);
         acuda_free(ctx, stage);
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:296\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return st;
     }
@@ -303,6 +309,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
         ACUDA_DEBUG_PRINT("acuda-trace ?? acuda_image_create: image_begin failed st=%d\n",
                     (int)st);
         acuda_free(ctx, stage);
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:306\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return st;
     }
@@ -328,6 +335,7 @@ acuda_status_t acuda_image_create(acuda_context_t ctx, acuda_buffer_t *out,
     if (ms) {
         st = ms_fill(ctx, b);
         if (st != ACUDA_SUCCESS) {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:331\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return st;
         }
@@ -404,6 +412,7 @@ acuda_status_t acuda_surface_create(acuda_context_t ctx, acuda_buffer_t *out,
     image_range(b, &vci.subresourceRange);
     VkResult vr = vkCreateImageView(ctx->device, &vci, NULL, &b->view);
     if (vr != VK_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:407\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return acuda_from_vk(vr);
     }
@@ -423,12 +432,14 @@ acuda_status_t acuda_surface_create(acuda_context_t ctx, acuda_buffer_t *out,
         bytes = elems * image_elem_bytes(desc->format);
         st = acuda_malloc(ctx, &stage, bytes ? bytes : 4);
         if (st != ACUDA_SUCCESS) {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:426\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return st;
         }
         st = acuda_memcpy_h2d(ctx, stage, texels, bytes, NULL);
         if (st != ACUDA_SUCCESS) {
             acuda_free(ctx, stage);
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:432\n"); fflush(_f); fclose(_f);} } }
             acuda_free(ctx, b);
             return st;
         }
@@ -439,6 +450,7 @@ acuda_status_t acuda_surface_create(acuda_context_t ctx, acuda_buffer_t *out,
     if (st != ACUDA_SUCCESS) {
         if (stage)
             acuda_free(ctx, stage);
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_create.c:442\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
         return st;
     }

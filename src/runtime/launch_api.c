@@ -28,6 +28,7 @@ acuda_status_t acuda_launch_raw_ex(acuda_context_t ctx,
                                    uint32_t block_dim_z,
                                    uint32_t dyn_shared_bytes,
                                    acuda_stream_t stream) {
+    acuda_runtime_canary_check("rt_launch_raw_ex_in");
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(kernel);
     int have_info = info != NULL;
     if (have_info && info->host_segment_count > 0) {

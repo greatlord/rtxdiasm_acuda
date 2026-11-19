@@ -1,5 +1,6 @@
 ﻿#include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "acuda/memory.h"
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/texture_image_internal.h"
@@ -14,6 +15,7 @@ int acuda_surface_alias_supported(acuda_context_t ctx) {
         return 0;
     int ok = b && b->uint_view != VK_NULL_HANDLE;
     if (b)
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_io.c:17\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, b);
     return ok;
 }

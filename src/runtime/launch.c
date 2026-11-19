@@ -61,6 +61,8 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
     if (info->surf_table) {
         if (!ctx->desc_idx_ok)
             return ACUDA_ERROR_NOT_SUPPORTED;
+        if (info->surf_table_count > ACUDA_SURF_TABLE_MAX_TYPES)
+            return ACUDA_ERROR_NOT_SUPPORTED;
         if (surf_slots == 0)
             return ACUDA_ERROR_INVALID_VALUE;
         if (surf_slots > surf_max_slots(ctx, info->surf_table_count))
@@ -68,6 +70,8 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
     }
     if (num_bufs != acuda_kernel_launch_ptr_params(kernel))
         return ACUDA_ERROR_INVALID_VALUE;
+    if (num_bufs > ACUDA_MAX_PARAMS)
+        return ACUDA_ERROR_NOT_SUPPORTED;
     if (num_bufs > 0 && (!bufs || !offsets || !ranges))
         return ACUDA_ERROR_INVALID_VALUE;
     if (push_bytes != info->push_bytes ||
@@ -731,20 +735,13 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
         lprof_n++;
     }
     {
-        static FILE *_rtfp = NULL; static int _rtinit = 0; static long long _rtseq = 0;
-        if (!_rtinit) {
-            _rtinit = 1;
-            const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE");
-            if (_rtp && _rtp[0]) {
-                _rtfp = fopen(_rtp, "w");
-                if (!_rtfp) fprintf(stderr, "ACuda-debug: runtime trace fopen failed: %s\n", _rtp);
-            }
-        }
-        if (_rtfp) { fprintf(_rtfp, "%lld append g=%u\n", _rtseq++, grid_dim_x); fflush(_rtfp); }
+        static int _rtinit = 0; static long long _rtseq = 0;
+        if (!_rtinit) { _rtinit = 1; /* truncate once */ const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && _rtp[0]) { FILE *_f = fopen(_rtp,"w"); if(_f) fclose(_f); else fprintf(stderr, "ACuda-debug: runtime trace fopen failed: %s\n", _rtp); } }
+        { const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && *_rtp) { FILE *_f = fopen(_rtp,"a"); if(_f){ fprintf(_f,"%lld append g=%u\n", _rtseq++, grid_dim_x); fflush(_f); fclose(_f);} } }
         ACUDA_DEBUG_PRINT("acuda-trace .. launch appending grid=%u\n",
                           grid_dim_x);
         st = acuda_stream_append(ctx, s, record_launch, &rec, serialize);
-        if (_rtfp) { fprintf(_rtfp, "%lld appended st=%d\n", _rtseq++, (int)st); fflush(_rtfp); }
+        { const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && *_rtp) { FILE *_f = fopen(_rtp,"a"); if(_f){ fprintf(_f,"%lld appended st=%d\n", _rtseq++, (int)st); fflush(_f); fclose(_f);} } }
         free(pushbuf);
         if (st != ACUDA_SUCCESS) {
             if (dpool_t)
@@ -764,15 +761,15 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
         if (st == ACUDA_SUCCESS && surf_meta)
             st = acuda_stream_track_buffer_pending(ctx, s, surf_meta);
         if (st != ACUDA_SUCCESS) {
-            if (_rtfp) { fprintf(_rtfp, "%lld track_err st=%d\n", _rtseq++, (int)st); fflush(_rtfp); }
+            { const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && *_rtp) { FILE *_f = fopen(_rtp,"a"); if(_f){ fprintf(_f,"%lld track_err st=%d\n", _rtseq++, (int)st); fflush(_f); fclose(_f);} } }
             return st;
         }
         ACUDA_DEBUG_PRINT("acuda-trace .. launch flushing\n");
-        if (_rtfp) { fprintf(_rtfp, "%lld flush\n", _rtseq++); fflush(_rtfp); }
+        { const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && *_rtp) { FILE *_f = fopen(_rtp,"a"); if(_f){ fprintf(_f,"%lld flush\n", _rtseq++); fflush(_f); fclose(_f);} } }
         st = acuda_stream_maybe_flush(ctx, s);
         ACUDA_DEBUG_PRINT("acuda-trace .. launch flushed st=%d submitted=%llu\n",
                     (int)st, (unsigned long long)s->last_submitted);
-        if (_rtfp) { fprintf(_rtfp, "%lld flushed st=%d sub=%llu\n", _rtseq++, (int)st, (unsigned long long)s->last_submitted); fflush(_rtfp); }
+        { const char *_rtp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_rtp && *_rtp) { FILE *_f = fopen(_rtp,"a"); if(_f){ fprintf(_f,"%lld flushed st=%d sub=%llu\n", _rtseq++, (int)st, (unsigned long long)s->last_submitted); fflush(_f); fclose(_f);} } }
         return st;
     }
 }

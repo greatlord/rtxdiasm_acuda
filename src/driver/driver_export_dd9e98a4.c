@@ -26,6 +26,7 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
 extern int g_init;
 extern acuda_context_t g_actx;
 static unsigned int g_dd9e98a4_init_magic; /* 0xDDE998A4 once init completed */
+static int g_dd9e98a4_init_completed_once; /* survives struct corruption */
 static unsigned g_dd9e98a4_nfatbins;
 static unsigned g_dd9e98a4_nkernels;
 static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b, long long v, int phase);
@@ -58,9 +59,22 @@ int acuda_dd9e98a4_check_ready_canary(const char *where) {
     }
     if ((g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) &&
         g_dd9e98a4_ready.state == 0) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_ZEROED %s ever=%d was=%d initial=%d\n",
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_ZEROED %s ever=%d was=%d initial=%d magic=0x%x init_once=%d\n",
                           where ? where : "?", g_dd9e98a4_ready.ever_ready,
-                          g_dd9e98a4_was_ready, looks_initial);
+                          g_dd9e98a4_was_ready, looks_initial, g_dd9e98a4_init_magic,
+                          g_dd9e98a4_init_completed_once);
+        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        return 0;
+    }
+    /* Catch full zeroing/reset to initial-looking values after successful init. */
+    if (looks_initial &&
+        (g_dd9e98a4_was_ready || g_dd9e98a4_init_completed_once ||
+         g_dd9e98a4_init_magic == 0xDDE998A4u ||
+         g_init || g_actx || g_dd9e98a4_nfatbins || g_dd9e98a4_nkernels)) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 STATE_RESET_INITIAL %s was=%d magic=0x%x init_once=%d g_init=%d g_actx=%p fb=%u kern=%u\n",
+                          where ? where : "?", g_dd9e98a4_was_ready,
+                          g_dd9e98a4_init_magic, g_dd9e98a4_init_completed_once,
+                          g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
         return 0;
     }
@@ -70,15 +84,58 @@ int acuda_dd9e98a4_check_ready_canary(const char *where) {
 int acuda_dd9e98a4_ready_state(void) { return g_dd9e98a4_ready.state; }
 int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
 
+static int g_dd9e98a4_corruption_logged;
+static int g_dd9e98a4_state0_logged;
+extern int (*acuda_runtime_canary_hook)(const char *where);
+
 static int acuda_dd9e98a4_driver_ready(void) {
+    acuda_runtime_canary_hook = acuda_dd9e98a4_check_ready_canary;
+    static long long _dr_seq = 0;
+    long long _myseq = _dr_seq++;
+#if defined(_MSC_VER)
+    void *_entry_ra = _ReturnAddress();
+#else
+    void *_entry_ra = __builtin_return_address(0);
+#endif
+    { const char *_vt = getenv("ACUDA_DD9E98A4_TRACE_VERBOSE"); if (_vt && *_vt) { static int _last_st = 999; if (g_dd9e98a4_ready.state != 1 || _last_st != 1) { fprintf(stderr, "ACuda-debug: dd9e98a4 driver_ready #%lld st=%d ever=%d was=%d g_init=%d g_actx=%p caller=%p\n", _myseq, g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_init, g_actx, _entry_ra); fflush(stderr); } _last_st = g_dd9e98a4_ready.state; } }
     if (g_dd9e98a4_ready.canary1 != 0xA5C0FFEEu || g_dd9e98a4_ready.canary2 != 0x5EEDFACEu ||
         (g_dd9e98a4_ready.state != 0 && g_dd9e98a4_ready.state != 1 && g_dd9e98a4_ready.state != -1)) {
+        if (!g_dd9e98a4_corruption_logged) {
+            g_dd9e98a4_corruption_logged = 1;
+            fprintf(stderr, "ACuda-debug: dd9e98a4 CORRUPTION_DETECTED canary c1=%08x state=%d c2=%08x ever=%d was=%d magic=0x%x g_init=%d@%p g_actx=%p fb=%u kern=%u caller=%p self=%p\n",
+                    g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state, g_dd9e98a4_ready.canary2,
+                    g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_dd9e98a4_init_magic,
+                    g_init, (void*)&g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
+                    _entry_ra, (void*)(uintptr_t)&acuda_dd9e98a4_driver_ready);
+            fflush(stderr);
+        }
         ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_driver_ready CORRUPTION "
                           "c1=%08x state=%d c2=%08x\n",
                           g_dd9e98a4_ready.canary1, g_dd9e98a4_ready.state, g_dd9e98a4_ready.canary2);
         if (getenv("ACUDA_TRACE")) fflush(stderr);
     }
     if (g_dd9e98a4_ready.state == 0) {
+        {
+            static long long _s0seq = 0;
+            int prior_init = g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready ||
+                             g_dd9e98a4_init_magic == 0xDDE998A4u ||
+                             g_dd9e98a4_init_completed_once || g_init || g_actx;
+            int has_reg = (g_dd9e98a4_nfatbins || g_dd9e98a4_nkernels);
+            long long _n = _s0seq++;
+            fprintf(stderr, "ACuda-debug: dd9e98a4 driver_ready_state0 #%lld prior_init=%d st=%d ever=%d was=%d magic=0x%x init_once=%d g_init=%d@%p g_actx=%p fb=%u kern=%u caller=%p\n",
+                    _n, prior_init, g_dd9e98a4_ready.state, g_dd9e98a4_ready.ever_ready, g_dd9e98a4_was_ready, g_dd9e98a4_init_magic,
+                    g_dd9e98a4_init_completed_once, g_init, (void*)&g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra);
+            fflush(stderr);
+            if ((prior_init || has_reg) && !g_dd9e98a4_state0_logged) {
+                g_dd9e98a4_state0_logged = 1;
+                fprintf(stderr, "ACuda-debug: dd9e98a4 STATE0_DETECTED #%lld prior_init=%d fb=%u kern=%u caller=%p self=%p\n",
+                        _n, prior_init, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels, _entry_ra, (void*)(uintptr_t)&acuda_dd9e98a4_driver_ready);
+                fflush(stderr);
+            }
+            if (!prior_init && !has_reg) {
+                g_dd9e98a4_state0_logged = 0;
+            }
+        }
         if (g_dd9e98a4_ready.ever_ready || g_dd9e98a4_was_ready) {
 #if defined(_MSC_VER)
             void *_ra = _ReturnAddress();
@@ -92,6 +149,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
             fflush(stderr);
             g_dd9e98a4_ready.state = 1;
             g_dd9e98a4_ready.ever_ready = 1;
+            g_dd9e98a4_init_completed_once = 1;
+            g_dd9e98a4_state0_logged = 0;
             return 1;
         }
         /* If driver core is already initialized (or runtime context still
@@ -112,6 +171,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
             if (!g_init && g_actx)
                 g_init = 1;
             g_dd9e98a4_init_magic = 0xDDE998A4u;
+            g_dd9e98a4_init_completed_once = 1;
+            g_dd9e98a4_state0_logged = 0;
             return 1;
         }
         /* Surviving init-magic (stored near fatbin/kernel counters) indicates
@@ -128,6 +189,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
             g_dd9e98a4_ready.state = 1;
             g_dd9e98a4_ready.ever_ready = 1;
             g_dd9e98a4_was_ready = 1;
+            g_dd9e98a4_init_completed_once = 1;
+            g_dd9e98a4_state0_logged = 0;
             return 1;
         }
 #if defined(_MSC_VER)
@@ -147,8 +210,8 @@ static int acuda_dd9e98a4_driver_ready(void) {
 #else
         void *_iira = __builtin_return_address(0);
 #endif
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init pre: caller=%p st=%d was=%d ever=%d magic=0x%x g_init=%d g_actx=%p fb=%u kern=%u\n",
-                _iira, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init pre: caller=%p self=%p st=%d was=%d ever=%d magic=0x%x g_init=%d g_actx=%p fb=%u kern=%u\n",
+                _iira, (void *)(uintptr_t)&acuda_dd9e98a4_driver_ready, g_dd9e98a4_ready.state, g_dd9e98a4_was_ready,
                 g_dd9e98a4_ready.ever_ready, g_dd9e98a4_init_magic,
                 g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
         fflush(stderr);
@@ -159,21 +222,25 @@ static int acuda_dd9e98a4_driver_ready(void) {
             if (r == CUDA_SUCCESS)
                 r = cuCtxSetCurrent(ctx);
         }
-        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p) caller=%p\n",
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d@%p g_actx=%p fb=%u kern=%u ready=%d@%p) caller=%p self=%p seq=%lld\n",
                 (int)r, g_init, (void *)&g_init, g_actx,
                 g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels,
-                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready, _iira);
+                g_dd9e98a4_ready.state, (void *)&g_dd9e98a4_ready, _iira, (void *)(uintptr_t)&acuda_dd9e98a4_driver_ready, _myseq);
         fflush(stderr);
         g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
         if (g_dd9e98a4_ready.state == 1) {
             g_dd9e98a4_ready.ever_ready = 1;
             g_dd9e98a4_was_ready = 1;
             g_dd9e98a4_init_magic = 0xDDE998A4u;
+            g_dd9e98a4_init_completed_once = 1;
+            g_dd9e98a4_state0_logged = 0;
         }
     }
     if (g_dd9e98a4_ready.state == 1) {
         g_dd9e98a4_ready.ever_ready = 1;
         g_dd9e98a4_was_ready = 1;
+        g_dd9e98a4_init_completed_once = 1;
+        g_dd9e98a4_state0_logged = 0;
     }
     return g_dd9e98a4_ready.state == 1;
 }
@@ -181,6 +248,7 @@ static int acuda_dd9e98a4_driver_ready(void) {
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
         void *count, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_count");
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
@@ -196,6 +264,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_attribute(
         void *value, void *attr, void *device, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_attribute");
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
@@ -207,6 +276,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(
         void *devPtr, void *size, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -218,6 +288,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
         void *ptr, void *size, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc_host");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
     if (!ptr)
@@ -233,6 +304,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
         void *device, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_device");
     CUcontext ctx = NULL;
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
@@ -250,6 +322,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device(
         void *device, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_device");
     CUdevice d = 0;
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
@@ -269,6 +342,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_properties(
         void *prop, void *device, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_device_properties");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -280,6 +354,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string(
         void *error, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_error_string");
     const char *str = "unknown error";
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
@@ -293,6 +368,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(
         void *devPtr, void *value, void *count, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memset");
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memset(%p,%d,%zu)\n",
                       devPtr, (int)(intptr_t)value, (size_t)count);
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
@@ -311,6 +387,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
         void *dst, void *src, void *count, void *kind,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy");
     int copy_kind = (int)(intptr_t)kind;
     size_t bytes = (size_t)count;
     acuda_dd9e98a4_htrace("memcpy", dst, src, (long long)bytes, 0);
@@ -349,6 +426,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
         void *dst, void *src, void *count, void *kind, void *stream,
         void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy_async");
     int copy_kind = (int)(intptr_t)kind;
     size_t bytes = (size_t)count;
     CUresult _r;
@@ -383,6 +461,7 @@ out:
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(
         void *devPtr, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_free");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL free ptr=%p\n", devPtr);
@@ -397,6 +476,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(
         void *ptr, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_free_host");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     free(ptr);
@@ -407,6 +487,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_reset(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_reset");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -418,6 +499,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_synchronize(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_synchronize");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -429,6 +511,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create(
         void *event, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_create");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -440,6 +523,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create_with_flags(
         void *event, void *flags, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_create_with_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -453,6 +537,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
         void *event, void *stream, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_record");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("evt_record", event, stream, 0, 0);
@@ -469,6 +554,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_synchronize(
         void *event, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_synchronize");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("evt_sync", event, NULL, 0, 0);
@@ -490,6 +576,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_synchronize(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_query(
         void *event, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_query");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -501,6 +588,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_elapsed_time(
         void *ms, void *start, void *end, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_elapsed_time");
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
@@ -511,6 +599,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_destroy(
         void *event, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_destroy");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL event_destroy event=%p\n", event);
@@ -523,6 +612,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_destroy(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_profiler_noop");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -543,6 +633,7 @@ static acuda_dd9e98a4_kernel g_dd9e98a4_kernels[ACUDA_DD9E98A4_MAX_FUNCS];
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(
         void *fatCubin, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_register_fat_binary");
     unsigned i;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
@@ -569,6 +660,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary_end(
         void *fatCubinHandle, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_register_fat_binary_end");
     (void)fatCubinHandle; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -579,6 +671,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary_end(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_function(
         void *fatCubinHandle, void *hostFun, void *deviceFun, void *deviceName,
         void *thread_limit, void *tid, void *bid, void *bDim) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_register_function");
     acuda_dd9e98a4_kernel *k;
     (void)deviceFun; (void)thread_limit; (void)tid; (void)bid; (void)bDim;
     if (!fatCubinHandle || !hostFun || !deviceName)
@@ -625,6 +718,7 @@ static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_kernel(
         void *kernel, void *func, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_kernel");
     acuda_dd9e98a4_htrace("get_kern", kernel, func, 0, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 get kernel slot=%p func=%p\n",
                       kernel, func);
@@ -650,6 +744,7 @@ static ACUDA_DD9E98A4_TLS unsigned g_dd9e98a4_config_depth;
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_push_config(
         void *gridDim, void *blockDim, void *sharedMem, void *stream,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_push_config");
     acuda_dd9e98a4_launch_config *cfg;
     acuda_dd9e98a4_htrace("push_cfg", gridDim, stream, (long long)(size_t)sharedMem, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 push config\n");
@@ -672,6 +767,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_push_config(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
         void *gridDim, void *blockDim, void *sharedMem, void *stream,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_pop_config");
     acuda_dd9e98a4_launch_config *cfg;
     acuda_dd9e98a4_htrace("pop_cfg", gridDim, stream, (long long)g_dd9e98a4_config_depth, 0);
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 pop config\n");
@@ -698,6 +794,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
         void *func, void *gridDim, void *blockDim, void *args, void *sharedMem,
         void *stream, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_launch_kernel");
     const acuda_dd9e98a4_dim3 *grid = (const acuda_dd9e98a4_dim3 *)gridDim;
     const acuda_dd9e98a4_dim3 *block = (const acuda_dd9e98a4_dim3 *)blockDim;
     acuda_dd9e98a4_kernel *k = NULL;
@@ -758,6 +855,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_choose_device(
         void *device, void *prop, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_choose_device");
     (void)prop; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -771,6 +869,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -780,6 +879,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_peek_at_last_error(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_peek_at_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -789,6 +889,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_peek_at_last_error(
 static const char *ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string_runtime(
         void *error, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_error_string_runtime");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     switch ((int)(intptr_t)error) {
@@ -806,6 +907,7 @@ static const char *ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string_runtime(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_valid_devices(
         void *device_arr, void *len, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_valid_devices");
     (void)device_arr; (void)len; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -817,6 +919,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device_flags(
         void *flags, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_device_flags");
     (void)flags; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -828,6 +931,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_flags(
         void *flags, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_device_flags");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -841,6 +945,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create(
         void *pStream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -855,6 +960,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_flags(
         void *pStream, void *flags, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create_with_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -869,6 +975,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_priority(
         void *pStream, void *flags, void *priority, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create_with_priority");
     (void)priority; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -883,6 +990,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_limit(
         void *pValue, void *limit, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_limit");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -897,6 +1005,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_limit(
         void *limit, void *value, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_limit");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -908,6 +1017,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_cache_config(
         void *pCacheConfig, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_cache_config");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -921,6 +1031,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_cache_config(
         void *cacheConfig, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_cache_config");
     (void)cacheConfig; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -932,6 +1043,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_by_pci_bus_id(
         void *device, void *pciBusId, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_by_pci_bus_id");
     (void)pciBusId; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -945,6 +1057,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_pci_bus_id(
         void *pciBusId, void *len, void *device, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_pci_bus_id");
     int n = (int)(intptr_t)len;
     (void)device; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
@@ -964,6 +1077,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_stream_priority_range(
         void *leastPriority, void *greatestPriority, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_stream_priority_range");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -979,6 +1093,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_event_handle(
         void *handle, void *event, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ipc_get_event_handle");
     (void)event; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (handle)
@@ -990,6 +1105,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_event_handle(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_mem_handle(
         void *handle, void *devPtr, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ipc_get_mem_handle");
     (void)devPtr; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (handle)
@@ -1001,6 +1117,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_get_mem_handle(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_close_mem_handle(
         void *devPtr, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ipc_close_mem_handle");
     (void)devPtr; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1010,6 +1127,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_close_mem_handle(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_shared_mem_config(
         void *pConfig, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_shared_mem_config");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1023,6 +1141,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
         void *config, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_shared_mem_config");
     (void)config; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1036,6 +1155,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize(
         void *stream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_synchronize");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("stream_sync", stream, NULL, 0, 0);
@@ -1053,6 +1173,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query(
         void *stream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_query");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1064,6 +1185,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_destroy(
         void *stream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_destroy");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL stream_destroy stream=%p\n", stream);
@@ -1078,6 +1200,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_destroy(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority(
         void *stream, void *priority, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_priority");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1092,6 +1215,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags(
         void *stream, void *flags, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1106,6 +1230,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority_ptsz(
         void *stream, void *priority, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_priority_ptsz");
     return acuda_dd9e98a4_api_stream_get_priority(stream, priority, unused_c,
                                                   unused_d, unused_e, unused_f,
                                                   unused_g, unused_h);
@@ -1115,6 +1240,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags_ptsz(
         void *stream, void *flags, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_flags_ptsz");
     return acuda_dd9e98a4_api_stream_get_flags(stream, flags, unused_c,
                                                unused_d, unused_e, unused_f,
                                                unused_g, unused_h);
@@ -1124,6 +1250,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize_ptsz(
         void *stream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_synchronize_ptsz");
     return acuda_dd9e98a4_api_stream_synchronize(stream, unused_b, unused_c,
                                                   unused_d, unused_e, unused_f,
                                                   unused_g, unused_h);
@@ -1133,6 +1260,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query_ptsz(
         void *stream, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_query_ptsz");
     return acuda_dd9e98a4_api_stream_query(stream, unused_b, unused_c,
                                            unused_d, unused_e, unused_f,
                                            unused_g, unused_h);
@@ -1142,6 +1270,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device(
         void *stream, void *device, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_device");
     (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1156,6 +1285,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device_ptsz(
         void *stream, void *device, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_device_ptsz");
     return acuda_dd9e98a4_api_stream_get_device(stream, device, unused_c,
                                                 unused_d, unused_e, unused_f,
                                                 unused_g, unused_h);
@@ -1167,6 +1297,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record_ptsz(
         void *event, void *stream, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_record_ptsz");
     return acuda_dd9e98a4_api_event_record(event, stream, unused_c, unused_d,
                                            unused_e, unused_f, unused_g, unused_h);
 }
@@ -1175,6 +1306,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_begin_capture_ptsz(
         void *stream, void *mode, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_begin_capture_ptsz");
     (void)stream; (void)mode; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     /* Stream capture not implemented; report not supported to avoid
@@ -1186,6 +1318,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_begin_capture_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_is_capturing_ptsz(
         void *stream, void *captureStatus, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_is_capturing_ptsz");
     (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (!captureStatus)
@@ -1199,6 +1332,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_is_capturing_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_end_capture_ptsz(
         void *stream, void *pGraph, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_end_capture_ptsz");
     (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (pGraph)
@@ -1210,6 +1344,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_end_capture_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_thread_exchange_stream_capture_mode(
         void *mode, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_thread_exchange_stream_capture_mode");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     /* Keep mode unchanged (e.g. relaxed/global/thread-local as passed). */
@@ -1221,6 +1356,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_thread_exchange_stream_capture_
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1230,6 +1366,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ctx_reset_persisting_l2_cache(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_copy_attributes_ptsz(
         void *dst, void *src, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_copy_attributes_ptsz");
     (void)dst; (void)src; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1239,6 +1376,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_copy_attributes_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_default_mempool(
         void *memPool, void *device, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_default_mempool");
     (void)device; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (!memPool)
@@ -1251,6 +1389,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_default_mempool(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_mempool(
         void *device, void *memPool, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_mempool");
     (void)device; (void)memPool; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1260,6 +1399,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_mempool(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_mempool(
         void *memPool, void *device, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_mempool");
     (void)device; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (!memPool)
@@ -1272,6 +1412,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_mempool(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_id_ptsz(
         void *stream, void *streamId, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_id_ptsz");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
     if (!streamId)
@@ -1286,6 +1427,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_id_ptsz(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_init_device(
         void *device, void *deviceFlags, void *flags, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_init_device");
     (void)device; (void)deviceFlags; (void)flags;
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
 if (!acuda_dd9e98a4_driver_ready())
@@ -1298,6 +1440,7 @@ if (!acuda_dd9e98a4_driver_ready())
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_attribute(
         void *value, void *attr, void *srcDevice, void *dstDevice,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_p2p_attribute");
     (void)attr; (void)srcDevice; (void)dstDevice;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!value)
@@ -1311,6 +1454,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_attribute(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_texture1d_linear_max_width(
         void *maxWidthInElements, void *fmtDesc, void *numChannels, void *device,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_texture1d_linear_max_width");
     (void)fmtDesc; (void)numChannels; (void)device;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!maxWidthInElements)
@@ -1323,6 +1467,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_texture1d_linear_max
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes(
         void *target, void *scope, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_flush_gpudirect_rdma_writes");
     (void)target; (void)scope; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1333,6 +1478,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_flush_gpudirect_rdma_wri
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_host_atomic_capabilities(
         void *capabilities, void *operations, void *count, void *device,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_host_atomic_capabilities");
     (void)operations; (void)count; (void)device;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (capabilities)
@@ -1346,6 +1492,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_host_atomic_capabili
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities(
         void *capabilities, void *operations, void *count, void *srcDevice,
         void *dstDevice, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_p2p_atomic_capabilities");
     (void)operations; (void)count; (void)srcDevice; (void)dstDevice;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (capabilities)
@@ -1357,6 +1504,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_p2p_atomic_capabilit
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_event_handle(
         void *event, void *handle, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ipc_open_event_handle");
     (void)handle; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (event)
@@ -1368,6 +1516,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_event_handle(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_mem_handle(
         void *devPtr, void *handle, void *flags, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_ipc_open_mem_handle");
     (void)handle; (void)flags; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (devPtr)
@@ -1380,6 +1529,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_ipc_open_mem_handle(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_memory(
         void *extMem_out, void *memHandleDesc, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_import_external_memory");
     (void)memHandleDesc; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (extMem_out)
@@ -1392,6 +1542,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_memory(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_buffer(
         void *devPtr, void *extMem, void *bufferDesc, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_external_memory_get_mapped_buffer");
     (void)extMem; (void)bufferDesc; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (devPtr)
@@ -1404,6 +1555,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_buff
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array(
         void *mipmap, void *extMem, void *mipmapDesc, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array");
     (void)extMem; (void)mipmapDesc; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (mipmap)
@@ -1415,6 +1567,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_external_memory_get_mapped_mipm
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_external_memory(
         void *extMem, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_destroy_external_memory");
     (void)extMem; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
@@ -1425,6 +1578,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_external_memory(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_semaphore(
         void *extSem_out, void *semHandleDesc, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_import_external_semaphore");
     (void)semHandleDesc; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (extSem_out)
@@ -1437,6 +1591,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_import_external_semaphore(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_register_async_notification(
         void *device, void *callbackFunc, void *userData, void *callback,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_register_async_notification");
     (void)device; (void)callbackFunc; (void)userData;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (callback)
@@ -1448,6 +1603,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_register_async_notificat
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_unregister_async_notification(
         void *device, void *callback, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_unregister_async_notification");
     (void)device; (void)callback; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;

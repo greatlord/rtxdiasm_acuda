@@ -1,14 +1,20 @@
 ﻿#include <stdlib.h>
+#include <stdio.h>
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/stream_internal.h"
 
 acuda_status_t stream_reclaim(acuda_context_t ctx, acuda_stream_t s) {
+    acuda_runtime_canary_check("rt_stream_reclaim_in");
+    const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE");
     uint64_t done = 0;
     if (s->last_submitted > 0) {
         VkResult vr = vkGetSemaphoreCounterValue(ctx->device, s->timeline, &done);
-        if (vr != VK_SUCCESS)
+        if (vr != VK_SUCCESS) {
+            if (_tp && *_tp) { FILE *_f=fopen(_tp,"a"); if(_f){fprintf(_f,"RT reclaim in ls=%llu vr=%d ->err\n",(unsigned long long)s->last_submitted,(int)vr);fflush(_f);fclose(_f);} }
             return acuda_from_vk(vr);
+        }
     }
+    if (_tp && *_tp) { FILE *_f=fopen(_tp,"a"); if(_f){fprintf(_f,"RT reclaim in ls=%llu done=%llu cmds=%zu dp=%zu tmp=%zu\n",(unsigned long long)s->last_submitted,(unsigned long long)done,(size_t)s->cmd_count,(size_t)s->dpool_count,(size_t)s->tmp_count);fflush(_f);fclose(_f);} }
     size_t keep = 0;
     for (size_t i = 0; i < s->cmd_count; i++) {
         if (s->cmd_values[i] <= done) {
@@ -44,6 +50,7 @@ acuda_status_t stream_reclaim(acuda_context_t ctx, acuda_stream_t s) {
         }
     }
     s->tmp_count = keep;
+    if (_tp && *_tp) { FILE *_f=fopen(_tp,"a"); if(_f){fprintf(_f,"RT reclaim out cmds=%zu dp=%zu tmp=%zu\n",(size_t)s->cmd_count,(size_t)s->dpool_count,(size_t)s->tmp_count);fflush(_f);fclose(_f);} }
     return ACUDA_SUCCESS;
 }
 

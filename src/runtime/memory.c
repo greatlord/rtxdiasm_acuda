@@ -3,6 +3,9 @@
 #include <string.h>
 #include "acuda/memory.h"
 #include "acuda/runtime/internal.h"
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 static int ctx_buffer_add(acuda_context_t ctx, acuda_buffer_t b) {
     if (ctx->nbufs + 1 > ctx->capbufs) {
@@ -136,7 +139,10 @@ static acuda_status_t alloc_impl(acuda_context_t ctx, acuda_buffer_t *out_buf,
 
 acuda_status_t acuda_malloc(acuda_context_t ctx, acuda_buffer_t *out_buf,
                             size_t bytes) {
-    return alloc_impl(ctx, out_buf, bytes, ctx ? ctx->mem_type : UINT32_MAX, 1);
+    acuda_runtime_canary_check("rt_acuda_malloc_in");
+    acuda_status_t st = alloc_impl(ctx, out_buf, bytes, ctx ? ctx->mem_type : UINT32_MAX, 1);
+    acuda_runtime_canary_check("rt_acuda_malloc_out");
+    return st;
 }
 
 acuda_status_t acuda_malloc_host(acuda_context_t ctx, acuda_buffer_t *out,
@@ -163,12 +169,21 @@ acuda_status_t acuda_buffer_device_address(acuda_buffer_t buf,
 }
 
 acuda_status_t acuda_free(acuda_context_t ctx, acuda_buffer_t buf) {
+    acuda_runtime_canary_check("rt_acuda_free_in");
     if (!ctx || !buf)
         return ACUDA_ERROR_INVALID_HANDLE;
     // Submit any recorded batch that may still reference this buffer
     // before its handles are destroyed (the caller owns completion).
+#if defined(_MSC_VER)
+    void *_ra_free = _ReturnAddress();
+#else
+    void *_ra_free = __builtin_return_address(0);
+#endif
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_free->flush_all buf=%p kind=%d ra=%p self=%p\n",(void*)buf,buf->kind,_ra_free,(void*)(uintptr_t)&acuda_free); fflush(_f); fclose(_f);} } }
     acuda_stream_flush_all(ctx);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_free post_flush buf=%p\n",(void*)buf); fflush(_f); fclose(_f);} } }
     ctx_buffer_remove(ctx, buf);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_free removed buf=%p kind=%d\n",(void*)buf,buf->kind); fflush(_f); fclose(_f);} } }
     if (buf->kind == 2) { // image
         if (buf->ms_src_view)
             vkDestroyImageView(ctx->device, buf->ms_src_view, NULL);
@@ -202,9 +217,12 @@ acuda_status_t acuda_free(acuda_context_t ctx, acuda_buffer_t buf) {
         vkDestroyBuffer(ctx->device, buf->buffer, NULL);
         vkFreeMemory(ctx->device, buf->memory, NULL);
     }
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_free vkdone buf=%p\n",(void*)buf); fflush(_f); fclose(_f);} } }
     // kind 1 (buffer texture) and 3 (combined texture) are borrowed
     // descriptors: the underlying buffer/image/sampler owns storage.
     free(buf);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_free out st=0\n"); fflush(_f); fclose(_f);} } }
+    acuda_runtime_canary_check("rt_acuda_free_out");
     return ACUDA_SUCCESS;
 }
 

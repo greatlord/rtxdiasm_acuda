@@ -23,6 +23,7 @@ acuda_status_t stream_flush_blocking_peers(acuda_context_t ctx,
         if (s == stream || !s->blocking || s->in_flush ||
             s->batch_count == 0)
             continue;
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_peer stream=%p peer=%p batch=%zu\n",(void*)stream,(void*)s,(size_t)s->batch_count); fflush(_f); fclose(_f);} } }
         acuda_status_t st = stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
         if (st != ACUDA_SUCCESS) {
             stream->in_flush = 0;
@@ -82,15 +83,19 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
                                  const uint64_t *extra_vals,
                                  uint32_t extra_count,
                                  uint64_t *out_value) {
+    acuda_runtime_canary_check("rt_stream_flush_impl_in");
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl in s=%p batch=%zu pend_dp=%zu pend_b=%zu ls=%llu\n",(void*)stream,(size_t)stream->batch_count,(size_t)stream->pend_dpool_count,(size_t)stream->pend_buf_count,(unsigned long long)stream->last_submitted); fflush(_f); fclose(_f);} } }
     if (!stream->batch_cmd || stream->batch_count == 0) {
         if (out_value)
             *out_value = stream->last_submitted;
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl out st=0 (noop) ls=%llu\n",(unsigned long long)stream->last_submitted); fflush(_f); fclose(_f);} } }
         return ACUDA_SUCCESS;
     }
     acuda_status_t peer_st = stream_flush_blocking_peers(ctx, stream);
     if (peer_st != ACUDA_SUCCESS) {
         if (out_value)
             *out_value = 0;
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl out st=%d (peer)\n",(int)peer_st); fflush(_f); fclose(_f);} } }
         return peer_st;
     }
     VkCommandBuffer cmd = stream->batch_cmd;
@@ -99,6 +104,7 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
         stream_discard_batch(ctx, stream);
         if (out_value)
             *out_value = 0;
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl out st=%d (endcmd)\n",(int)acuda_from_vk(vr)); fflush(_f); fclose(_f);} } }
         return acuda_from_vk(vr);
     }
 
@@ -178,6 +184,7 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
         stream_discard_batch(ctx, stream);
         if (out_value)
             *out_value = 0;
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl out st=%d (submit)\n",(int)acuda_from_vk(vr)); fflush(_f); fclose(_f);} } }
         return acuda_from_vk(vr);
     }
 
@@ -190,8 +197,10 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
             free(nv);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(nc, stream->cmds, sizeof(*nc) * stream->cmd_count);
-        memcpy(nv, stream->cmd_values, sizeof(*nv) * stream->cmd_count);
+        if (stream->cmd_count > 0) {
+            memcpy(nc, stream->cmds, sizeof(*nc) * stream->cmd_count);
+            memcpy(nv, stream->cmd_values, sizeof(*nv) * stream->cmd_count);
+        }
         free(stream->cmds);
         free(stream->cmd_values);
         stream->cmds = nc;
@@ -218,5 +227,6 @@ acuda_status_t stream_flush_impl(acuda_context_t ctx,
     stream->pend_buf_count = 0;
     if (out_value)
         *out_value = sigval;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_impl out st=0 sig=%llu cmds=%zu\n",(unsigned long long)sigval,(size_t)stream->cmd_count); fflush(_f); fclose(_f);} } }
     return ACUDA_SUCCESS;
 }

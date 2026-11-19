@@ -159,15 +159,20 @@ acuda_status_t acuda_stream_synchronize(acuda_context_t ctx, acuda_stream_t stre
     acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
     if (st != ACUDA_SUCCESS)
         return st;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize in s=%p last=%llu\n",(void*)stream,(unsigned long long)s->last_submitted); fflush(_f); fclose(_f);} } }
     st = stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize flushed st=%d last=%llu\n",(int)st,(unsigned long long)s->last_submitted); fflush(_f); fclose(_f);} } }
     if (st != ACUDA_SUCCESS) {
         ACUDA_DEBUG_PRINT("acuda-trace ?? stream_synchronize: flush failed st=%d\n",
                     (int)st);
         return st;
     }
-    if (s->last_submitted == 0)
+    if (s->last_submitted == 0) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize out st=0 (nothing)\n"); fflush(_f); fclose(_f);} } }
         return ACUDA_SUCCESS;
+    }
     st = stream_wait_value(ctx, s, s->last_submitted, ACUDA_SYNC_TIMEOUT_NS);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize waited st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
     if (st != ACUDA_SUCCESS) {
         uint64_t done = 0;
         VkResult gvr = vkGetSemaphoreCounterValue(ctx->device, s->timeline,
@@ -175,6 +180,7 @@ acuda_status_t acuda_stream_synchronize(acuda_context_t ctx, acuda_stream_t stre
         ACUDA_DEBUG_PRINT("acuda-trace ?? stream_synchronize: wait_value failed st=%d want=%llu have=%llu getvr=%d\n",
                     (int)st, (unsigned long long)s->last_submitted,
                     (unsigned long long)done, (int)gvr);
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize out st=%d (waitfail)\n",(int)st); fflush(_f); fclose(_f);} } }
         return st;
     }
     st = stream_reclaim(ctx, s);
@@ -182,5 +188,6 @@ acuda_status_t acuda_stream_synchronize(acuda_context_t ctx, acuda_stream_t stre
         ACUDA_DEBUG_PRINT("acuda-trace ?? stream_synchronize: reclaim failed st=%d\n",
                     (int)st);
     }
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_stream_synchronize out st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
     return st;
 }

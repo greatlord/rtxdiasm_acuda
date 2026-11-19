@@ -1,16 +1,31 @@
 ﻿#include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/stream_internal.h"
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 
 acuda_status_t acuda_stream_flush_all(acuda_context_t ctx) {
     if (!ctx)
         return ACUDA_ERROR_INVALID_HANDLE;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ 
+#if defined(_MSC_VER)
+        void *_ra = _ReturnAddress();
+#else
+        void *_ra = __builtin_return_address(0);
+#endif
+        fprintf(_f,"RT flush_all in ra=%p self=%p\n", _ra, (void*)(uintptr_t)&acuda_stream_flush_all); fflush(_f); fclose(_f);} } }
     for (acuda_stream_t s = ctx->streams; s; s = s->next) {
         acuda_status_t st = stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
-        if (st != ACUDA_SUCCESS)
+        if (st != ACUDA_SUCCESS) {
+            { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_all out st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
             return st;
+        }
     }
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT flush_all out st=0\n"); fflush(_f); fclose(_f);} } }
     return ACUDA_SUCCESS;
 }
 
@@ -46,8 +61,10 @@ acuda_status_t acuda_stream_track_dpool(acuda_context_t ctx,
             free(nv);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(np, stream->dpools, sizeof(*np) * stream->dpool_count);
-        memcpy(nv, stream->dpool_values, sizeof(*nv) * stream->dpool_count);
+        if (stream->dpool_count > 0) {
+            memcpy(np, stream->dpools, sizeof(*np) * stream->dpool_count);
+            memcpy(nv, stream->dpool_values, sizeof(*nv) * stream->dpool_count);
+        }
         free(stream->dpools);
         free(stream->dpool_values);
         stream->dpools = np;
@@ -76,8 +93,10 @@ acuda_status_t acuda_stream_track_buffer(acuda_context_t ctx,
             free(nv);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(nb, stream->tmp_bufs, sizeof(*nb) * stream->tmp_count);
-        memcpy(nv, stream->tmp_values, sizeof(*nv) * stream->tmp_count);
+        if (stream->tmp_count > 0) {
+            memcpy(nb, stream->tmp_bufs, sizeof(*nb) * stream->tmp_count);
+            memcpy(nv, stream->tmp_values, sizeof(*nv) * stream->tmp_count);
+        }
         free(stream->tmp_bufs);
         free(stream->tmp_values);
         stream->tmp_bufs = nb;

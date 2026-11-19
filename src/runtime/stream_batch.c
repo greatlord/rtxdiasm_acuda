@@ -1,5 +1,6 @@
 ﻿#include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/stream_internal.h"
 
@@ -73,11 +74,14 @@ acuda_status_t stream_begin_batch(acuda_context_t ctx,
                                          acuda_stream_t s) {
     if (s->batch_cmd)
         return ACUDA_SUCCESS;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT begin_batch in s=%p ls=%llu\n",(void*)s,(unsigned long long)s->last_submitted); fflush(_f); fclose(_f);} } }
     // Recycle completed batches before recording a new one, so long
     // streaming runs do not accumulate command buffers/descriptor pools.
     acuda_status_t rst = stream_reclaim(ctx, s);
-    if (rst != ACUDA_SUCCESS)
+    if (rst != ACUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT begin_batch reclaim_err st=%d\n",(int)rst); fflush(_f); fclose(_f);} } }
         return rst;
+    }
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     if (s->free_cmd_count > 0) {
         cmd = s->free_cmds[--s->free_cmd_count];
@@ -115,5 +119,6 @@ acuda_status_t stream_begin_batch(acuda_context_t ctx,
     s->bind_layout = VK_NULL_HANDLE;
     s->bind_set_count = 0;
     s->bind_push_bytes = 0;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT begin_batch out st=0 cmd=%p\n",(void*)cmd); fflush(_f); fclose(_f);} } }
     return ACUDA_SUCCESS;
 }

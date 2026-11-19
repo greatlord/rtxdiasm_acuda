@@ -67,6 +67,7 @@ static acuda_status_t record_event(VkCommandBuffer cmd, void *user) {
 
 acuda_status_t acuda_event_record(acuda_context_t ctx, acuda_event_t event,
                                   acuda_stream_t stream) {
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_event_record in ev=%p st=%p\n",(void*)event,(void*)stream); fflush(_f); fclose(_f);} } }
     if (!ctx || !event)
         return ACUDA_ERROR_INVALID_HANDLE;
     acuda_stream_t s = NULL;
@@ -76,13 +77,17 @@ acuda_status_t acuda_event_record(acuda_context_t ctx, acuda_event_t event,
     uint64_t val = event->value + 1;
     st = acuda_stream_submit(ctx, s, record_event, event, &event->timeline,
                              &val, 1, NULL, 1);
-    if (st != ACUDA_SUCCESS)
+    if (st != ACUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_event_record out st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
         return st;
+    }
     event->value = val;
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_event_record out st=0 val=%llu\n",(unsigned long long)val); fflush(_f); fclose(_f);} } }
     return ACUDA_SUCCESS;
 }
 
 acuda_status_t acuda_event_synchronize(acuda_context_t ctx, acuda_event_t event) {
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_event_synchronize in ev=%p val=%llu\n",(void*)event,event?(unsigned long long)event->value:0ULL); fflush(_f); fclose(_f);} } }
     if (!ctx || !event)
         return ACUDA_ERROR_INVALID_HANDLE;
     if (event->value == 0)
@@ -94,7 +99,9 @@ acuda_status_t acuda_event_synchronize(acuda_context_t ctx, acuda_event_t event)
         .pValues = &event->value,
     };
     VkResult vr = vkWaitSemaphores(ctx->device, &wi, ACUDA_SYNC_TIMEOUT_NS);
-    return acuda_from_vk(vr);
+    acuda_status_t _st = acuda_from_vk(vr);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT acuda_event_synchronize out st=%d vr=%d\n",(int)_st,(int)vr); fflush(_f); fclose(_f);} } }
+    return _st;
 }
 
 acuda_status_t acuda_event_query(acuda_context_t ctx, acuda_event_t event) {
@@ -178,8 +185,10 @@ acuda_status_t acuda_stream_wait_event(acuda_context_t ctx, acuda_stream_t strea
             free(nv);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(ns, s->wait_sems, sizeof(*ns) * s->wait_count);
-        memcpy(nv, s->wait_vals, sizeof(*nv) * s->wait_count);
+        if (s->wait_count > 0) {
+            memcpy(ns, s->wait_sems, sizeof(*ns) * s->wait_count);
+            memcpy(nv, s->wait_vals, sizeof(*nv) * s->wait_count);
+        }
         free(s->wait_sems);
         free(s->wait_vals);
         s->wait_sems = ns;

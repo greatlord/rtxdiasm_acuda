@@ -373,6 +373,14 @@ acuda_status_t acuda_launch_raw(acuda_context_t ctx, acuda_kernel_t *kernel,
                                uint32_t dyn_shared_bytes,
                                acuda_stream_t stream);
 
+// Optional corruption canary hook (set by driver/dd9e98a4 in nvcuda builds).
+typedef int (*acuda_canary_hook_t)(const char *where);
+extern acuda_canary_hook_t acuda_runtime_canary_hook;
+static inline void acuda_runtime_canary_check(const char *where) {
+    if (acuda_runtime_canary_hook)
+        acuda_runtime_canary_hook(where);
+}
+
 // Raw launch with host virtual addresses for the user pointer bindings.
 // Used by the arena-backed driver so global pointer callback arguments
 // can be dereferenced by host callbacks.

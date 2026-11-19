@@ -5,6 +5,8 @@
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/time_compat.h"
 
+acuda_canary_hook_t acuda_runtime_canary_hook;
+
 acuda_status_t acuda_resolve_stream(acuda_context_t ctx, acuda_stream_t stream,
                                     acuda_stream_t *out) {
     if (!ctx || !out)

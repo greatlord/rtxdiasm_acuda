@@ -1,6 +1,7 @@
 ﻿#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/texture_image_internal.h"
 
@@ -193,8 +194,11 @@ static void image_barrier_layer(VkCommandBuffer cmd, acuda_buffer_t b,
 }
 
 acuda_status_t ms_fill(acuda_context_t ctx, acuda_buffer_t b) {
-    if (!b->is_ms)
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT ms_fill in b=%p ms=%d\n",(void*)b,b?b->is_ms:0); fflush(_f); fclose(_f);} } }
+    if (!b->is_ms) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT ms_fill out st=0 (noop)\n"); fflush(_f); fclose(_f);} } }
         return ACUDA_SUCCESS;
+    }
     VkFormat fmt = image_vkformat(b->format);
     uint32_t layers = b->layers ? b->layers : 1;
     VkSampleCountFlagBits sc = (VkSampleCountFlagBits)b->samples;
@@ -589,5 +593,6 @@ done_fill:
     if (rp) vkDestroyRenderPass(ctx->device, rp, NULL);
     vkDestroyShaderModule(ctx->device, vmod, NULL);
     vkDestroyShaderModule(ctx->device, fmod, NULL);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT ms_fill out st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
     return st;
 }

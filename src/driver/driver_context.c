@@ -120,19 +120,21 @@ CUresult ACUDA_CUDAAPI cuCtxGetCurrent(CUcontext *pctx) {
 
 CUresult ACUDA_CUDAAPI cuCtxSetCurrent(CUcontext ctx) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuCtxSetCurrent(%p)\n", (void *)ctx);
-    {
-        static FILE *_ctfp = NULL; static int _ctinit = 0; static long long _ctseq = 0;
-        if (!_ctinit) { _ctinit = 1; const char *_ctp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_ctp && _ctp[0]) _ctfp = fopen(_ctp, "a"); }
-        if (_ctfp) { fprintf(_ctfp, "%lld cuCtxSetCurrent 0 ctx=%p depth=%zu\n", _ctseq++, (void*)ctx, (size_t)g_depth); fflush(_ctfp); }
-    }
+    { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuCtxSetCurrent in ctx=%p depth=%zu\n",(void*)ctx,(size_t)g_depth); fflush(_f); fclose(_f);} } }
     acuda_dd9e98a4_check_ready_canary("cuCtxSetCurrent");
-    if (need_init() != CUDA_SUCCESS)
-        return CUDA_ERROR_NOT_INITIALIZED;
+    CUresult _ni = need_init();
+    if (_ni != CUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuCtxSetCurrent out r=%d (need_init)\n",(int)_ni); fflush(_f); fclose(_f);} } }
+        return _ni;
+    }
     if (!ctx) {
         g_depth = 0;
+        { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuCtxSetCurrent out r=0 (cleared)\n"); fflush(_f); fclose(_f);} } }
         return CUDA_SUCCESS;
     }
-    return ctx_push(ctx);
+    CUresult _r = ctx_push(ctx);
+    { const char *_tp = getenv("ACUDA_DRIVER_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"DRV cuCtxSetCurrent out r=%d depth=%zu\n",(int)_r,(size_t)g_depth); fflush(_f); fclose(_f);} } }
+    return _r;
 }
 
 CUresult ACUDA_CUDAAPI cuCtxGetDevice(CUdevice *device) {

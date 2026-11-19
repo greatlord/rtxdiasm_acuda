@@ -1,5 +1,7 @@
 #include "acuda/driver/driver_internal.h"
 
+int acuda_dd9e98a4_check_ready_canary(const char *where);
+
 /* Diagnostics: PhysX-era capability gates may key off total device memory
  * (the 32-bit default is 512 MiB; real cards of the era had 1+ GiB).
  * ACUDA_DEVICE_MEM_MB=<n> overrides the reported total without touching
@@ -17,14 +19,21 @@ unsigned long long acuda_device_mem_total(void) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize) {
-    return mem_alloc(dptr, bytesize);
+    acuda_dd9e98a4_check_ready_canary("cuMemAlloc_v2_in");
+    CUresult r = mem_alloc(dptr, bytesize);
+    acuda_dd9e98a4_check_ready_canary("cuMemAlloc_v2_out");
+    return r;
 }
 
 CUresult ACUDA_CUDAAPI cuMemAlloc(CUdeviceptr *dptr, size_t bytesize) {
-    return mem_alloc(dptr, bytesize);
+    acuda_dd9e98a4_check_ready_canary("cuMemAlloc_in");
+    CUresult r = mem_alloc(dptr, bytesize);
+    acuda_dd9e98a4_check_ready_canary("cuMemAlloc_out");
+    return r;
 }
 
 CUresult ACUDA_CUDAAPI cuMemFree_v2(CUdeviceptr dptr) {
+    acuda_dd9e98a4_check_ready_canary("cuMemFree_v2_in");
     CUcontext c = NULL;
     CUresult r = need_ctx(&c);
     (void)c;
@@ -38,6 +47,7 @@ CUresult ACUDA_CUDAAPI cuMemFree_v2(CUdeviceptr dptr) {
         return r;
     if (acuda_arena_free((uint64_t)dptr) != 0)
         return CUDA_ERROR_INVALID_VALUE;
+    acuda_dd9e98a4_check_ready_canary("cuMemFree_v2_out");
     return CUDA_SUCCESS;
 }
 

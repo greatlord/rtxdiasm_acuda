@@ -1,4 +1,5 @@
 ﻿#include <stdlib.h>
+#include <stdio.h>
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/context_internal.h"
 
@@ -8,6 +9,7 @@ acuda_status_t acuda_shutdown(acuda_context_t ctx) {
     // Stop the keep-busy thread first: it owns a live stream whose command
     // buffer must not be touched by the shutdown path on this thread.
     acuda_stop_high_perf(ctx);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT shutdown->flush_all\n"); fflush(_f); fclose(_f);} } }
     acuda_stream_flush_all(ctx);
     if (ctx->lock_buf)
         acuda_free(ctx, ctx->lock_buf);

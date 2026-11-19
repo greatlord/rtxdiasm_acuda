@@ -1,5 +1,6 @@
 ﻿#include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "acuda/memory.h"
 #include "acuda/runtime/internal.h"
 
@@ -139,11 +140,13 @@ acuda_status_t acuda_texture_create(acuda_context_t ctx,
     sd.normalized = desc->normalized ? 1u : 0u;
     st = acuda_sampler_create(ctx, &smp, &sd);
     if (st != ACUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_api.c:142\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, img);
         return st;
     }
     st = acuda_texture_create_image(ctx, &tex, img, smp);
     if (st != ACUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT before_free texture_api.c:147\n"); fflush(_f); fclose(_f);} } }
         acuda_free(ctx, img);
         acuda_free(ctx, smp);
         return st;

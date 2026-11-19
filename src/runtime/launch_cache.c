@@ -360,6 +360,10 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         return acuda_from_vk(vr);
 
     uint32_t full_ptrs = acuda_kernel_launch_ptr_params(k);
+    if (full_ptrs > ACUDA_MAX_PARAMS) {
+        cache_destroy_entry(ctx, e);
+        return ACUDA_ERROR_NOT_SUPPORTED;
+    }
     uint32_t nbind = full_ptrs + (info->surf_table ? 1u : 0u) +
                      (info->surf_lock ? 1u : 0u);
     VkDescriptorSetLayoutBinding *bindings = NULL;
@@ -410,6 +414,10 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     uint32_t max_slots = surf_max_slots(ctx, info->surf_table_count);
     uint32_t nsets = 1;
     if (info->surf_table && info->surf_table_count > 0) {
+        if (info->surf_table_count > ACUDA_SURF_TABLE_MAX_TYPES) {
+            cache_destroy_entry(ctx, e);
+            return ACUDA_ERROR_NOT_SUPPORTED;
+        }
         e->surf_dsl = calloc(info->surf_table_count, sizeof(*e->surf_dsl));
         if (!e->surf_dsl) {
             cache_destroy_entry(ctx, e);
@@ -577,7 +585,8 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             cache_destroy_entry(ctx, e);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
-        memcpy(nc, cache, sizeof(*nc) * cache_count);
+        if (cache_count > 0)
+            memcpy(nc, cache, sizeof(*nc) * cache_count);
         free(cache);
         cache = nc;
         cache_cap = ncap;
@@ -641,21 +650,24 @@ acuda_status_t record_launch(VkCommandBuffer cmd, void *user) {
         s->bind_set_count = 0;
         s->bind_push_bytes = 0;
     }
-    int same_sets = s && r->set_count == s->bind_set_count;
+    uint32_t rset_count = r->set_count;
+    if (rset_count > 1u + ACUDA_SURF_TABLE_MAX_TYPES)
+        rset_count = 1u + ACUDA_SURF_TABLE_MAX_TYPES;
+    int same_sets = s && rset_count == s->bind_set_count;
     if (same_sets) {
-        for (uint32_t i = 0; i < r->set_count; i++)
+        for (uint32_t i = 0; i < rset_count; i++)
             if (r->sets[i] != s->bind_sets[i]) {
                 same_sets = 0;
                 break;
             }
     }
-    if (!same_sets && r->set_count > 0) {
+    if (!same_sets && rset_count > 0) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, r->layout,
-                                0, r->set_count, r->sets, 0, NULL);
+                                0, rset_count, r->sets, 0, NULL);
         if (s) {
-            s->bind_set_count = r->set_count;
+            s->bind_set_count = rset_count;
             memcpy(s->bind_sets, r->sets,
-                   sizeof(VkDescriptorSet) * r->set_count);
+                   sizeof(VkDescriptorSet) * rset_count);
         }
     }
     int same_push = s && r->push_bytes == s->bind_push_bytes &&

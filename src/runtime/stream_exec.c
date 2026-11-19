@@ -7,6 +7,7 @@
 acuda_status_t acuda_stream_append(acuda_context_t ctx, acuda_stream_t stream,
                                    acuda_record_fn record, void *user,
                                    int serialize) {
+    acuda_runtime_canary_check("rt_stream_append_in");
     if (!ctx || !stream || !record)
         return ACUDA_ERROR_INVALID_HANDLE;
     if (stream->batch_cmd && stream->batch_count >= stream->batch_max) {
@@ -74,6 +75,7 @@ acuda_status_t acuda_stream_submit_cached(acuda_context_t ctx,
                                           acuda_stream_t stream,
                                           VkCommandBuffer cmd,
                                           uint64_t *out_value) {
+    acuda_runtime_canary_check("rt_stream_submit_cached_in");
     if (!ctx || !stream || !cmd)
         return ACUDA_ERROR_INVALID_HANDLE;
     acuda_stream_t s = NULL;
@@ -131,7 +133,7 @@ acuda_status_t acuda_stream_submit_cached(acuda_context_t ctx,
         .signalSemaphoreInfoCount = 1,
         .pSignalSemaphoreInfos = &sinfo,
     };
-    VkResult vr = vkQueueSubmit2(stream->queue ? stream->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
+    VkResult vr = vkQueueSubmit2(s->queue ? s->queue : ctx->queue, 1, &si, VK_NULL_HANDLE);
     free(winfos);
     s->wait_count = 0;
     if (vr != VK_SUCCESS)
@@ -148,15 +150,22 @@ acuda_status_t acuda_stream_maybe_flush(acuda_context_t ctx,
                                         acuda_stream_t stream) {
     if (!ctx || !stream)
         return ACUDA_ERROR_INVALID_HANDLE;
-    if (stream->batch_cmd && stream->batch_count >= stream->batch_max)
+    if (stream->batch_cmd && stream->batch_count >= stream->batch_max) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT maybe_flush ->flush s=%p\n",(void*)stream); fflush(_f); fclose(_f);} } }
         return stream_flush_impl(ctx, stream, NULL, NULL, 0, NULL);
+    }
     return ACUDA_SUCCESS;
 }
 
 acuda_status_t acuda_stream_flush(acuda_context_t ctx, acuda_stream_t stream) {
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT stream_flush in s=%p\n",(void*)stream); fflush(_f); fclose(_f);} } }
     acuda_stream_t s = NULL;
     acuda_status_t st = acuda_resolve_stream(ctx, stream, &s);
-    if (st != ACUDA_SUCCESS)
+    if (st != ACUDA_SUCCESS) {
+        { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT stream_flush out st=%d (resolve)\n",(int)st); fflush(_f); fclose(_f);} } }
         return st;
-    return stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
+    }
+    st = stream_flush_impl(ctx, s, NULL, NULL, 0, NULL);
+    { const char *_tp = getenv("ACUDA_RUNTIME_TRACE_FILE"); if (_tp && *_tp) { FILE *_f = fopen(_tp,"a"); if(_f){ fprintf(_f,"RT stream_flush out st=%d\n",(int)st); fflush(_f); fclose(_f);} } }
+    return st;
 }
