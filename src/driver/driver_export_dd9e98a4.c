@@ -135,8 +135,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_count(
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     r = cuDeviceGetCount((int *)count);
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 id=0x3 cudaGetDeviceCount -> %d (count=%d)\n",
                       (int)r, count ? *(int *)count : -1);
@@ -149,8 +147,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_attribute(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_attribute");
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuDeviceGetAttribute((int *)value, (int)(intptr_t)attr,
                                 (CUdevice)(intptr_t)device);
 }
@@ -162,8 +158,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuMemAlloc((CUdeviceptr *)devPtr, (size_t)size);
 }
 
@@ -177,8 +171,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
     if (!ptr)
         return CUDA_ERROR_INVALID_VALUE;
     *(void **)ptr = NULL;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     *(void **)ptr = malloc((size_t)size ? (size_t)size : 1);
     return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
 }
@@ -193,8 +185,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL set_device dev=%d\n", (int)(intptr_t)device);
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     r = cuDevicePrimaryCtxRetain(&ctx, (CUdevice)(intptr_t)device);
     if (r != CUDA_SUCCESS)
         return r;
@@ -210,8 +200,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device(
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!device)
         return CUDA_ERROR_INVALID_VALUE;
     r = cuCtxGetDevice(&d);
@@ -228,8 +216,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_properties(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_device_properties");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return acuda_query_device_properties((struct cudaDeviceProp *)prop,
                                          (int)(intptr_t)device);
 }
@@ -255,8 +241,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memset(
     ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memset(%p,%d,%zu)\n",
                       devPtr, (int)(intptr_t)value, (size_t)count);
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!devPtr)
         return CUDA_ERROR_INVALID_VALUE;
     if (!(size_t)count)
@@ -275,10 +259,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
     size_t bytes = (size_t)count;
     acuda_dd9e98a4_htrace("memcpy", dst, src, (long long)bytes, 0);
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("memcpy", dst, src, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     if ((!dst || !src) && bytes)
         return CUDA_ERROR_INVALID_VALUE;
     if (!bytes)
@@ -315,10 +295,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
     CUresult _r;
     acuda_dd9e98a4_htrace("memcpy_async", dst, src, (long long)bytes, 0);
     (void)stream; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("memcpy_async", dst, src, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     if ((!dst || !src) && bytes) { _r = CUDA_ERROR_INVALID_VALUE; goto out; }
     if (!bytes) { _r = CUDA_SUCCESS; goto out; }
     switch (copy_kind) {
@@ -348,8 +324,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free(
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL free ptr=%p\n", devPtr);
-    if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!devPtr)
         return CUDA_SUCCESS;
     return cuMemFree((CUdeviceptr)(uintptr_t)devPtr);
@@ -373,8 +347,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_reset(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_reset");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuCtxSynchronize();
 }
 
@@ -385,8 +357,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_synchronize(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_synchronize");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuCtxSynchronize();
 }
 
@@ -397,8 +367,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_create");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuEventCreate((CUevent *)event, 0);
 }
 
@@ -409,8 +377,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_create_with_flags(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_create_with_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!event)
         return CUDA_ERROR_INVALID_VALUE;
     return cuEventCreate((CUevent *)event, (unsigned int)(uintptr_t)flags);
@@ -424,10 +390,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_record(
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("evt_record", event, stream, 0, 0);
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("evt_record", event, stream, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     CUresult _r = cuEventRecord((CUevent)event, (CUstream)stream);
     acuda_dd9e98a4_htrace("evt_record", event, stream, (long long)_r, 1);
     return _r;
@@ -442,10 +404,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_synchronize(
     (void)unused_f; (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("evt_sync", event, NULL, 0, 0);
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL event_synchronize event=%p\n", event);
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("evt_sync", event, NULL, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     if (!event) {
         acuda_dd9e98a4_htrace("evt_sync", event, NULL, -1, 1);
         return CUDA_ERROR_INVALID_VALUE;
@@ -462,8 +420,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_query(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_query");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuEventQuery((CUevent)event);
 }
 
@@ -473,8 +429,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_elapsed_time(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_event_elapsed_time");
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuEventElapsedTime((float *)ms, (CUevent)start, (CUevent)end);
 }
 
@@ -486,8 +440,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_event_destroy(
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL event_destroy event=%p\n", event);
-    if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuEventDestroy((CUevent)event);
 }
 
@@ -687,10 +639,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
     unsigned i;
     (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("launch", func, stream, (long long)(size_t)sharedMem, 0);
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("launch", func, stream, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     acuda_dd9e98a4_check_ready_canary("api_launch_kernel");
     if (!func || !grid || !block) {
         acuda_dd9e98a4_htrace("launch", func, stream, -1, 1);
@@ -741,8 +689,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_choose_device(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_choose_device");
     (void)prop; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (device)
         *(int *)device = 0;
     return CUDA_SUCCESS;
@@ -793,8 +739,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_valid_devices(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_valid_devices");
     (void)device_arr; (void)len; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return CUDA_SUCCESS;
 }
 
@@ -805,8 +749,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device_flags(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_device_flags");
     (void)flags; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return CUDA_SUCCESS;
 }
 
@@ -817,8 +759,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_device_flags(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_device_flags");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (flags)
         *(unsigned int *)flags = 0;
     return CUDA_SUCCESS;
@@ -831,8 +771,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!pStream)
         return CUDA_ERROR_INVALID_VALUE;
     *(CUstream *)pStream = NULL;
@@ -846,8 +784,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_flags(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create_with_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!pStream)
         return CUDA_ERROR_INVALID_VALUE;
     *(CUstream *)pStream = NULL;
@@ -861,8 +797,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_create_with_priority(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_create_with_priority");
     (void)priority; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!pStream)
         return CUDA_ERROR_INVALID_VALUE;
     *(CUstream *)pStream = NULL;
@@ -876,8 +810,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_limit(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_limit");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!pValue)
         return CUDA_ERROR_INVALID_VALUE;
     *(size_t *)pValue = 0;
@@ -891,8 +823,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_limit(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_limit");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuCtxSetLimit((int)(intptr_t)limit, (size_t)(uintptr_t)value);
 }
 
@@ -903,8 +833,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_cache_config(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_cache_config");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (pCacheConfig)
         *(int *)pCacheConfig = 0;
     return CUDA_SUCCESS;
@@ -917,8 +845,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_cache_config(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_cache_config");
     (void)cacheConfig; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return CUDA_SUCCESS;
 }
 
@@ -929,8 +855,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_by_pci_bus_id(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_by_pci_bus_id");
     (void)pciBusId; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (device)
         *(int *)device = 0;
     return CUDA_SUCCESS;
@@ -944,8 +868,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_pci_bus_id(
     int n = (int)(intptr_t)len;
     (void)device; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (pciBusId && n > 0) {
         const char *id = "0000:00:00.0";
         int i = 0;
@@ -963,8 +885,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_stream_priority_rang
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_stream_priority_range");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (leastPriority)
         *(int *)leastPriority = 0;
     if (greatestPriority)
@@ -1013,8 +933,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_shared_mem_config(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_shared_mem_config");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (pConfig)
         *(int *)pConfig = 0;
     return CUDA_SUCCESS;
@@ -1027,8 +945,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_set_shared_mem_config");
     (void)config; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return CUDA_SUCCESS;
 }
 
@@ -1043,10 +959,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_synchronize(
     (void)unused_f; (void)unused_g; (void)unused_h;
     acuda_dd9e98a4_htrace("stream_sync", stream, NULL, 0, 0);
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL stream_synchronize stream=%p\n", stream);
-    if (!acuda_dd9e98a4_driver_ready()) {
-        acuda_dd9e98a4_htrace("stream_sync", stream, NULL, -999, 1);
-        return CUDA_ERROR_NOT_INITIALIZED;
-    }
     CUresult _r = cuStreamSynchronize((CUstream)stream);
     acuda_dd9e98a4_htrace("stream_sync", stream, NULL, (long long)_r, 1);
     return _r;
@@ -1059,8 +971,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_query(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_query");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return cuStreamQuery((CUstream)stream);
 }
 
@@ -1072,8 +982,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_destroy(
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL stream_destroy stream=%p\n", stream);
-    if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!stream)
         return CUDA_SUCCESS;
     return cuStreamDestroy_v2((CUstream)stream);
@@ -1086,8 +994,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_priority(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_priority");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!priority)
         return CUDA_ERROR_INVALID_VALUE;
     *(int *)priority = 0;
@@ -1101,8 +1007,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_flags(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_flags");
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!flags)
         return CUDA_ERROR_INVALID_VALUE;
     *(unsigned int *)flags = 0;
@@ -1156,8 +1060,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_get_device(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_get_device");
     (void)stream; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     if (!device)
         return CUDA_ERROR_INVALID_VALUE;
     *(int *)device = 0;
@@ -1313,8 +1215,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_init_device(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_init_device");
     (void)device; (void)deviceFlags; (void)flags;
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-if (!acuda_dd9e98a4_driver_ready())
-        return CUDA_ERROR_NOT_INITIALIZED;
     return CUDA_SUCCESS;
 }
 
