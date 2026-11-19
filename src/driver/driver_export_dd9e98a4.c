@@ -24,6 +24,9 @@ extern CUresult ACUDA_CUDAAPI cuInit(unsigned int flags);
  * expects the driver interface to be usable right away, so bring up the
  * primary context before serving interface requests. */
 extern int g_init;
+extern acuda_context_t g_actx;
+static unsigned g_dd9e98a4_nfatbins;
+static unsigned g_dd9e98a4_nkernels;
 static struct {
     unsigned int canary1;
     int state; /* 0 unknown, 1 ok, -1 failed */
@@ -89,33 +92,36 @@ static int acuda_dd9e98a4_driver_ready(void) {
             g_dd9e98a4_ready.ever_ready = 1;
             return 1;
         }
-        /* If driver core is already initialized, dd9e98a4 state was likely
-         * reset/corrupted; avoid re-running implicit init (which can
-         * trigger expensive/dangerous reinit paths). */
-        if (g_init) {
+        /* If driver core is already initialized (or runtime context still
+         * exists), dd9e98a4 state was likely reset/corrupted; avoid
+         * re-running implicit init (which can trigger dangerous reinit). */
+        if (g_init || g_actx) {
 #if defined(_MSC_VER)
             void *_ra = _ReturnAddress();
 #else
             void *_ra = __builtin_return_address(0);
 #endif
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but g_init=1, recovering caller=%p\n",
-                    _ra);
+            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 but g_init=%d g_actx=%p, recovering caller=%p\n",
+                    g_init, g_actx, _ra);
             fflush(stderr);
             g_dd9e98a4_ready.state = 1;
             g_dd9e98a4_ready.ever_ready = 1;
             g_dd9e98a4_was_ready = 1;
+            /* g_init may also have been corrupted; best-effort restore. */
+            if (!g_init && g_actx)
+                g_init = 1;
             return 1;
         }
 #if defined(_MSC_VER)
         {
             void *_ra = _ReturnAddress();
-            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
-                    g_dd9e98a4_ready.ever_ready, _ra);
+            fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d g_init=%d caller=%p\n",
+                    g_dd9e98a4_ready.ever_ready, g_init, _ra);
             fflush(stderr);
         }
 #else
-        fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d caller=%p\n",
-                g_dd9e98a4_ready.ever_ready, __builtin_return_address(0));
+        fprintf(stderr, "ACuda-debug: dd9e98a4_driver_ready state==0 ever=%d g_init=%d caller=%p\n",
+                g_dd9e98a4_ready.ever_ready, g_init, __builtin_return_address(0));
         fflush(stderr);
 #endif
         CUresult r = cuInit(0);
@@ -125,8 +131,9 @@ static int acuda_dd9e98a4_driver_ready(void) {
             if (r == CUDA_SUCCESS)
                 r = cuCtxSetCurrent(ctx);
         }
-        ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 implicit init -> %d\n", (int)r);
-        if (getenv("ACUDA_TRACE")) fflush(stderr);
+        fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d (g_init=%d g_actx=%p fb=%u kern=%u)\n",
+                (int)r, g_init, g_actx, g_dd9e98a4_nfatbins, g_dd9e98a4_nkernels);
+        fflush(stderr);
         g_dd9e98a4_ready.state = (r == CUDA_SUCCESS) ? 1 : -1;
         if (g_dd9e98a4_ready.state == 1) {
             g_dd9e98a4_ready.ever_ready = 1;
@@ -479,9 +486,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(
 
 
 static acuda_dd9e98a4_fatbin g_dd9e98a4_fatbins[ACUDA_DD9E98A4_MAX_FATBINS];
-static unsigned g_dd9e98a4_nfatbins;
 static acuda_dd9e98a4_kernel g_dd9e98a4_kernels[ACUDA_DD9E98A4_MAX_FUNCS];
-static unsigned g_dd9e98a4_nkernels;
 
 /* id 0x1ee: __cudaRegisterFatBinary(void *fatCubin) -> handle */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(
