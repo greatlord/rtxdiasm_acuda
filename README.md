@@ -347,7 +347,7 @@ These variables allow developers to modify ACuda behavior without changing appli
 | `ACUDA_COOPMAT` | Enable cooperative matrix functionality. |
 | `ACUDA_NO_COOPMAT` | Disable cooperative matrix functionality. |
 | `ACUDA_HIGH_PERF` | Enable the high-performance execution path. |
-| `ACUDA_FMA` | FMA selection: `0` = auto (probe when Vulkan shader-FMA capability exists, use hardware only if probes pass, otherwise portable/software), `1` = prefer hardware when capability exists (skip probe-fail fallback; fall back to software if capability absent), `2` = always software/portable. Default: `0`. |
+| `ACUDA_FMA_MODE` | FMA selection: `0` = auto (probe when Vulkan shader-FMA capability exists, use hardware only if probes pass, otherwise portable/software), `1` = prefer hardware when capability exists (skip probe-fail fallback; fall back to software if capability absent), `2` = always software/portable. Default: `0`. |
 | `ACUDA_NO_SURF_ALIAS` | Disable surface aliasing. |
 | `ACUDA_NO_HOST_HEAP` | Disable the host heap path. |
 | `ACUDA_PTX_NO_ATOMIC_F32_ADD` | Disable PTX floating-point 32-bit atomic addition support. |

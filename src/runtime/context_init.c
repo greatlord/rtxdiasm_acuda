@@ -626,7 +626,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     int fma_cap_f64 = fma64_ok;
     int fma_mode = 0; /* 0=auto (probe), 1=prefer hardware, 2=always software */
     {
-        const char *fm = getenv("ACUDA_FMA");
+        const char *fm = getenv("ACUDA_FMA_MODE");
         if (fm && *fm) {
             if (strcmp(fm, "1") == 0) fma_mode = 1;
             else if (strcmp(fm, "2") == 0) fma_mode = 2;
@@ -917,7 +917,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     acuda_warmup_gpu(ctx);
     // Optional sustained keep-busy (opt-in via ACUDA_HIGH_PERF=1).
     acuda_start_high_perf(ctx);
-    /* ACUDA_FMA: 0=auto (probe when capability exists), 1=prefer hardware
+    /* ACUDA_FMA_MODE: 0=auto (probe when capability exists), 1=prefer hardware
      * when capability exists (skip probes), 2=always software. */
     int fma_probe_off = (fma_mode != 0);
     int had_fma = fma_ok;
