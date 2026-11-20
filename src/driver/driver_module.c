@@ -783,6 +783,8 @@ int cubin_backend(void) {
     return 0;
 }
 
+static char *relax_lifted_sass_ptx(char *ptx);
+
 CUresult load_sass_image(CUmodule *module, const unsigned char *data,
                                 size_t size) {
     if (!module)
@@ -814,6 +816,7 @@ CUresult load_sass_image(CUmodule *module, const unsigned char *data,
             fprintf(stderr, "ACuda: %s\n", err);
         return CUDA_ERROR_INVALID_IMAGE;
     }
+    ptx = relax_lifted_sass_ptx(ptx);
     CUmodule m = NULL;
     CUresult r = cuModuleLoadData(&m, ptx);
     free(ptx);
@@ -830,6 +833,7 @@ CUresult load_sass_image(CUmodule *module, const unsigned char *data,
     *module = m;
     return CUDA_SUCCESS;
 }
+
 
 
 
@@ -858,6 +862,45 @@ static char *replace_text(const char *src, const char *from,
     }
     strcpy(d, p);
     return out;
+}
+
+static char *relax_lifted_sass_ptx(char *ptx) {
+    char *t;
+    if (!ptx) return NULL;
+    t = replace_text(ptx, "fence.sc.sys;", ""); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "fence.acq_rel.sys;", ""); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "fence.acquire.sys;", ""); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "fence.release.sys;", ""); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.b32", "ld.global.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.b64", "ld.global.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.u32", "ld.global.u32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.u64", "ld.global.u64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.s32", "ld.global.s32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.sys.s64", "ld.global.s64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.gpu.b32", "ld.global.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "ld.acquire.gpu.b64", "ld.global.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.release.sys.b32", "st.global.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.release.sys.b64", "st.global.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.release.sys.u32", "st.global.u32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.release.sys.u64", "st.global.u64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.relaxed.sys.b32", "st.global.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "st.relaxed.sys.b64", "st.global.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.acquire.sys.b32", "atom.global.cas.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.acquire.sys.b64", "atom.global.cas.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.acq_rel.sys.b32", "atom.global.cas.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.acq_rel.sys.b64", "atom.global.cas.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.release.sys.b32", "atom.global.cas.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.release.sys.b64", "atom.global.cas.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.relaxed.sys.b32", "atom.global.cas.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.cas.relaxed.sys.b64", "atom.global.cas.b64"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.exch.acquire.sys.b32", "atom.global.exch.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.exch.release.sys.b32", "atom.global.exch.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.exch.acq_rel.sys.b32", "atom.global.exch.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.exch.relaxed.sys.b32", "atom.global.exch.b32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.add.acquire.sys.u32", "atom.global.add.u32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.add.release.sys.u32", "atom.global.add.u32"); if (t) { free(ptx); ptx = t; }
+    t = replace_text(ptx, "atom.add.relaxed.sys.u32", "atom.global.add.u32"); if (t) { free(ptx); ptx = t; }
+    return ptx;
 }
 
 #if defined(_WIN32)
@@ -1141,7 +1184,9 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
                 return CUDA_ERROR_OUT_OF_MEMORY;
             }
             compileName = shortName;
-            /* Lifted SASS/PTX from rtxdisam: keep normal symbol/codegen handling. */
+            /* Lifted SASS/PTX from rtxdisam: relax strong memory ordering/fences
+             * that can hang Vulkan pipeline compilation for atomic CAS kernels. */
+            renamed = relax_lifted_sass_ptx(renamed);
             cst = acuda_compile_ptx(renamed, compileName, &k, err,
                                     sizeof(err), acuda_context_get_compiler_caps(g_actx));
             free(renamed);
