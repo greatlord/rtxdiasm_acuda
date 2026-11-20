@@ -174,8 +174,8 @@ CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
     (void)numOptions;
     (void)options;
     (void)optionValues;
-    if (getenv("ACUDA_TRACE") && image)
-        fprintf(stderr, "acuda-trace .. cuModuleLoadDataEx magic=%08x\n",
+    if (image)
+        ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleLoadDataEx magic=%08x\n",
                 rd32le((const unsigned char *)image));
     if (!module)
         return CUDA_ERROR_INVALID_VALUE;
@@ -1123,8 +1123,8 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
 #endif
                 }
                 ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): ptx compile cst=%d err=%s\n", name, (int)cst, err[0]?err:"(none)");
-            } else if (getenv("ACUDA_TRACE")) {
-                fprintf(stderr, "acuda-trace .. cuModuleGetFunction(%s): skip 32-bit ptx compile (module parse OOMed)\n", name);
+            } else {
+                ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): skip 32-bit ptx compile (module parse OOMed)\n", name);
             }
 #if defined(_WIN32)
             if (cst != ACUDA_SUCCESS && sizeof(void *) <= 4) {

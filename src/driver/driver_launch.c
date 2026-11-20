@@ -231,7 +231,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
         GetCurrentThreadStackLimits(&low, &high);
         stackleft = (unsigned)((high - (ULONG_PTR)&low) / 1024u);
 #endif
-        fprintf(stderr, "acuda-launch-info %s params=%u ptr=%u bda=%u "
+        ACUDA_DEBUG_PRINT("acuda-launch-info %s params=%u ptr=%u bda=%u "
                 "grid=%u,%u,%u block=%u,%u,%u shm=%u kparams=%p extra=%p "
                 "stackleft=%uk\n",
                 info->entry, info->num_params, info->num_ptr_params, info->bda,

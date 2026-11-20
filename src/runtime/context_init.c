@@ -51,7 +51,7 @@ typedef struct VkPhysicalDeviceShaderFmaFeaturesKHR {
 
 acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     if (getenv("ACUDA_TRACE")) {
-        fprintf(stderr, "ACuda-debug: acuda_init(out=%p)\n", (void *)out_ctx);
+        ACUDA_DEBUG_PRINT("ACuda-debug: acuda_init(out=%p)\n", (void *)out_ctx);
         fflush(stderr);
     }
     if (!out_ctx)

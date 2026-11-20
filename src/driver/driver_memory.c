@@ -200,12 +200,10 @@ CUresult mem_alloc(CUdeviceptr *dptr, size_t bytesize) {
         return CUDA_ERROR_OUT_OF_MEMORY;
     }
     *dptr = (CUdeviceptr)virt;
-    if (getenv("ACUDA_TRACE")) {
-        fprintf(stderr, "acuda-trace .. cuMemAlloc(%zu) -> 0x%llx\n", bytesize, (unsigned long long)virt);
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemAlloc(%zu) -> 0x%llx\n", bytesize, (unsigned long long)virt);
 #if defined(_WIN32) && !defined(_WIN64)
-        acuda_trace_va("cuMemAlloc");
+    acuda_trace_va("cuMemAlloc");
 #endif
-    }
     return CUDA_SUCCESS;
 }
 

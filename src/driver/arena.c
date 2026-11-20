@@ -145,23 +145,21 @@ static int commit_arena(int idx) {
         VkDeviceMemory mem = VK_NULL_HANDLE;
         VkResult ar = vkAllocateMemory(g_ctx->device, &mai, NULL, &mem);
         if (ar != VK_SUCCESS) {
-            if (getenv("ACUDA_TRACE"))
-                fprintf(stderr,
-                        "acuda-arena commit[%d] vkAllocateMemory failed "
-                        "size=%llu type=%u r=%d\n",
-                        idx, (unsigned long long)req.size,
-                        (unsigned)g_ctx->mem_type, (int)ar);
+            ACUDA_DEBUG_PRINT(
+                    "acuda-arena commit[%d] vkAllocateMemory failed "
+                    "size=%llu type=%u r=%d\n",
+                    idx, (unsigned long long)req.size,
+                    (unsigned)g_ctx->mem_type, (int)ar);
             try_size >>= 1;
             continue;
         }
         void *mapped = NULL;
         VkResult mr = vkMapMemory(g_ctx->device, mem, 0, req.size, 0, &mapped);
         if (mr != VK_SUCCESS) {
-            if (getenv("ACUDA_TRACE"))
-                fprintf(stderr,
-                        "acuda-arena commit[%d] vkMapMemory failed "
-                        "size=%llu r=%d\n",
-                        idx, (unsigned long long)req.size, (int)mr);
+            ACUDA_DEBUG_PRINT(
+                    "acuda-arena commit[%d] vkMapMemory failed "
+                    "size=%llu r=%d\n",
+                    idx, (unsigned long long)req.size, (int)mr);
             vkFreeMemory(g_ctx->device, mem, NULL);
             try_size >>= 1;
             continue;
@@ -169,12 +167,11 @@ static int commit_arena(int idx) {
         g_arenas[idx].mem = mem;
         g_arenas[idx].mapped = mapped;
         g_arenas[idx].committed = 1;
-        if (getenv("ACUDA_TRACE"))
-            fprintf(stderr,
-                    "acuda-arena commit[%d] mapped=%p size=%llu %s\n",
-                    idx, mapped, (unsigned long long)req.size,
-                    ((uintptr_t)mapped >= (uintptr_t)0x80000000u)
-                        ? "(above 2GiB)" : "(below 2GiB)");
+        ACUDA_DEBUG_PRINT(
+                "acuda-arena commit[%d] mapped=%p size=%llu %s\n",
+                idx, mapped, (unsigned long long)req.size,
+                ((uintptr_t)mapped >= (uintptr_t)0x80000000u)
+                    ? "(above 2GiB)" : "(below 2GiB)");
         g_spans[idx] = malloc(sizeof(span_t));
         if (!g_spans[idx]) {
             vkUnmapMemory(g_ctx->device, mem);
@@ -186,8 +183,8 @@ static int commit_arena(int idx) {
         g_spans[idx][0].size = req.size;
         g_nspans[idx] = 1;
         g_span_cap[idx] = 1;
-        if (getenv("ACUDA_TRACE") && req.size != arena_vsize(idx))
-            fprintf(stderr,
+        if (req.size != arena_vsize(idx))
+            ACUDA_DEBUG_PRINT(
                     "acuda-arena commit[%d] shrank to %llu bytes\n",
                     idx, (unsigned long long)req.size);
         return 0;
@@ -253,7 +250,7 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out) {
             };
             VkBuffer buf = VK_NULL_HANDLE;
             if (vkCreateBuffer(g_ctx->device, &bci, NULL, &buf) != VK_SUCCESS) {
-                if (getenv("ACUDA_TRACE")) fprintf(stderr, "acuda-arena vkCreateBuffer failed size=%zu\n", size);
+                ACUDA_DEBUG_PRINT("acuda-arena vkCreateBuffer failed size=%zu\n", size);
                 return -1;
             }
             VkMemoryRequirements req;
@@ -266,7 +263,7 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out) {
             }
             if (vkBindBufferMemory(g_ctx->device, buf, g_arenas[i].mem,
                                    aligned) != VK_SUCCESS) {
-                if (getenv("ACUDA_TRACE")) fprintf(stderr, "acuda-arena vkBindBufferMemory failed\n");
+                ACUDA_DEBUG_PRINT("acuda-arena vkBindBufferMemory failed\n");
                 vkDestroyBuffer(g_ctx->device, buf, NULL);
                 return -1;
             }

@@ -180,8 +180,8 @@ static void *acuda_host_heap_find_high(size_t reserve, int above_2gb) {
             g_host_base = (unsigned char *)VirtualAlloc(high, reserve,
                                                         MEM_RESERVE,
                                                         PAGE_NOACCESS);
-            if (g_host_base && getenv("ACUDA_TRACE"))
-                fprintf(stderr,
+            if (g_host_base)
+                ACUDA_DEBUG_PRINT(
                         "acuda-trace .. host_heap reserve %zu above 2GiB at %p\n",
                         reserve, (void *)g_host_base);
         }

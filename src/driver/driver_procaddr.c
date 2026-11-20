@@ -358,8 +358,8 @@ static CUresult proc_address(const char *symbol, void **pfn, int cudaVersion) {
         }
     }
     CUresult r = lookup_symbol(symbol, pfn);
-    if (r != CUDA_SUCCESS && getenv("ACUDA_TRACE"))
-        fprintf(stderr, "acuda-trace ?? cuGetProcAddress(%s) -> NOT_FOUND\n",
+    if (r != CUDA_SUCCESS)
+        ACUDA_DEBUG_PRINT("acuda-trace ?? cuGetProcAddress(%s) -> NOT_FOUND\n",
                 symbol);
     return r;
 }

@@ -130,7 +130,7 @@ int probe_shader_fma64(acuda_context_t ctx) {
 // same small packed-f16 FMA kernel both ways and keep the faster path.
 int probe_f16_native(acuda_context_t ctx) {
     if (getenv("ACUDA_TRACE")) {
-        fprintf(stderr, "ACuda-debug: probe_f16_native(ctx=%p)\n", (void *)ctx);
+        ACUDA_DEBUG_PRINT("ACuda-debug: probe_f16_native(ctx=%p)\n", (void *)ctx);
         fflush(stderr);
     }
     static const char ptx[] =
