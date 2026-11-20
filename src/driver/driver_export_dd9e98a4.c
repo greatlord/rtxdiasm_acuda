@@ -1613,6 +1613,42 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_unregister_async_notific
 }
 
 
+/* id 0x93: cudaStreamWaitEvent(cudaStream_t stream, cudaEvent_t event,
+ *                              unsigned int flags) (dd9e98a4 runtime interface) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_wait_event(
+        void *stream, void *event, void *flags, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_wait_event");
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!event)
+        return CUDA_ERROR_INVALID_VALUE;
+    return cuStreamWaitEvent((CUstream)stream, (CUevent)event,
+                             (unsigned int)(uintptr_t)flags);
+}
+
+/* id 0xc5: cudaStreamAddCallback(cudaStream_t stream, cudaStreamCallback_t cb,
+ *                                void *userData, unsigned int flags)
+ * (dd9e98a4 runtime interface). Synchronous backend: drain stream, invoke. */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_add_callback(
+        void *stream, void *callback, void *userData, void *flags,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_add_callback");
+    (void)flags; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!acuda_dd9e98a4_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
+    if (!callback)
+        return CUDA_ERROR_INVALID_VALUE;
+    {
+        CUresult r = cuStreamSynchronize((CUstream)stream);
+        if (r != CUDA_SUCCESS)
+            return r;
+    }
+    ((void (*)(void *, int, void *))callback)(stream, (int)CUDA_SUCCESS, userData);
+    return CUDA_SUCCESS;
+}
+
 static void *acuda_dd9e98a4_get_id(unsigned int id) {
     switch (id) {
     /* 0x03-0x31: Device selection, errors, memory management */
@@ -1679,7 +1715,11 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0xd1: return (void *)&acuda_dd9e98a4_api_get_error_string;
     case 0xd4: return (void *)&acuda_dd9e98a4_api_get_device_flags;
 
-    /* 0xED–0xF2: Per-thread stream/event APIs */
+    /* Stream wait/callback (dd9e98a4 runtime interface, CUDA 13.x). */
+    case 0x93: return (void *)&acuda_dd9e98a4_api_stream_wait_event;
+    case 0xc5: return (void *)&acuda_dd9e98a4_api_stream_add_callback;
+
+    /* 0xED-0xF2: Per-thread stream/event APIs */
     case 0xed: return (void *)&acuda_dd9e98a4_api_stream_get_priority_ptsz;
     case 0xee: return (void *)&acuda_dd9e98a4_api_stream_get_flags_ptsz;
     case 0xef: return (void *)&acuda_dd9e98a4_api_stream_synchronize_ptsz;
