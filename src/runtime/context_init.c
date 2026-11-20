@@ -83,7 +83,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "acuda",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
-        .apiVersion = VK_API_VERSION_1_4,
+        .apiVersion = VK_API_VERSION_1_3,
     };
     const char *layer = ACUDA_VALIDATION_LAYER;
     const char *ext = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
@@ -249,12 +249,31 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
             ctx->props = p;
             query_pci_info(ctx->phys, &ctx->pci_domain, &ctx->pci_bus,
                            &ctx->pci_device, &ctx->pci_function);
+            /* GPU clock reporting: prefer ADL2 (AMD, Windows) when available,
+             * then fall back to hwinfo for any still-missing values. */
+#if defined(_WIN32)
+            if (ctx->props.vendorID == 0x1002) {
+                int adl_core = 0, adl_mem = 0;
+                if (acuda_query_adl_gpu_clock_khz(ctx->pci_domain, ctx->pci_bus,
+                                                  ctx->pci_device, ctx->pci_function,
+                                                  &adl_core, &adl_mem)) {
+                    if (adl_core > 0)
+                        ctx->core_clock_khz = adl_core;
+                    if (adl_mem > 0)
+                        ctx->mem_clock_khz = adl_mem;
+                }
+            }
+#endif
 #ifdef ACUDA_USE_HWINFO
-            {
-                extern int acuda_query_real_gpu_clock_khz(uint32_t, uint32_t, uint32_t, uint32_t, int *, int *);
+            if (ctx->core_clock_khz <= 0 || ctx->mem_clock_khz <= 0) {
+                int hw_core = 0, hw_mem = 0;
                 (void)acuda_query_real_gpu_clock_khz(ctx->pci_domain, ctx->pci_bus,
                                                      ctx->pci_device, ctx->pci_function,
-                                                     &ctx->core_clock_khz, &ctx->mem_clock_khz);
+                                                     &hw_core, &hw_mem);
+                if (ctx->core_clock_khz <= 0 && hw_core > 0)
+                    ctx->core_clock_khz = hw_core;
+                if (ctx->mem_clock_khz <= 0 && hw_mem > 0)
+                    ctx->mem_clock_khz = hw_mem;
             }
 #endif
             found = 1;
@@ -263,7 +282,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     }
     if (!found) {
         fprintf(stderr,
-                "ACuda: no Vulkan 1.4 compute device with maintenance4 + "
+                "ACuda: no Vulkan 1.3 compute device with maintenance4 + "
                 "synchronization2 support found\n");
         free(ctx->devices);
         free(ctx->device_original);

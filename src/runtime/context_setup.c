@@ -236,7 +236,7 @@ int device_is_dozen(VkPhysicalDevice dev) {
 int has_vk13_core(VkPhysicalDevice dev) {
     VkPhysicalDeviceProperties p;
     vkGetPhysicalDeviceProperties(dev, &p);
-    if (p.apiVersion < VK_API_VERSION_1_4)
+    if (p.apiVersion < VK_API_VERSION_1_3)
         return 0;
     VkPhysicalDeviceVulkan13Features f;
     query_vk13(dev, &f);

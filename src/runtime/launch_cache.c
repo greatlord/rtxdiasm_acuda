@@ -320,16 +320,15 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     uint32_t *patched_words = NULL;
     const uint32_t *shader_words = words;
     if (!ctx->maintenance4_ok ||
-        ctx->props.apiVersion < VK_API_VERSION_1_4) {
+        ctx->props.apiVersion < VK_API_VERSION_1_3) {
         patched_words = malloc(nwords * sizeof(uint32_t));
         if (!patched_words) {
             cache_destroy_entry(ctx, e);
             return ACUDA_ERROR_OUT_OF_MEMORY;
         }
         memcpy(patched_words, words, nwords * sizeof(uint32_t));
-        // SPIR-V 1.6 is only legal for Vulkan 1.4+ semantics. Pre-1.4
-        // devices accept SPIR-V 1.4 compatibility.
-        if (ctx->props.apiVersion < VK_API_VERSION_1_4 && nwords > 1)
+        // Vulkan 1.3+ supports SPIR-V 1.6; downgrade for older devices.
+        if (ctx->props.apiVersion < VK_API_VERSION_1_3 && nwords > 1)
             patched_words[1] = 0x00010400u;
         for (size_t i = 5; i + 5 < nwords;) {
             uint32_t wc = patched_words[i] >> 16;
@@ -526,7 +525,7 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
                                  ? (uint32_t)ctx->subgroup_size
                                  : 1u);
     if (ctx->full_subgroups_ok && block_dim_x % esg == 0 &&
-        ctx->props.apiVersion >= VK_API_VERSION_1_4)
+        ctx->props.apiVersion >= VK_API_VERSION_1_3)
         stage.flags |=
             VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
     // Specialize the workgroup-size spec constants (0, 1, 2) so any

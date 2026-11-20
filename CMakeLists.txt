@@ -66,6 +66,10 @@ if(ACUDA_USE_HWINFO)
 else()
   set(ACUDA_GPU_CLOCK_SOURCE)
 endif()
+# AMD ADL2 clock query (Windows, runtime-loaded atiadlxx.dll) with hwinfo fallback.
+if(WIN32)
+  list(APPEND ACUDA_GPU_CLOCK_SOURCE src/runtime/gpu_clock_adl.c)
+endif()
 
 # --- Runtime library (internal foundation used by driver/consumers) ---
 add_library(acuda_runtime STATIC
@@ -112,6 +116,9 @@ if(ACUDA_USE_HWINFO AND TARGET lfreist-hwinfo::gpu)
   target_link_libraries(acuda_runtime PRIVATE lfreist-hwinfo::gpu)
 elseif(ACUDA_USE_HWINFO)
   target_compile_definitions(acuda_runtime PRIVATE ACUDA_USE_HWINFO=1)
+endif()
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/display-library/include/adl_sdk.h")
+  target_include_directories(acuda_runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/display-library/include")
 endif()
 target_compile_options(acuda_runtime PRIVATE ${ACUDA_WARNINGS})
 set_target_properties(acuda_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
