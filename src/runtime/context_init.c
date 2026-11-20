@@ -6,6 +6,7 @@
 #include "acuda/context.h"
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/context_internal.h"
+#include "gpu_clock.h"
 #include "acuda/runtime/time_compat.h"
 #if defined(_WIN32)
 #include <windows.h>
@@ -248,6 +249,14 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
             ctx->props = p;
             query_pci_info(ctx->phys, &ctx->pci_domain, &ctx->pci_bus,
                            &ctx->pci_device, &ctx->pci_function);
+#ifdef ACUDA_USE_HWINFO
+            {
+                extern int acuda_query_real_gpu_clock_khz(uint32_t, uint32_t, uint32_t, uint32_t, int *, int *);
+                (void)acuda_query_real_gpu_clock_khz(ctx->pci_domain, ctx->pci_bus,
+                                                     ctx->pci_device, ctx->pci_function,
+                                                     &ctx->core_clock_khz, &ctx->mem_clock_khz);
+            }
+#endif
             found = 1;
             break;
         }

@@ -269,7 +269,12 @@ CUresult ACUDA_CUDAAPI cuDeviceGetProperties(CUdevprop *prop, CUdevice dev) {
     prop->SIMDWidth = 32;
     prop->memPitch = 2147483647;
     prop->regsPerBlock = 65536;
-    prop->clockRate = 1290000;
+    {
+        int clock = 1290000;
+        if (g_actx && g_actx->core_clock_khz > 0)
+            clock = g_actx->core_clock_khz;
+        prop->clockRate = clock;
+    }
     prop->textureAlign = 512;
     return CUDA_SUCCESS;
 }
@@ -483,12 +488,20 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
     case CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT:
         *value = 40; // RTX 3070 laptop GPU
         return CUDA_SUCCESS;
-    case CU_DEVICE_ATTRIBUTE_CLOCK_RATE:
-        *value = 1290000; // kHz
+    case CU_DEVICE_ATTRIBUTE_CLOCK_RATE: {
+        int clock = 1290000; // kHz fallback
+        if (g_actx && g_actx->core_clock_khz > 0)
+            clock = g_actx->core_clock_khz;
+        *value = clock;
         return CUDA_SUCCESS;
-    case CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE:
-        *value = 6001000; // kHz
+    }
+    case CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE: {
+        int clock = 6001000; // kHz fallback
+        if (g_actx && g_actx->mem_clock_khz > 0)
+            clock = g_actx->mem_clock_khz;
+        *value = clock;
         return CUDA_SUCCESS;
+    }
     case CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH:
         *value = 256; // TODO per-device
         return CUDA_SUCCESS;

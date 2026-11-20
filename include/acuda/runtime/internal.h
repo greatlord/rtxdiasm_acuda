@@ -182,6 +182,8 @@ struct acuda_context_impl {
     uint32_t pci_bus;
     uint32_t pci_device;
     uint32_t pci_function;
+    int core_clock_khz; // real graphics/core clock in kHz, 0 if unknown
+    int mem_clock_khz;  // real memory clock in kHz, 0 if unknown
     VkDevice device;
     VkQueue queue;
     VkQueue user_queues[ACUDA_MAX_USER_QUEUES];

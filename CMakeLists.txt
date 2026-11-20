@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(rtxdiasm_acuda LANGUAGES C)
+project(rtxdiasm_acuda LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # rtxdiasm_acuda: ACuda CUDA Driver API (libcuda/nvcuda) + internal runtime foundation.
 # Outputs (as requested):
@@ -10,6 +13,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 #   Windows: nvcuda.dll
 
 option(ACUDA_BUILD_TESTS "Build ACuda tests/examples (normally built by integrating project)" OFF)
+option(ACUDA_USE_HWINFO "Use hwinfo for real GPU clock queries" ON)
 
 if(NOT CMAKE_BUILD_TYPE)
   # When built standalone, allow defaulting; integrating builds may enforce.
@@ -34,6 +38,33 @@ if(WIN32)
   set(ACUDA_TRACE_SOURCE_INTERNAL)
 else()
   set(ACUDA_TRACE_SOURCE_INTERNAL src/driver/trace.c)
+endif()
+
+# --- hwinfo (real GPU clock, NVML/Level Zero/OpenCL/sysfs backends loaded at runtime) ---
+if(ACUDA_USE_HWINFO)
+  set(HWINFO_STATIC ON CACHE BOOL "Build hwinfo as static library" FORCE)
+  set(HWINFO_SHARED OFF CACHE BOOL "Do not build hwinfo shared library" FORCE)
+  set(BUILD_EXAMPLES OFF CACHE BOOL "Disable hwinfo examples" FORCE)
+  set(BUILD_TESTING OFF CACHE BOOL "Disable hwinfo tests" FORCE)
+  set(HWINFO_OS OFF CACHE BOOL "" FORCE)
+  set(HWINFO_COMPUTER OFF CACHE BOOL "" FORCE)
+  set(HWINFO_MAINBOARD OFF CACHE BOOL "" FORCE)
+  set(HWINFO_CPU OFF CACHE BOOL "" FORCE)
+  set(HWINFO_DISK OFF CACHE BOOL "" FORCE)
+  set(HWINFO_RAM OFF CACHE BOOL "" FORCE)
+  set(HWINFO_GPU ON CACHE BOOL "" FORCE)
+  set(HWINFO_GPU_BACKENDS ON CACHE BOOL "" FORCE)
+  set(HWINFO_BATTERY OFF CACHE BOOL "" FORCE)
+  set(HWINFO_NETWORK OFF CACHE BOOL "" FORCE)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/hwinfo/CMakeLists.txt")
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/hwinfo" "${CMAKE_CURRENT_BINARY_DIR}/hwinfo" EXCLUDE_FROM_ALL)
+  else()
+    message(FATAL_ERROR "ACUDA_USE_HWINFO is ON but external/hwinfo is missing")
+  endif()
+  set(ACUDA_GPU_CLOCK_SOURCE src/runtime/gpu_clock_hwinfo.cpp)
+else()
+  set(ACUDA_GPU_CLOCK_SOURCE)
 endif()
 
 # --- Runtime library (internal foundation used by driver/consumers) ---
@@ -66,6 +97,7 @@ add_library(acuda_runtime STATIC
   src/runtime/launch_cache.c
   src/runtime/hostcall.c
   src/runtime/barrier.c
+  ${ACUDA_GPU_CLOCK_SOURCE}
 )
 target_include_directories(acuda_runtime
   PUBLIC
@@ -75,6 +107,12 @@ target_include_directories(acuda_runtime
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
 target_link_libraries(acuda_runtime PRIVATE Vulkan::Vulkan)
+if(ACUDA_USE_HWINFO AND TARGET lfreist-hwinfo::gpu)
+  target_compile_definitions(acuda_runtime PRIVATE ACUDA_USE_HWINFO=1)
+  target_link_libraries(acuda_runtime PRIVATE lfreist-hwinfo::gpu)
+elseif(ACUDA_USE_HWINFO)
+  target_compile_definitions(acuda_runtime PRIVATE ACUDA_USE_HWINFO=1)
+endif()
 target_compile_options(acuda_runtime PRIVATE ${ACUDA_WARNINGS})
 set_target_properties(acuda_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
