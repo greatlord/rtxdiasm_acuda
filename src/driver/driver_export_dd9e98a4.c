@@ -1901,53 +1901,73 @@ int acuda_export_table_is_dd9e98a4(const struct CUuuid_st *id) {
            b[12] == 0xb7 && b[13] == 0xb4 && b[14] == 0x32 && b[15] == 0xb5;
 }
 
+static const void *g_dd9e98a4_export_tbl[64];
+#if defined(_WIN32)
+static INIT_ONCE g_dd9e98a4_export_tbl_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK acuda_dd9e98a4_init_export_tbl_once(
+        PINIT_ONCE InitOnce, PVOID Parameter, PVOID *Context) {
+    (void)InitOnce; (void)Parameter; (void)Context;
+#else
+static int g_dd9e98a4_export_tbl_inited = 0;
+static void acuda_dd9e98a4_init_export_tbl(void) {
+    if (g_dd9e98a4_export_tbl_inited)
+        return;
+#endif
+    /* Layout mirrored from NVIDIA nvcuda.dll probe (first 32 entries) */
+    g_dd9e98a4_export_tbl[0]  = (const void *)(uintptr_t)0x18;
+    g_dd9e98a4_export_tbl[1]  = (const void *)&acuda_dd9e98a4_slot01;
+    g_dd9e98a4_export_tbl[2]  = (const void *)&acuda_dd9e98a4_slot02;
+    g_dd9e98a4_export_tbl[3]  = (const void *)0;
+    g_dd9e98a4_export_tbl[4]  = (const void *)(uintptr_t)0x1;
+    g_dd9e98a4_export_tbl[5]  = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
+    g_dd9e98a4_export_tbl[6]  = (const void *)(uintptr_t)0x781ef6113590168cULL;
+    g_dd9e98a4_export_tbl[7]  = (const void *)(uintptr_t)0xffffffffffffffffULL;
+    g_dd9e98a4_export_tbl[8]  = (const void *)(uintptr_t)0xffffffffULL;
+    g_dd9e98a4_export_tbl[9]  = (const void *)(uintptr_t)0x18;
+    g_dd9e98a4_export_tbl[10] = (const void *)&acuda_dd9e98a4_slot10;
+    g_dd9e98a4_export_tbl[11] = (const void *)&acuda_dd9e98a4_slot11;
+    g_dd9e98a4_export_tbl[12] = (const void *)0;
+    g_dd9e98a4_export_tbl[13] = (const void *)(uintptr_t)0x1;
+    g_dd9e98a4_export_tbl[14] = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
+    g_dd9e98a4_export_tbl[15] = (const void *)(uintptr_t)0x781ef6113590168cULL;
+    g_dd9e98a4_export_tbl[16] = (const void *)(uintptr_t)0xffffffffffffffffULL;
+    g_dd9e98a4_export_tbl[17] = (const void *)(uintptr_t)0xffffffffULL;
+    g_dd9e98a4_export_tbl[18] = (const void *)(uintptr_t)0x28;
+    g_dd9e98a4_export_tbl[19] = (const void *)&acuda_dd9e98a4_slot19;
+    g_dd9e98a4_export_tbl[20] = (const void *)&acuda_dd9e98a4_slot20;
+    g_dd9e98a4_export_tbl[21] = (const void *)&acuda_dd9e98a4_slot21;
+    g_dd9e98a4_export_tbl[22] = (const void *)&acuda_dd9e98a4_slot22;
+    g_dd9e98a4_export_tbl[23] = (const void *)0;
+    g_dd9e98a4_export_tbl[24] = (const void *)(uintptr_t)0x1;
+    g_dd9e98a4_export_tbl[25] = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
+    g_dd9e98a4_export_tbl[26] = (const void *)(uintptr_t)0x781ef6113590168cULL;
+    g_dd9e98a4_export_tbl[27] = (const void *)(uintptr_t)0xffffffffffffffffULL;
+    g_dd9e98a4_export_tbl[28] = (const void *)(uintptr_t)0xffffffffffffffffULL;
+    g_dd9e98a4_export_tbl[29] = (const void *)(uintptr_t)0xffffffffULL;
+    g_dd9e98a4_export_tbl[30] = (const void *)(uintptr_t)0x68;
+    g_dd9e98a4_export_tbl[31] = (const void *)&acuda_dd9e98a4_slot31;
+    for (int i = 32; i < 64; i++)
+        g_dd9e98a4_export_tbl[i] = (const void *)0;
+#if defined(_WIN32)
+    return TRUE;
+#else
+    g_dd9e98a4_export_tbl_inited = 1;
+#endif
+}
+
 CUresult acuda_export_table_get_dd9e98a4(const void **ppExportTable) {
-    static const void *tbl[64];
-    static int inited = 0;
     if (getenv("ACUDA_DD9E98A4_FALLBACK")) {
         ACUDA_DEBUG_PRINT("ACuda-debug: cuGetExportTable -> forcing NOT_SUPPORTED (fallback experiment)\n");
         return CUDA_ERROR_NOT_SUPPORTED;
     }
-    if (!inited) {
-        /* Layout mirrored from NVIDIA nvcuda.dll probe (first 32 entries) */
-        tbl[0]  = (const void *)(uintptr_t)0x18;
-        tbl[1]  = (const void *)&acuda_dd9e98a4_slot01;
-        tbl[2]  = (const void *)&acuda_dd9e98a4_slot02;
-        tbl[3]  = (const void *)0;
-        tbl[4]  = (const void *)(uintptr_t)0x1;
-        tbl[5]  = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
-        tbl[6]  = (const void *)(uintptr_t)0x781ef6113590168cULL;
-        tbl[7]  = (const void *)(uintptr_t)0xffffffffffffffffULL;
-        tbl[8]  = (const void *)(uintptr_t)0xffffffffULL;
-        tbl[9]  = (const void *)(uintptr_t)0x18;
-        tbl[10] = (const void *)&acuda_dd9e98a4_slot10;
-        tbl[11] = (const void *)&acuda_dd9e98a4_slot11;
-        tbl[12] = (const void *)0;
-        tbl[13] = (const void *)(uintptr_t)0x1;
-        tbl[14] = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
-        tbl[15] = (const void *)(uintptr_t)0x781ef6113590168cULL;
-        tbl[16] = (const void *)(uintptr_t)0xffffffffffffffffULL;
-        tbl[17] = (const void *)(uintptr_t)0xffffffffULL;
-        tbl[18] = (const void *)(uintptr_t)0x28;
-        tbl[19] = (const void *)&acuda_dd9e98a4_slot19;
-        tbl[20] = (const void *)&acuda_dd9e98a4_slot20;
-        tbl[21] = (const void *)&acuda_dd9e98a4_slot21;
-        tbl[22] = (const void *)&acuda_dd9e98a4_slot22;
-        tbl[23] = (const void *)0;
-        tbl[24] = (const void *)(uintptr_t)0x1;
-        tbl[25] = (const void *)(uintptr_t)0xe943fb0113fafa73ULL;
-        tbl[26] = (const void *)(uintptr_t)0x781ef6113590168cULL;
-        tbl[27] = (const void *)(uintptr_t)0xffffffffffffffffULL;
-        tbl[28] = (const void *)(uintptr_t)0xffffffffffffffffULL;
-        tbl[29] = (const void *)(uintptr_t)0xffffffffULL;
-        tbl[30] = (const void *)(uintptr_t)0x68;
-        tbl[31] = (const void *)&acuda_dd9e98a4_slot31;
-        for (int i = 32; i < 64; i++)
-            tbl[i] = (const void *)0;
-        inited = 1;
-    }
+#if defined(_WIN32)
+    InitOnceExecuteOnce(&g_dd9e98a4_export_tbl_once,
+                        acuda_dd9e98a4_init_export_tbl_once, NULL, NULL);
+#else
+    acuda_dd9e98a4_init_export_tbl();
+#endif
     if (ppExportTable)
-        *ppExportTable = (const void *)tbl;
+        *ppExportTable = (const void *)g_dd9e98a4_export_tbl;
     ACUDA_DEBUG_PRINT("ACuda-debug: cuGetExportTable -> SUCCESS (acuda_infoocial_cudart_interface_dd9e98a4 traced table) table=%p\n",
                       ppExportTable ? *ppExportTable : NULL);
     return CUDA_SUCCESS;
