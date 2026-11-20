@@ -737,19 +737,33 @@ static void acuda_dd9e98a4_htrace(const char *name, const void *a, const void *b
     static FILE *fp = NULL;
     static int init = 0;
     static long long seq = 0;
+#if defined(_WIN32)
+    static SRWLOCK lock = SRWLOCK_INIT;
+    AcquireSRWLockExclusive(&lock);
+#endif
     if (!init) {
         const char *p = getenv("ACUDA_DD9E98A4_HANDLER_TRACE_FILE");
         init = 1;
         if (p && p[0])
             fp = fopen(p, "w");
     }
-    if (!fp)
+    if (!fp) {
+#if defined(_WIN32)
+        ReleaseSRWLockExclusive(&lock);
+#endif
         return;
-    fprintf(fp, "%lld %s %d %p %p %lld st=%d g=%d a=%p\n",
-            seq++, name ? name : "?", phase, a, b, v,
-            acuda_dd9e98a4_ready_state(), g_init, g_actx);
-    if ((seq & 0x3f) == 0)
-        fflush(fp);
+    }
+    {
+        long long cur = seq++;
+        fprintf(fp, "%lld %s %d %p %p %lld st=%d g=%d a=%p\n",
+                cur, name ? name : "?", phase, a, b, v,
+                acuda_dd9e98a4_ready_state(), g_init, g_actx);
+        if ((cur & 0x3f) == 0x3f)
+            fflush(fp);
+    }
+#if defined(_WIN32)
+    ReleaseSRWLockExclusive(&lock);
+#endif
 }
 
 /* id 0x1f8: __cudaGetKernel(void **kernel, const void *func) */
@@ -1799,7 +1813,11 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
     static int n = 0;
     static FILE *trace_fp = NULL;
     static int trace_fp_init = 0;
+#if defined(_WIN32)
+    static SRWLOCK trace_lock = SRWLOCK_INIT;
+#endif
     unsigned int id = 0xFFFFFFFFu, sub = 0;
+    int cur_n;
     if (request) {
         const unsigned char *p = (const unsigned char *)request;
         id = (unsigned int)p[8] | ((unsigned int)p[9] << 8) |
@@ -1807,13 +1825,17 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         sub = (unsigned int)p[12] | ((unsigned int)p[13] << 8) |
               ((unsigned int)p[14] << 16) | ((unsigned int)p[15] << 24);
     }
-    if (n < 80) {
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&trace_lock);
+#endif
+    cur_n = n;
+    if (cur_n < 80) {
         ACUDA_DEBUG_PRINT(
                 "ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x sub=%u a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n",
-                n, id, sub, request, arg_b, arg_c, arg_d, arg_e, arg_f, arg_g,
+                cur_n, id, sub, request, arg_b, arg_c, arg_d, arg_e, arg_f, arg_g,
                 arg_h);
-    } else if (n == 80) {
-        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch ... (%d calls so far)\n", n);
+    } else if (cur_n == 80) {
+        ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch ... (%d calls so far)\n", cur_n);
     }
     if (!trace_fp_init) {
         trace_fp_init = 1;
@@ -1822,21 +1844,24 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
             trace_fp = fopen(tp, "w");
     }
     if (trace_fp) {
-        fprintf(trace_fp, "%d 0x%x %u\n", n, id, sub);
-        if ((n % 64) == 0)
+        fprintf(trace_fp, "%d 0x%x %u\n", cur_n, id, sub);
+        if ((cur_n % 64) == 0)
             fflush(trace_fp);
     }
     /* Catch corruption between dispatches (canonical ready state is g_init). */
     if (!g_init && g_dd9e98a4_was_ready) {
         ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4_dispatch[%d] id=0x%x saw not-ready (was=%d g_init=%d g_actx=%p)\n",
-                          n, id, g_dd9e98a4_was_ready, g_init, g_actx);
+                          cur_n, id, g_dd9e98a4_was_ready, g_init, g_actx);
         if (trace_fp) {
             fprintf(trace_fp, "!CORRUPT %d 0x%x was=%d g_init=%d\n",
-                    n, id, g_dd9e98a4_was_ready, g_init);
+                    cur_n, id, g_dd9e98a4_was_ready, g_init);
             fflush(trace_fp);
         }
     }
-    n++;
+    n = cur_n + 1;
+#if defined(_WIN32)
+    ReleaseSRWLockExclusive(&trace_lock);
+#endif
     (void)arg_f;
     return acuda_dd9e98a4_get_id(id);
 }
