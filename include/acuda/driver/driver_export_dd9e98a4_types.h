@@ -11,6 +11,7 @@ typedef struct {
 
 #define ACUDA_DD9E98A4_MAX_FATBINS 8
 #define ACUDA_DD9E98A4_MAX_FUNCS 256
+#define ACUDA_DD9E98A4_MAX_VARS 256
 
 typedef struct {
     const void *blob;
@@ -30,6 +31,17 @@ typedef struct {
     size_t shared;
     void *stream;
 } acuda_dd9e98a4_launch_config;
+
+typedef struct {
+    void *fatbin_handle; /* 1-based index as returned by register_fat_binary */
+    void *host_var;
+    const char *device_name;
+    void *device_address; /* host-side symbol address, if provided */
+    size_t size;
+    int constant;
+    int global;
+    int ext;
+} acuda_dd9e98a4_var;
 
 #if defined(_MSC_VER)
 #define ACUDA_DD9E98A4_TLS __declspec(thread)

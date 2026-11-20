@@ -2,7 +2,10 @@
 #include "acuda/driver/driver_export_dd9e98a4_types.h"
 #include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_stub.h"
+#include "acuda/driver.h"
 #include "acuda/runtime_api.h"
+
+extern CUresult ACUDA_CUDAAPI cuModuleGetGlobal_v2(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod, const char *name);
 
 #include <stdint.h>
 #include <stdio.h>
@@ -486,6 +489,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_profiler_noop(
 
 static acuda_dd9e98a4_fatbin g_dd9e98a4_fatbins[ACUDA_DD9E98A4_MAX_FATBINS];
 static acuda_dd9e98a4_kernel g_dd9e98a4_kernels[ACUDA_DD9E98A4_MAX_FUNCS];
+static acuda_dd9e98a4_var g_dd9e98a4_vars[ACUDA_DD9E98A4_MAX_VARS];
+static unsigned g_dd9e98a4_nvars;
 
 /* id 0x1ee: __cudaRegisterFatBinary(void *fatCubin) -> handle */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary(
@@ -522,6 +527,181 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_fat_binary_end(
     (void)fatCubinHandle; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return CUDA_SUCCESS;
+}
+
+static acuda_dd9e98a4_fatbin *acuda_dd9e98a4_fatbin_from_handle(void *fatCubinHandle) {
+    unsigned idx = (unsigned)(uintptr_t)fatCubinHandle;
+    if (idx < 1 || idx > g_dd9e98a4_nfatbins)
+        return NULL;
+    return &g_dd9e98a4_fatbins[idx - 1];
+}
+
+static CUresult acuda_dd9e98a4_ensure_fatbin_module(acuda_dd9e98a4_fatbin *fb) {
+    if (!fb)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (fb->state == 0) {
+        CUresult r = cuModuleLoadFatBinary(&fb->module, fb->blob);
+        fb->state = (r == CUDA_SUCCESS) ? 1 : -1;
+        ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 module load -> %d\n", (int)r);
+        return r;
+    }
+    return (fb->state == 1) ? CUDA_SUCCESS : CUDA_ERROR_INVALID_IMAGE;
+}
+
+static acuda_dd9e98a4_var *acuda_dd9e98a4_find_var(const void *host_var) {
+    unsigned i;
+    if (!host_var)
+        return NULL;
+    for (i = 0; i < g_dd9e98a4_nvars; i++) {
+        if (g_dd9e98a4_vars[i].host_var == host_var)
+            return &g_dd9e98a4_vars[i];
+    }
+    return NULL;
+}
+
+static CUresult acuda_dd9e98a4_resolve_symbol_ptr(const void *symbol,
+                                                  CUdeviceptr *out_dptr,
+                                                  size_t *out_bytes) {
+    acuda_dd9e98a4_var *v = acuda_dd9e98a4_find_var(symbol);
+    acuda_dd9e98a4_fatbin *fb;
+    CUresult r;
+    size_t i;
+    if (out_dptr) *out_dptr = 0;
+    if (out_bytes) *out_bytes = 0;
+    if (!v)
+        return CUDA_ERROR_NOT_FOUND;
+    fb = acuda_dd9e98a4_fatbin_from_handle(v->fatbin_handle);
+    r = acuda_dd9e98a4_ensure_fatbin_module(fb);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (!fb->module || !v->device_name)
+        return CUDA_ERROR_NOT_FOUND;
+    for (i = 0; i < fb->module->nglobals; i++) {
+        if (strcmp(fb->module->globals[i].name, v->device_name) == 0) {
+            if (out_dptr) *out_dptr = fb->module->globals[i].dptr;
+            if (out_bytes) *out_bytes = fb->module->globals[i].bytes;
+            return CUDA_SUCCESS;
+        }
+    }
+    /* Fallback to driver global lookup (may lazily allocate known names). */
+    return cuModuleGetGlobal_v2(out_dptr, out_bytes, fb->module, v->device_name);
+}
+
+/* id 0x1f1: __cudaRegisterVar(fatCubinHandle, hostVar, deviceAddress, deviceName, ext, size, constant, global) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_register_var(
+        void *fatCubinHandle, void *hostVar, void *deviceAddress, void *deviceName,
+        void *ext, void *size, void *constant, void *global) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_register_var");
+    acuda_dd9e98a4_var *v;
+    unsigned i;
+    if (!fatCubinHandle || !hostVar || !deviceName)
+        return CUDA_ERROR_INVALID_VALUE;
+    for (i = 0; i < g_dd9e98a4_nvars; i++) {
+        if (g_dd9e98a4_vars[i].host_var == hostVar) {
+            v = &g_dd9e98a4_vars[i];
+            goto update;
+        }
+    }
+    if (g_dd9e98a4_nvars >= ACUDA_DD9E98A4_MAX_VARS)
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    v = &g_dd9e98a4_vars[g_dd9e98a4_nvars++];
+    memset(v, 0, sizeof(*v));
+update:
+    v->fatbin_handle = fatCubinHandle;
+    v->host_var = hostVar;
+    v->device_address = deviceAddress;
+    v->device_name = (const char *)deviceName;
+    v->ext = (int)(intptr_t)ext;
+    v->size = (size_t)(uintptr_t)size;
+    v->constant = (int)(intptr_t)constant;
+    v->global = (int)(intptr_t)global;
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 register var %p name=%s size=%zu const=%d global=%d\n",
+                      hostVar, v->device_name ? v->device_name : "(null)", v->size, v->constant, v->global);
+    return CUDA_SUCCESS;
+}
+
+/* id 0x27: cudaMemcpyToSymbol(symbol, src, count, offset, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_to_symbol(
+        void *symbol, void *src, void *count, void *offset,
+        void *kind, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy_to_symbol");
+    CUdeviceptr dptr = 0;
+    size_t sym_bytes = 0, n = (size_t)(uintptr_t)count, off = (size_t)(uintptr_t)offset;
+    int k = (int)(intptr_t)kind;
+    CUresult r;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!symbol)
+        return CUDA_ERROR_INVALID_VALUE;
+    r = acuda_dd9e98a4_resolve_symbol_ptr(symbol, &dptr, &sym_bytes);
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memcpy_to_symbol sym=%p dptr=0x%llx sym=%zu count=%zu off=%zu kind=%d r=%d\n",
+                      symbol, (unsigned long long)dptr, sym_bytes, n, off, k, (int)r);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (off > sym_bytes || n > sym_bytes - off)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (n == 0)
+        return CUDA_SUCCESS;
+    switch (k) {
+    case 0: /* HostToHost (unlikely) */
+        if (!src) return CUDA_ERROR_INVALID_VALUE;
+        memcpy((void *)(uintptr_t)(dptr + off), src, n);
+        return CUDA_SUCCESS;
+    case 1: /* HostToDevice */
+    case 4: /* Default */
+        if (!src) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyHtoD_v2(dptr + (CUdeviceptr)off, src, n);
+    case 2: /* DeviceToHost */
+        if (!src) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyDtoH_v2(src, dptr + (CUdeviceptr)off, n);
+    case 3: /* DeviceToDevice */
+        if (!src) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyDtoD_v2(dptr + (CUdeviceptr)off, (CUdeviceptr)(uintptr_t)src, n);
+    default:
+        if (!src) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyHtoD_v2(dptr + (CUdeviceptr)off, src, n);
+    }
+}
+
+/* id 0x28: cudaMemcpyFromSymbol(dst, symbol, count, offset, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_from_symbol(
+        void *dst, void *symbol, void *count, void *offset,
+        void *kind, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy_from_symbol");
+    CUdeviceptr dptr = 0;
+    size_t sym_bytes = 0, n = (size_t)(uintptr_t)count, off = (size_t)(uintptr_t)offset;
+    int k = (int)(intptr_t)kind;
+    CUresult r;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!symbol)
+        return CUDA_ERROR_INVALID_VALUE;
+    r = acuda_dd9e98a4_resolve_symbol_ptr(symbol, &dptr, &sym_bytes);
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memcpy_from_symbol sym=%p dptr=0x%llx sym=%zu count=%zu off=%zu kind=%d r=%d\n",
+                      symbol, (unsigned long long)dptr, sym_bytes, n, off, k, (int)r);
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (off > sym_bytes || n > sym_bytes - off)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (n == 0)
+        return CUDA_SUCCESS;
+    switch (k) {
+    case 0: /* HostToHost */
+        if (!dst) return CUDA_ERROR_INVALID_VALUE;
+        memcpy(dst, (void *)(uintptr_t)(dptr + off), n);
+        return CUDA_SUCCESS;
+    case 1: /* HostToDevice */
+        if (!dst) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyHtoD_v2(dptr + (CUdeviceptr)off, dst, n);
+    case 2: /* DeviceToHost */
+    case 4: /* Default */
+        if (!dst) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyDtoH_v2(dst, dptr + (CUdeviceptr)off, n);
+    case 3: /* DeviceToDevice */
+        if (!dst) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst, dptr + (CUdeviceptr)off, n);
+    default:
+        if (!dst) return CUDA_ERROR_INVALID_VALUE;
+        return cuMemcpyDtoH_v2(dst, dptr + (CUdeviceptr)off, n);
+    }
 }
 
 /* id 0x1f3: __cudaRegisterFunction(fatCubinHandle, hostFun, deviceFun,
@@ -1451,6 +1631,8 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0x1a: return (void *)&acuda_dd9e98a4_api_free_host;
     case 0x1b: return (void *)&acuda_dd9e98a4_api_host_alloc;
     case 0x1f: return (void *)&acuda_dd9e98a4_api_memcpy;
+    case 0x27: return (void *)&acuda_dd9e98a4_api_memcpy_to_symbol;
+    case 0x28: return (void *)&acuda_dd9e98a4_api_memcpy_from_symbol;
     case 0x29: return (void *)&acuda_dd9e98a4_api_memcpy_async;
     case 0x31: return (void *)&acuda_dd9e98a4_api_memset;
 
@@ -1554,6 +1736,7 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     /* 0x1EE–0x1F9: Runtime registration and kernel launching */
     case 0x1ee: return (void *)&acuda_dd9e98a4_api_register_fat_binary;
     case 0x1ef: return (void *)&acuda_dd9e98a4_api_register_fat_binary_end;
+    case 0x1f1: return (void *)&acuda_dd9e98a4_api_register_var;
     case 0x1f3: return (void *)&acuda_dd9e98a4_api_register_function;
     case 0x1f6: return (void *)&acuda_dd9e98a4_api_push_config;
     case 0x1f7: return (void *)&acuda_dd9e98a4_api_pop_config;

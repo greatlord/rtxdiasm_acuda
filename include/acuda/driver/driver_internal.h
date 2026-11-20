@@ -69,6 +69,7 @@ struct CUmod_st {
     unsigned char *image;
     size_t image_size;
     int ptx_oom;
+    int ptx_is_lifted;
     struct { char name[ACUDA_ENTRY_NAME_MAX]; acuda_kernel_t *k; } *funcs;
     size_t nfuncs, fcap;
     struct CUtexref_st **texrefs;

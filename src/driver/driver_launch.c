@@ -463,6 +463,40 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             bi++;
             continue;
         }
+        if (info->hidden_symbol[i]) {
+            CUdeviceptr dp = 0;
+            size_t bytes = 0;
+            for (size_t gi = 0; gi < f->mod->nglobals; gi++) {
+                if (strcmp(f->mod->globals[gi].name, info->hidden_symbol_name[i]) == 0) {
+                    dp = f->mod->globals[gi].dptr;
+                    bytes = f->mod->globals[gi].bytes;
+                    break;
+                }
+            }
+            if (dp == 0 || bytes == 0) {
+                release_param_buffers(owned, ACUDA_MAX_PARAMS);
+                free(vkb); free(offs); free(ranges); free(hostbufs); free(texh); free(words);
+                { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_NOT_FOUND, __LINE__); return CUDA_ERROR_NOT_FOUND; }
+            }
+            if (bind_for(dp, bytes, &vkb[bi], &offs[bi]) != CUDA_SUCCESS ||
+                acuda_arena_host((uint64_t)dp, bytes, &hostbufs[bi]) != 0) {
+                release_param_buffers(owned, ACUDA_MAX_PARAMS);
+                free(vkb); free(offs); free(ranges); free(hostbufs); free(texh); free(words);
+                { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_INVALID_VALUE, __LINE__); return CUDA_ERROR_INVALID_VALUE; }
+            }
+            ranges[bi] = bytes;
+            if (getenv("ACUDA_DEBUG_SYMBOLS") || getenv("ACUDA_DEBUG_BDA_PUSH")) {
+                VkBufferDeviceAddressInfo _bdai = {0};
+                _bdai.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+                _bdai.buffer = vkb[bi];
+                VkDeviceAddress _bda = vkGetBufferDeviceAddress(g_actx->device, &_bdai);
+                fprintf(stderr, "ACuda: hidden symbol bind param=%u bi=%u name=%s dp=0x%llx bytes=%zu vkb=%p off=%zu bda=0x%llx\n",
+                        i, bi, info->hidden_symbol_name[i], (unsigned long long)dp, bytes,
+                        (void *)(uintptr_t)vkb[bi], offs[bi], (unsigned long long)(_bda + (VkDeviceAddress)offs[bi]));
+            }
+            bi++;
+            continue;
+        }
         if (pkind == 5) {
             // Next pointer word of the previous by-value argument,
             // not a separate host arg.

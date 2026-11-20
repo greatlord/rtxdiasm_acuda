@@ -822,6 +822,9 @@ CUresult load_sass_image(CUmodule *module, const unsigned char *data,
     free(ptx);
     if (r != CUDA_SUCCESS)
         return r;
+    /* Lifted SASS/PTX: module->ptx is compiler-generated from SASS, so
+     * module-scope symbol handling must stay in normal codegen paths. */
+    m->ptx_is_lifted = 1;
     // Keep the original image: a fatbin may contain several single-entry
     // cubins, so a later cuModuleGetFunction(name) may need to lift another
     // member even though the entry-less lift selected the first one.
@@ -1089,11 +1092,12 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
         } else {
             if (!module->ptx_oom) {
                 ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): trying ptx compile\n", name);
-                /* Enable runtime-backed module symbol handling only for modules
-                 * compiled from original PTX (no attached SASS/lifted image).
-                 * SASS-lifted PTX may contain parsed .global/.const definitions
-                 * that must use normal compiler codegen, not hidden BDA params. */
-                int module_symbols = (module->image == NULL || module->image_size == 0);
+                /* Enable runtime-backed module symbol handling for original PTX
+                 * module compiles. Fatbin-loaded modules may carry an attached
+                 * original image for SASS fallback while still compiling from
+                 * original PTX text; SASS-lifted PTX modules must keep normal
+                 * compiler codegen for parsed .global/.const definitions. */
+                int module_symbols = !module->ptx_is_lifted;
                 const char *old_modsyms = NULL;
                 char old_modsyms_buf[8];
                 if (module_symbols) {
