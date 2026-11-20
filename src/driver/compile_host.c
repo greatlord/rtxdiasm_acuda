@@ -62,7 +62,8 @@ static void usage(const char *argv0) {
         "\nCapabilities (all explicit; defaults match acuda_compiler_caps_init):\n"
         "  shader_fma shader_fma_f64 soft_fma f16_native coopmat_f16 coopmat_bf16\n"
         "  mixed_fdot dot_product dot_signed dot_unsigned dot_mixed zero_init_wg\n"
-        "  ssbo8 ssbo16 fc32 fc64 vmm bda atomic_float int64_image surf_alias_ok\n",
+        "  ssbo8 ssbo16 fc32 fc64 vmm bda atomic_float int64_image surf_alias_ok\n"
+        "  shader_clock_device shader_clock_subgroup\n",
         argv0);
 }
 
@@ -88,6 +89,8 @@ static int apply_cap(acuda_compiler_caps_t *caps, const char *name, const char *
     if (strcmp(name, "bda") == 0) { if (!parse_long(val,&iv)) return 0; acuda_compiler_set_bda(caps,(int)iv); return 1; }
     if (strcmp(name, "atomic_float") == 0) { if (!parse_ulong(val,&uv)) return 0; acuda_compiler_set_atomic_float(caps,(unsigned)uv); return 1; }
     if (strcmp(name, "int64_image") == 0) { if (!parse_long(val,&iv)) return 0; acuda_compiler_set_int64_image(caps,(int)iv); return 1; }
+    if (strcmp(name, "shader_clock_device") == 0) { if (!parse_long(val,&iv)) return 0; caps->shader_clock_device = iv != 0; return 1; }
+    if (strcmp(name, "shader_clock_subgroup") == 0) { if (!parse_long(val,&iv)) return 0; caps->shader_clock_subgroup = iv != 0; return 1; }
     if (strcmp(name, "surf_alias_ok") == 0) { if (!parse_long(val,&iv)) return 0; acuda_compiler_set_surface_alias(caps,(int)iv); return 1; }
     return 0;
 }

@@ -41,6 +41,21 @@ typedef struct VkPhysicalDeviceShaderFmaFeaturesKHR {
 #define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR ((VkStructureType)1000579000)
 #endif
 
+#ifndef VK_KHR_SHADER_CLOCK_EXTENSION_NAME
+#define VK_KHR_SHADER_CLOCK_EXTENSION_NAME "VK_KHR_shader_clock"
+#endif
+#if !defined(VK_KHR_shader_clock)
+typedef struct VkPhysicalDeviceShaderClockFeaturesKHR {
+    VkStructureType sType;
+    void*           pNext;
+    VkBool32        shaderSubgroupClock;
+    VkBool32        shaderDeviceClock;
+} VkPhysicalDeviceShaderClockFeaturesKHR;
+#endif
+#ifndef VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR ((VkStructureType)1000181000)
+#endif
+
 
 // Some drivers expose VK_KHR_shader_fma but still algebraically
 // simplify fma(1, -a, a+b) to b (observed on RADV), which would make
@@ -299,9 +314,13 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT,
         .pNext = &i64imgq,
     };
+    VkPhysicalDeviceShaderClockFeaturesKHR clockq = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+        .pNext = &af2q,
+    };
     VkPhysicalDeviceShaderAtomicFloatFeaturesEXT afq = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
-        .pNext = &af2q,
+        .pNext = &clockq,
     };
 #if defined(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR)
     VkPhysicalDeviceShaderBfloat16FeaturesKHR bf16q = {
@@ -515,6 +534,20 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         int64_image_ok = 0;
     if (getenv("ACUDA_DEBUG_ATOMIC"))
         fprintf(stderr, "ACuda: image int64 atomics=%d\n", int64_image_ok);
+    int shader_clock_ext =
+        has_device_ext(ctx->phys, VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
+    int shader_clock_device_ok =
+        shader_clock_ext && clockq.shaderDeviceClock != VK_FALSE;
+    int shader_clock_subgroup_ok =
+        shader_clock_ext && clockq.shaderSubgroupClock != VK_FALSE;
+    if (getenv("ACUDA_NO_SHADER_CLOCK")) {
+        shader_clock_device_ok = 0;
+        shader_clock_subgroup_ok = 0;
+    }
+    if (getenv("ACUDA_DEBUG_CLOCK"))
+        fprintf(stderr, "ACuda: shader clock ext=%d device=%d subgroup=%d\n",
+                shader_clock_ext, shader_clock_device_ok,
+                shader_clock_subgroup_ok);
     ctx->desc_idx_ok =
         v12q.runtimeDescriptorArray &&
         v12q.shaderStorageImageArrayNonUniformIndexing &&
@@ -654,6 +687,9 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT i64imgen = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,
     };
+    VkPhysicalDeviceShaderClockFeaturesKHR clocken = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+    };
     // shaderIntegerDotProduct is optional in Vulkan 1.4. It only
     // selects the native dp4a lowering; the compiler keeps the exact
     // fallback when it is absent (or disabled by the env knob).
@@ -744,6 +780,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         i64imgen.pNext = chain;
         chain = &i64imgen;
     }
+    if (shader_clock_device_ok || shader_clock_subgroup_ok) {
+        clocken.shaderDeviceClock = shader_clock_device_ok ? VK_TRUE : VK_FALSE;
+        clocken.shaderSubgroupClock = shader_clock_subgroup_ok ? VK_TRUE : VK_FALSE;
+        clocken.pNext = chain;
+        chain = &clocken;
+    }
     // Request a second queue from the same family when ACUDA_HIGH_PERF is set,
     // so the keep-busy thread can submit without racing user submissions.
     // Queue priorities are hints only; the real clock ramp comes from sustained
@@ -827,7 +869,7 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         .pQueuePriorities = prios,
     };
     uint32_t nqci = 1;
-    const char *dev_exts[8] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
+    const char *dev_exts[9] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
     uint32_t ndev_exts = 0;
 #if defined(VK_KHR_SHADER_FMA_EXTENSION_NAME) && defined(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR)
     if (fma_ok || fma64_ok)
@@ -854,6 +896,8 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         dev_exts[ndev_exts++] =
             VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME;
 #endif
+    if (shader_clock_device_ok || shader_clock_subgroup_ok)
+        dev_exts[ndev_exts++] = VK_KHR_SHADER_CLOCK_EXTENSION_NAME;
     VkDeviceCreateInfo dci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = chain,
@@ -987,6 +1031,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     if (getenv("ACUDA_DEBUG_ATOMIC"))
         fprintf(stderr, "ACuda: surface uint alias view=%d\n", alias_ok);
     acuda_compiler_set_int64_image(&ctx->compiler_caps, int64_image_ok);
+    acuda_compiler_set_shader_clock(&ctx->compiler_caps,
+                                    shader_clock_device_ok,
+                                    shader_clock_subgroup_ok);
+    if (getenv("ACUDA_DEBUG_CLOCK"))
+        fprintf(stderr, "ACuda: shader clock caps device=%d subgroup=%d\n",
+                shader_clock_device_ok, shader_clock_subgroup_ok);
     if (getenv("ACUDA_DEBUG_BDA"))
         fprintf(stderr, "ACuda: bufferDeviceAddress=%d shader_bda=%d\n",
                 ctx->bda_ok, bda_use);
