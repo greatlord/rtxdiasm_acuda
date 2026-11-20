@@ -4,6 +4,170 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int acuda_is_space_ch(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+static const char *acuda_skip_ws_comments(const char *p) {
+    for (;;) {
+        while (*p && acuda_is_space_ch(*p)) p++;
+        if (p[0] == '/' && p[1] == '/') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+        if (p[0] == '/' && p[1] == '*') {
+            p += 2;
+            while (*p && !(p[0] == '*' && p[1] == '/')) p++;
+            if (*p) p += 2;
+            continue;
+        }
+        break;
+    }
+    return p;
+}
+
+static size_t acuda_ptx_elem_bytes(const char *tok, size_t len) {
+    if ((len == 2 && memcmp(tok, "b8", 2) == 0) || (len == 2 && memcmp(tok, "u8", 2) == 0) || (len == 2 && memcmp(tok, "s8", 2) == 0)) return 1;
+    if ((len == 3 && memcmp(tok, "b16", 3) == 0) || (len == 3 && memcmp(tok, "u16", 3) == 0) || (len == 3 && memcmp(tok, "s16", 3) == 0) || (len == 3 && memcmp(tok, "f16", 3) == 0)) return 2;
+    if ((len == 3 && memcmp(tok, "b32", 3) == 0) || (len == 3 && memcmp(tok, "u32", 3) == 0) || (len == 3 && memcmp(tok, "s32", 3) == 0) || (len == 3 && memcmp(tok, "f32", 3) == 0)) return 4;
+    if ((len == 3 && memcmp(tok, "b64", 3) == 0) || (len == 3 && memcmp(tok, "u64", 3) == 0) || (len == 3 && memcmp(tok, "s64", 3) == 0) || (len == 3 && memcmp(tok, "f64", 3) == 0)) return 8;
+    if ((len == 4 && memcmp(tok, "bf16", 4) == 0)) return 2;
+    return 0;
+}
+
+static int acuda_module_add_symbol(CUmodule m, const char *name, size_t bytes, const void *init) {
+    if (!m || !name || !*name || bytes == 0)
+        return 0;
+    for (size_t i = 0; i < m->nglobals; i++) {
+        if (strcmp(m->globals[i].name, name) == 0)
+            return 1; /* already present */
+    }
+    CUdeviceptr p = 0;
+    CUresult r = mem_alloc(&p, bytes);
+    if (r != CUDA_SUCCESS)
+        return -1;
+    if (init) {
+        r = memcpy_h2d(p, init, bytes);
+        if (r != CUDA_SUCCESS) {
+            cuMemFree_v2(p);
+            return -1;
+        }
+    } else {
+        void *host = NULL;
+        r = host_for(p, bytes, &host);
+        if (r == CUDA_SUCCESS && host)
+            memset(host, 0, bytes);
+        else {
+            /* best-effort zero via d2d from nowhere not possible; try memset via host mapping failed */
+        }
+    }
+    if (m->nglobals == m->globals_cap) {
+        size_t cap = m->globals_cap ? m->globals_cap * 2 : 8;
+        void *ng = realloc(m->globals, cap * sizeof(*m->globals));
+        if (!ng) {
+            cuMemFree_v2(p);
+            return -1;
+        }
+        m->globals = ng;
+        m->globals_cap = cap;
+    }
+    snprintf(m->globals[m->nglobals].name, sizeof(m->globals[m->nglobals].name), "%s", name);
+    m->globals[m->nglobals].dptr = p;
+    m->globals[m->nglobals].bytes = bytes;
+    m->nglobals++;
+    ACUDA_DEBUG_PRINT("acuda-trace .. module symbol %s size=%zu dptr=0x%llx\n", name, bytes, (unsigned long long)p);
+    return 1;
+}
+
+static void acuda_module_collect_symbols(CUmodule m, const char *ptx) {
+    if (!m || !ptx)
+        return;
+    const char *p = ptx;
+    while (*p) {
+        p = acuda_skip_ws_comments(p);
+        if (!*p) break;
+        /* Find start of declarations: .global / .const / .visible .global / .visible .const */
+        const char *line = p;
+        int is_global = 0, is_const = 0;
+        /* consume leading visibility/linkage tokens */
+        const char *q = line;
+        for (;;) {
+            q = acuda_skip_ws_comments(q);
+            if (!*q) { p = q; goto next_line; }
+            if (strncmp(q, ".visible", 8) == 0 && acuda_is_space_ch(q[8])) { q += 8; continue; }
+            if (strncmp(q, ".weak", 5) == 0 && acuda_is_space_ch(q[5])) { q += 5; continue; }
+            if (strncmp(q, ".extern", 7) == 0 && acuda_is_space_ch(q[7])) { q += 7; continue; }
+            if (strncmp(q, ".common", 7) == 0 && acuda_is_space_ch(q[7])) { q += 7; continue; }
+            break;
+        }
+        q = acuda_skip_ws_comments(q);
+        if (strncmp(q, ".global", 7) == 0 && (acuda_is_space_ch(q[7]) || q[7] == '\0')) { is_global = 1; q += 7; }
+        else if (strncmp(q, ".const", 6) == 0 && (acuda_is_space_ch(q[6]) || q[6] == '\0')) { is_const = 1; q += 6; }
+        else { goto next_line; }
+        /* parse declaration: [.align N] .type name[dim] [= ...] ; */
+        {
+            const char *r = q;
+            size_t elem = 0, dim = 0;
+            char name[ACUDA_ENTRY_NAME_MAX];
+            name[0] = '\0';
+            for (;;) {
+                r = acuda_skip_ws_comments(r);
+                if (!*r || *r == ';') break;
+                if (*r == '.') {
+                    const char *ts = r + 1;
+                    const char *te = ts;
+                    while ((*te >= 'a' && *te <= 'z') || (*te >= 'A' && *te <= 'Z') || (*te >= '0' && *te <= '9') || *te == '_') te++;
+                    size_t tlen = (size_t)(te - ts);
+                    if (tlen == 5 && memcmp(ts, "align", 5) == 0) {
+                        r = te;
+                        r = acuda_skip_ws_comments(r);
+                        while (*r >= '0' && *r <= '9') r++;
+                        continue;
+                    }
+                    size_t eb = acuda_ptx_elem_bytes(ts, tlen);
+                    if (eb) { elem = eb; r = te; continue; }
+                    /* skip unknown dotted tokens like .v2, .attribute etc? just advance */
+                    r = te;
+                    continue;
+                }
+                if (*r == '[') {
+                    r++;
+                    r = acuda_skip_ws_comments(r);
+                    dim = 0;
+                    while (*r >= '0' && *r <= '9') { dim = dim * 10 + (size_t)(*r - '0'); r++; }
+                    r = acuda_skip_ws_comments(r);
+                    if (*r == ']') r++;
+                    continue;
+                }
+                if (*r == '=' || *r == '{') {
+                    break; /* initializer present - we won't parse bytes fully, but we need size; treat as uninit for now? */
+                }
+                /* identifier/name */
+                if ((*r >= 'A' && *r <= 'Z') || (*r >= 'a' && *r <= 'z') || *r == '_' || *r == '$' || *r == '%') {
+                    const char *ns = r;
+                    while ((*r >= 'A' && *r <= 'Z') || (*r >= 'a' && *r <= 'z') || (*r >= '0' && *r <= '9') || *r == '_' || *r == '$' || *r == '%') r++;
+                    size_t nlen = (size_t)(r - ns);
+                    if (nlen > 0 && nlen < sizeof(name)) {
+                        memcpy(name, ns, nlen);
+                        name[nlen] = '\0';
+                    }
+                    continue;
+                }
+                r++;
+            }
+            if (elem && dim && name[0]) {
+                size_t bytes = elem * dim;
+                /* For now allocate zero-initialized; initialized data parsing can be added if needed. */
+                (void)is_global; (void)is_const;
+                acuda_module_add_symbol(m, name, bytes, NULL);
+            }
+        }
+next_line:
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
+    }
+}
+
 CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
                             unsigned int numOptions, CUjit_option *options,
                             void **optionValues) {
@@ -78,6 +242,7 @@ CUresult ACUDA_CUDAAPI cuModuleLoadDataEx(CUmodule *module, const void *image,
         return CUDA_ERROR_OUT_OF_MEMORY;
     }
     strcpy(m->ptx, text);
+    acuda_module_collect_symbols(m, m->ptx);
     *module = m;
     return CUDA_SUCCESS;
 }
@@ -881,7 +1046,35 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
         } else {
             if (!module->ptx_oom) {
                 ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): trying ptx compile\n", name);
+                /* Enable runtime-backed module symbol handling only for modules
+                 * compiled from original PTX (no attached SASS/lifted image).
+                 * SASS-lifted PTX may contain parsed .global/.const definitions
+                 * that must use normal compiler codegen, not hidden BDA params. */
+                int module_symbols = (module->image == NULL || module->image_size == 0);
+                const char *old_modsyms = NULL;
+                char old_modsyms_buf[8];
+                if (module_symbols) {
+                    old_modsyms = getenv("ACUDA_MODULE_SYMBOLS");
+                    if (old_modsyms) {
+                        snprintf(old_modsyms_buf, sizeof(old_modsyms_buf), "%s", old_modsyms);
+                        old_modsyms = old_modsyms_buf;
+                    }
+#if defined(_WIN32)
+                    _putenv_s("ACUDA_MODULE_SYMBOLS", "1");
+#else
+                    setenv("ACUDA_MODULE_SYMBOLS", "1", 1);
+#endif
+                }
                 cst = acuda_compile_ptx(module->ptx, name, &k, err, sizeof(err), acuda_context_get_compiler_caps(g_actx));
+                if (module_symbols) {
+#if defined(_WIN32)
+                    if (old_modsyms) _putenv_s("ACUDA_MODULE_SYMBOLS", old_modsyms);
+                    else _putenv_s("ACUDA_MODULE_SYMBOLS", "");
+#else
+                    if (old_modsyms) setenv("ACUDA_MODULE_SYMBOLS", old_modsyms, 1);
+                    else unsetenv("ACUDA_MODULE_SYMBOLS");
+#endif
+                }
                 ACUDA_DEBUG_PRINT("acuda-trace .. cuModuleGetFunction(%s): ptx compile cst=%d err=%s\n", name, (int)cst, err[0]?err:"(none)");
             } else if (getenv("ACUDA_TRACE")) {
                 fprintf(stderr, "acuda-trace .. cuModuleGetFunction(%s): skip 32-bit ptx compile (module parse OOMed)\n", name);
@@ -948,6 +1141,7 @@ CUresult ACUDA_CUDAAPI cuModuleGetFunction(CUfunction *hfunc, CUmodule module,
                 return CUDA_ERROR_OUT_OF_MEMORY;
             }
             compileName = shortName;
+            /* Lifted SASS/PTX from rtxdisam: keep normal symbol/codegen handling. */
             cst = acuda_compile_ptx(renamed, compileName, &k, err,
                                     sizeof(err), acuda_context_get_compiler_caps(g_actx));
             free(renamed);
