@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/runtime_api.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -179,6 +180,59 @@ CUresult ACUDA_CUDAAPI cuArray3DGetDescriptor(CUDA_ARRAY3D_DESCRIPTOR *pArrayDes
         return CUDA_ERROR_INVALID_VALUE;
     *pArrayDescriptor = hArray->desc3;
     return CUDA_SUCCESS;
+}
+
+cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) {
+    if (!desc) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    memset(desc, 0, sizeof(*desc));
+    if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    {
+        CUDA_ARRAY_DESCRIPTOR ad;
+        if (cuArrayGetDescriptor(&ad, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad.NumChannels; int bits = 32; int fmt = 0;
+            switch (ad.Format) {
+            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
+            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
+            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
+            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
+            default: break;
+            }
+            desc->x = (n >= 1) ? bits : 0;
+            desc->y = (n >= 2) ? bits : 0;
+            desc->z = (n >= 3) ? bits : 0;
+            desc->w = (n >= 4) ? bits : 0;
+            desc->f = (enum cudaChannelFormatKind)fmt;
+            return (cudaError_t)CUDA_SUCCESS;
+        }
+    }
+    {
+        CUDA_ARRAY3D_DESCRIPTOR ad3;
+        if (cuArray3DGetDescriptor(&ad3, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad3.NumChannels; int bits = 32; int fmt = 0;
+            switch (ad3.Format) {
+            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
+            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
+            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
+            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
+            default: break;
+            }
+            desc->x = (n >= 1) ? bits : 0;
+            desc->y = (n >= 2) ? bits : 0;
+            desc->z = (n >= 3) ? bits : 0;
+            desc->w = (n >= 4) ? bits : 0;
+            desc->f = (enum cudaChannelFormatKind)fmt;
+            return (cudaError_t)CUDA_SUCCESS;
+        }
+    }
+    return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
 }
 
 CUresult ACUDA_CUDAAPI cuMipmappedArrayCreate(

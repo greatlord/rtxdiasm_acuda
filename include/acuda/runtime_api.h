@@ -438,6 +438,7 @@ cudaError_t cudaMallocMipmappedArray(cudaMipmappedArray_t *mipmappedArray,
                                      struct cudaExtent_st extent,
                                      unsigned int numLevels,
                                      unsigned int flags);
+cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array);
 cudaError_t cudaFreeArray(cudaArray_t array);
 cudaError_t cudaFreeMipmappedArray(cudaMipmappedArray_t mipmappedArray);
 cudaError_t cudaGetMipmappedArrayLevel(cudaArray_t *levelArray,

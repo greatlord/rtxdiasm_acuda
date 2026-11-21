@@ -1193,59 +1193,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_runtime_get_version(
     return cuDriverGetVersion((int *)runtimeVersion);
 }
 
-static cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) {
-    if (!desc) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    memset(desc, 0, sizeof(*desc));
-    if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    {
-        CUDA_ARRAY_DESCRIPTOR ad;
-        if (cuArrayGetDescriptor(&ad, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
-            unsigned n = ad.NumChannels; int bits = 32; int fmt = 0;
-            switch (ad.Format) {
-            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
-            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
-            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
-            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
-            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
-            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
-            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
-            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
-            default: break;
-            }
-            desc->x = (n >= 1) ? bits : 0;
-            desc->y = (n >= 2) ? bits : 0;
-            desc->z = (n >= 3) ? bits : 0;
-            desc->w = (n >= 4) ? bits : 0;
-            desc->f = (enum cudaChannelFormatKind)fmt;
-            return (cudaError_t)CUDA_SUCCESS;
-        }
-    }
-    {
-        CUDA_ARRAY3D_DESCRIPTOR ad3;
-        if (cuArray3DGetDescriptor(&ad3, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
-            unsigned n = ad3.NumChannels; int bits = 32; int fmt = 0;
-            switch (ad3.Format) {
-            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
-            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
-            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
-            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
-            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
-            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
-            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
-            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
-            default: break;
-            }
-            desc->x = (n >= 1) ? bits : 0;
-            desc->y = (n >= 2) ? bits : 0;
-            desc->z = (n >= 3) ? bits : 0;
-            desc->w = (n >= 4) ? bits : 0;
-            desc->f = (enum cudaChannelFormatKind)fmt;
-            return (cudaError_t)CUDA_SUCCESS;
-        }
-    }
-    return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
-}
-
 /* id 0x6: cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
         void *desc, void *array, void *unused_c, void *unused_d,
