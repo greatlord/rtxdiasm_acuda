@@ -154,6 +154,7 @@ CUresult ACUDA_CUDAAPI cuInit(unsigned int flags) {
     if (flags != 0)
         return CUDA_ERROR_INVALID_VALUE;
     g_init = 1;
+    acuda_driver_ready();
     ACUDA_DEBUG_PRINT("acuda-trace ?? cuInit done g=%d\n", g_init);
     return CUDA_SUCCESS;
 }
