@@ -659,46 +659,42 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_to_symbol(
                                         (enum cudaMemcpyKind)(int)(intptr_t)kind);
 }
 
-/* id 0x28: cudaMemcpyFromSymbol(dst, symbol, count, offset, kind) */
+static cudaError_t cudaMemcpyFromSymbol(void *dst, const void *symbol, size_t count, size_t offset, enum cudaMemcpyKind kind) {
+    CUdeviceptr dptr = 0;
+    size_t sym_size = 0;
+    CUresult r = acuda_dd9e98a4_resolve_symbol_ptr((void *)(uintptr_t)symbol, &dptr, &sym_size);
+    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 cudaMemcpyFromSymbol sym=%p dptr=0x%llx sym=%zu count=%zu off=%zu kind=%d r=%d\n",
+                      symbol, (unsigned long long)dptr, sym_size, count, offset, (int)kind, (int)r);
+    if (r != CUDA_SUCCESS)
+        return (cudaError_t)r;
+    if (count == 0)
+        count = sym_size > offset ? sym_size - offset : 0;
+    if (offset > sym_size || count > sym_size - offset)
+        return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    if (count == 0)
+        return (cudaError_t)CUDA_SUCCESS;
+    switch (kind) {
+    case cudaMemcpyDeviceToHost:
+    case cudaMemcpyDefault:
+        if (!dst) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+        return (cudaError_t)cuMemcpyDtoH_v2(dst, dptr + (CUdeviceptr)offset, count);
+    case cudaMemcpyDeviceToDevice:
+        if (!dst) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+        return (cudaError_t)cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst, dptr + (CUdeviceptr)offset, count);
+    default:
+        return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    }
+}
+
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_from_symbol(
         void *dst, void *symbol, void *count, void *offset,
         void *kind, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy_from_symbol");
-    CUdeviceptr dptr = 0;
-    size_t sym_bytes = 0, n = (size_t)(uintptr_t)count, off = (size_t)(uintptr_t)offset;
-    int k = (int)(intptr_t)kind;
-    CUresult r;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (!symbol)
         return CUDA_ERROR_INVALID_VALUE;
-    r = acuda_dd9e98a4_resolve_symbol_ptr(symbol, &dptr, &sym_bytes);
-    ACUDA_DEBUG_PRINT("acuda-trace .. dd9e98a4 memcpy_from_symbol sym=%p dptr=0x%llx sym=%zu count=%zu off=%zu kind=%d r=%d\n",
-                      symbol, (unsigned long long)dptr, sym_bytes, n, off, k, (int)r);
-    if (r != CUDA_SUCCESS)
-        return r;
-    if (off > sym_bytes || n > sym_bytes - off)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (n == 0)
-        return CUDA_SUCCESS;
-    switch (k) {
-    case 0: /* HostToHost */
-        if (!dst) return CUDA_ERROR_INVALID_VALUE;
-        memcpy(dst, (void *)(uintptr_t)(dptr + off), n);
-        return CUDA_SUCCESS;
-    case 1: /* HostToDevice */
-        if (!dst) return CUDA_ERROR_INVALID_VALUE;
-        return cuMemcpyHtoD_v2(dptr + (CUdeviceptr)off, dst, n);
-    case 2: /* DeviceToHost */
-    case 4: /* Default */
-        if (!dst) return CUDA_ERROR_INVALID_VALUE;
-        return cuMemcpyDtoH_v2(dst, dptr + (CUdeviceptr)off, n);
-    case 3: /* DeviceToDevice */
-        if (!dst) return CUDA_ERROR_INVALID_VALUE;
-        return cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst, dptr + (CUdeviceptr)off, n);
-    default:
-        if (!dst) return CUDA_ERROR_INVALID_VALUE;
-        return cuMemcpyDtoH_v2(dst, dptr + (CUdeviceptr)off, n);
-    }
+    return (CUresult)cudaMemcpyFromSymbol(dst, symbol, (size_t)(uintptr_t)count, (size_t)(uintptr_t)offset,
+                                          (enum cudaMemcpyKind)(int)(intptr_t)kind);
 }
 
 /* id 0x1f3: __cudaRegisterFunction(fatCubinHandle, hostFun, deviceFun,
