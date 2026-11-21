@@ -1211,14 +1211,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return cuGraphicsMapResources((unsigned int)(uintptr_t)count, (CUgraphicsResource *)resources, (CUstream)stream);
 }
-static cudaError_t cudaGraphicsSubResourceGetMappedArray(void **array, acuda_cudaGraphicsResource_t resource, unsigned int arrayIndex, unsigned int mipLevel) {
-    CUresult r;
-    if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    *array = NULL;
-    r = cuGraphicsSubResourceGetMappedArray((CUarray *)array, (CUgraphicsResource)(uintptr_t)resource, arrayIndex, mipLevel);
-    return (cudaError_t)r;
-}
-
 static cudaError_t cudaGraphicsResourceGetMappedMipmappedArray(void **mipmappedArray, acuda_cudaGraphicsResource_t resource) {
     CUresult r;
     if (!mipmappedArray) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
@@ -1256,10 +1248,9 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_sub_resource_get_mappe
         void *array, void *resource, void *arrayIndex, void *mipLevel,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return (CUresult)cudaGraphicsSubResourceGetMappedArray((void **)array,
-                                                           (acuda_cudaGraphicsResource_t)(uintptr_t)resource,
-                                                           (unsigned int)(uintptr_t)arrayIndex,
-                                                           (unsigned int)(uintptr_t)mipLevel);
+    if (array) *(void **)array = NULL;
+    return cuGraphicsSubResourceGetMappedArray((CUarray *)array, (CUgraphicsResource)(uintptr_t)resource,
+                                               (unsigned int)(uintptr_t)arrayIndex, (unsigned int)(uintptr_t)mipLevel);
 }
 /* id 0xc4: cudaGraphicsResourceGetMappedMipmappedArray */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mipmapped_array(
