@@ -396,6 +396,9 @@ CUresult ACUDA_CUDAAPI cuCtxSynchronize(void);
 
 CUresult ACUDA_CUDAAPI cuMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize);
 CUresult ACUDA_CUDAAPI cuMemAlloc(CUdeviceptr *dptr, size_t bytesize);
+CUresult ACUDA_CUDAAPI cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
+                                         size_t widthInBytes, size_t height,
+                                         unsigned int elemSize);
 CUresult ACUDA_CUDAAPI cuMemFree_v2(CUdeviceptr dptr);
 CUresult ACUDA_CUDAAPI cuMemFree(CUdeviceptr dptr);
 CUresult ACUDA_CUDAAPI cuMemcpyHtoD_v2(CUdeviceptr dst, const void *src, size_t bytes);
