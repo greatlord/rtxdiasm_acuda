@@ -1264,13 +1264,28 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
     return (CUresult)cudaGetChannelDesc((cudaChannelFormatDesc *)desc, (cudaArray_t)(uintptr_t)array);
 }
 
+typedef struct acuda_graphics_resource_st *acuda_cudaGraphicsResource_t;
+
+static cudaError_t cudaGraphicsMapResources(int count, acuda_cudaGraphicsResource_t *resources, void *stream) {
+    (void)stream;
+    if (count < 0) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    if (count > 0 && !resources) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    for (int i = 0; i < count; ++i) {
+        if (!resources[i]) return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
+    }
+    if (count == 0) return (cudaError_t)CUDA_SUCCESS;
+    /* No Vulkan/GL/D3D graphics interop backend is wired yet. */
+    return (cudaError_t)CUDA_ERROR_NOT_SUPPORTED;
+}
+
 /* id 0x4c: cudaGraphicsMapResources */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
         void *count, void *resources, void *stream, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)count; (void)resources; (void)stream; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaGraphicsMapResources((int)(uintptr_t)count,
+                                              (acuda_cudaGraphicsResource_t *)resources,
+                                              stream);
 }
 /* id 0x4d: cudaGraphicsUnmapResources */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
