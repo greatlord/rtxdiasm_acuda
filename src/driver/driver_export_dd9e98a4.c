@@ -1071,21 +1071,18 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_by_pci_bus_id(
 }
 
 /* id 0xae: cudaDeviceGetPCIBusId(char *pciBusId, int len, int device) */
+static cudaError_t cudaDeviceGetPCIBusId(char *pciBusId, int len, int device) {
+    if (!pciBusId || len <= 0)
+        return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    return (cudaError_t)cuDeviceGetPCIBusId(pciBusId, len, (CUdevice)device);
+}
+
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_get_pci_bus_id(
         void *pciBusId, void *len, void *device, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_device_get_pci_bus_id");
-    int n = (int)(intptr_t)len;
-    (void)device; (void)unused_d; (void)unused_e; (void)unused_f;
-    (void)unused_g; (void)unused_h;
-    if (pciBusId && n > 0) {
-        const char *id = "0000:00:00.0";
-        int i = 0;
-        for (; id[i] && i < n - 1; i++)
-            ((char *)pciBusId)[i] = id[i];
-        ((char *)pciBusId)[i] = '\0';
-    }
-    return CUDA_SUCCESS;
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaDeviceGetPCIBusId((char *)pciBusId, (int)(intptr_t)len, (int)(intptr_t)device);
 }
 
 /* id 0xcd: cudaDeviceGetStreamPriorityRange(int *leastPriority, int *greatestPriority) */
