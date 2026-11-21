@@ -259,13 +259,16 @@ CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC
         int bits = src->res.linear.desc.x;
         CUarray_format fmt = CU_AD_FORMAT_FLOAT;
         switch (src->res.linear.desc.f) {
+        case 0: /* signed */
+            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+            break;
         case 1: /* unsigned */
             fmt = (bits == 8) ? CU_AD_FORMAT_UNSIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_UNSIGNED_INT16 : CU_AD_FORMAT_UNSIGNED_INT32;
             break;
-        case 2: /* signed */
-            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+        case 2: /* float */
+            fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;
             break;
-        default: /* float */
+        default:
             fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;
             break;
         }
@@ -280,11 +283,14 @@ CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC
         int bits = src->res.pitch2D.desc.x;
         CUarray_format fmt = CU_AD_FORMAT_FLOAT;
         switch (src->res.pitch2D.desc.f) {
+        case 0:
+            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+            break;
         case 1:
             fmt = (bits == 8) ? CU_AD_FORMAT_UNSIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_UNSIGNED_INT16 : CU_AD_FORMAT_UNSIGNED_INT32;
             break;
         case 2:
-            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+            fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;
             break;
         default:
             fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;

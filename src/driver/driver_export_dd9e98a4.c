@@ -164,6 +164,61 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc(
     return cuMemAlloc((CUdeviceptr *)devPtr, (size_t)size);
 }
 
+/* id 0x15: cudaMallocPitch(void **devPtr, size_t *pitch, size_t width, size_t height) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_pitch(
+        void *devPtr, void *pitch, void *width, void *height,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc_pitch");
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return cuMemAllocPitch_v2((CUdeviceptr *)devPtr, (size_t *)pitch,
+                              (size_t)width, (size_t)height, 1);
+}
+
+/* id 0x17: cudaMallocArray(cudaArray_t *array, const cudaChannelFormatDesc *desc,
+ *                          size_t width, size_t height, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_array(
+        void *array, void *desc, void *width, void *height,
+        void *flags, void *unused_f, void *unused_g, void *unused_h) {
+    typedef struct { int x, y, z, w, f; } acuda_chfmt;
+    acuda_chfmt *d = (acuda_chfmt *)desc;
+    CUDA_ARRAY_DESCRIPTOR ad;
+    CUarray a = NULL;
+    CUresult r;
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc_array");
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!array || !d) return CUDA_ERROR_INVALID_VALUE;
+    {
+        unsigned n = (d->x?1u:0u)+(d->y?1u:0u)+(d->z?1u:0u)+(d->w?1u:0u);
+        int bits = d->x;
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        switch (d->f) {
+        case 0: fmt = (bits==8)?CU_AD_FORMAT_SIGNED_INT8:(bits==16)?CU_AD_FORMAT_SIGNED_INT16:CU_AD_FORMAT_SIGNED_INT32; break; /* signed */
+        case 1: fmt = (bits==8)?CU_AD_FORMAT_UNSIGNED_INT8:(bits==16)?CU_AD_FORMAT_UNSIGNED_INT16:CU_AD_FORMAT_UNSIGNED_INT32; break; /* unsigned */
+        case 2: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break; /* float */
+        default: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break;
+        }
+        ad.Width = (size_t)width;
+        ad.Height = (size_t)height;
+        ad.Format = fmt;
+        ad.NumChannels = n;
+    }
+    r = cuArrayCreate_v2(&a, &ad);
+    if (r != CUDA_SUCCESS) return r;
+    *(void **)array = (void *)a;
+    (void)flags;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x18: cudaFreeArray(cudaArray_t array) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_array(
+        void *array, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_free_array");
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!array) return CUDA_SUCCESS;
+    return cuArrayDestroy((CUarray)(uintptr_t)array);
+}
+
 /* id 0x19: cudaMallocHost(void **ptr, size_t size) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
         void *ptr, void *size, void *unused_c, void *unused_d,
@@ -340,6 +395,80 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
 out:
     acuda_dd9e98a4_htrace("memcpy_async", dst, src, (long long)_r, 1);
     return _r;
+}
+
+/* id 0x20: cudaMemcpy2D(dst, dpitch, src, spitch, width, height, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy2d(
+        void *dst, void *dpitch, void *src, void *spitch,
+        void *width, void *height, void *kind, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy2d");
+    (void)unused_h;
+    CUDA_MEMCPY2D m;
+    if ((!dst || !src) && (size_t)width && (size_t)height) return CUDA_ERROR_INVALID_VALUE;
+    memset(&m, 0, sizeof(m));
+    {
+        int k = (int)(intptr_t)kind;
+        if (k == 2 || k == 3) { m.srcMemoryType = CU_MEMORYTYPE_DEVICE; m.srcDevice = (CUdeviceptr)(uintptr_t)src; }
+        else { m.srcMemoryType = CU_MEMORYTYPE_HOST; m.srcHost = src; }
+        if (k == 1 || k == 3) { m.dstMemoryType = CU_MEMORYTYPE_DEVICE; m.dstDevice = (CUdeviceptr)(uintptr_t)dst; }
+        else { m.dstMemoryType = CU_MEMORYTYPE_HOST; m.dstHost = dst; }
+    }
+    m.srcPitch = (size_t)spitch;
+    m.dstPitch = (size_t)dpitch;
+    m.WidthInBytes = (size_t)width;
+    m.Height = (size_t)height;
+    return cuMemcpy2D(&m);
+}
+
+/* id 0x22: cudaMemcpy2DToArray(dst, wOffset, hOffset, src, spitch, width, height, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy2d_to_array(
+        void *dst, void *wOffset, void *hOffset, void *src,
+        void *spitch, void *width, void *height, void *kind) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy2d_to_array");
+    CUDA_MEMCPY2D m;
+    if (!dst || !src || !(size_t)width) return CUDA_ERROR_INVALID_VALUE;
+    memset(&m, 0, sizeof(m));
+    {
+        int k = (int)(intptr_t)kind;
+        if (k == 3) { /* DeviceToDevice */
+            m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+            m.srcDevice = (CUdeviceptr)(uintptr_t)src;
+        } else {
+            m.srcMemoryType = CU_MEMORYTYPE_HOST;
+            m.srcHost = src;
+        }
+    }
+    m.srcPitch = (size_t)spitch;
+    m.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+    m.dstArray = (CUarray)(uintptr_t)dst;
+    m.dstXInBytes = (size_t)wOffset;
+    m.dstY = (size_t)hOffset;
+    m.WidthInBytes = (size_t)width;
+    m.Height = (size_t)height;
+    return cuMemcpy2D(&m);
+}
+
+/* id 0x24: cudaMemcpy2DFromArray(dst, dpitch, src, wOffset, hOffset, width, height, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy2d_from_array(
+        void *dst, void *dpitch, void *src, void *wOffset,
+        void *hOffset, void *width, void *height, void *kind) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy2d_from_array");
+    CUDA_MEMCPY2D m;
+    if (!dst || !src || !(size_t)width) return CUDA_ERROR_INVALID_VALUE;
+    memset(&m, 0, sizeof(m));
+    m.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+    m.srcArray = (CUarray)(uintptr_t)src;
+    m.srcXInBytes = (size_t)wOffset;
+    m.srcY = (size_t)hOffset;
+    {
+        int k = (int)(intptr_t)kind;
+        if (k == 3) { m.dstMemoryType = CU_MEMORYTYPE_DEVICE; m.dstDevice = (CUdeviceptr)(uintptr_t)dst; }
+        else { m.dstMemoryType = CU_MEMORYTYPE_HOST; m.dstHost = dst; }
+    }
+    m.dstPitch = (size_t)dpitch;
+    m.WidthInBytes = (size_t)width;
+    m.Height = (size_t)height;
+    return cuMemcpy2D(&m);
 }
 
 /* id 0x16: cudaFree(void *devPtr) */
@@ -1967,11 +2096,17 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0x12: return (void *)&acuda_dd9e98a4_api_set_valid_devices;
     case 0x13: return (void *)&acuda_dd9e98a4_api_set_device_flags;
     case 0x14: return (void *)&acuda_dd9e98a4_api_malloc;
+    case 0x15: return (void *)&acuda_dd9e98a4_api_malloc_pitch;
     case 0x16: return (void *)&acuda_dd9e98a4_api_free;
+    case 0x17: return (void *)&acuda_dd9e98a4_api_malloc_array;
+    case 0x18: return (void *)&acuda_dd9e98a4_api_free_array;
     case 0x19: return (void *)&acuda_dd9e98a4_api_malloc_host;
     case 0x1a: return (void *)&acuda_dd9e98a4_api_free_host;
     case 0x1b: return (void *)&acuda_dd9e98a4_api_host_alloc;
     case 0x1f: return (void *)&acuda_dd9e98a4_api_memcpy;
+    case 0x20: return (void *)&acuda_dd9e98a4_api_memcpy2d;
+    case 0x22: return (void *)&acuda_dd9e98a4_api_memcpy2d_to_array;
+    case 0x24: return (void *)&acuda_dd9e98a4_api_memcpy2d_from_array;
     case 0x27: return (void *)&acuda_dd9e98a4_api_memcpy_to_symbol;
     case 0x28: return (void *)&acuda_dd9e98a4_api_memcpy_from_symbol;
     case 0x29: return (void *)&acuda_dd9e98a4_api_memcpy_async;
