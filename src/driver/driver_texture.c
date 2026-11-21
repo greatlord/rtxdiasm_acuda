@@ -571,9 +571,8 @@ CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject,
         default: sd.addr[i] = 0; break;
         }
     }
-    // Arrays require normalized coordinates; linear/pitch2D honour the
-    // CU_TRSF_NORMALIZED_COORDINATES flag (bit 1).
-    sd.normalized = is_array ? 1u : ((td.flags & 0x2u) ? 1u : 0u);
+    // CUDA arrays support unnormalized coordinates; honour the flag for all.
+    sd.normalized = (td.flags & 0x2u) ? 1u : 0u;
     sd.compare = depth_tex ? 1u : 0u;
     sd.compare_op = 3; // LESS_OR_EQUAL for depth texture references
     for (int i = 0; i < 4; i++)
