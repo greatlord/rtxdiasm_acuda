@@ -943,10 +943,13 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b8(void *a, void *b, void *
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0xb8 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
     return CUDA_SUCCESS;
 }
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b9(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+static void * ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b9(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     static int n = 0; int i2 = n++;
+    static unsigned char buf[64];
+    (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
+    (void)i2;
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0xb9 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
-    return CUDA_SUCCESS;
+    return (void *)buf;
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0ba(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     static int n = 0; int i2 = n++;
@@ -2900,6 +2903,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_23f(void *a, void *b, void *
 }
 
 void *acuda_dd9e98a4_get_generic_stub(unsigned int id) {
+    if (id == 0xb9u)
+        return (void *)&acuda_dd9e98a4_idstub_0b9;
     switch(id){
     case 0x0: return (void*)&acuda_dd9e98a4_idstub_000;
     case 0x1: return (void*)&acuda_dd9e98a4_idstub_001;
