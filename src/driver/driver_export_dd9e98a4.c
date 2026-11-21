@@ -1211,19 +1211,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return cuGraphicsMapResources((unsigned int)(uintptr_t)count, (CUgraphicsResource *)resources, (CUstream)stream);
 }
-static cudaError_t cudaGraphicsResourceGetMappedPointer(void **devPtr, size_t *size, acuda_cudaGraphicsResource_t resource) {
-    CUdeviceptr dptr = 0;
-    size_t sz = 0;
-    CUresult r;
-    if (!devPtr || !size) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    *devPtr = NULL; *size = 0;
-    r = cuGraphicsResourceGetMappedPointer_v2(&dptr, &sz, (CUgraphicsResource)(uintptr_t)resource);
-    if (r != CUDA_SUCCESS) return (cudaError_t)r;
-    *devPtr = (void *)(uintptr_t)dptr;
-    *size = sz;
-    return (cudaError_t)CUDA_SUCCESS;
-}
-
 static cudaError_t cudaGraphicsSubResourceGetMappedArray(void **array, acuda_cudaGraphicsResource_t resource, unsigned int arrayIndex, unsigned int mipLevel) {
     CUresult r;
     if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
@@ -1251,9 +1238,18 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_pointer(
         void *devPtr, void *size, void *resource, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    CUdeviceptr dptr = 0;
+    size_t sz = 0;
+    CUresult r;
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return (CUresult)cudaGraphicsResourceGetMappedPointer((void **)devPtr, (size_t *)size,
-                                                          (acuda_cudaGraphicsResource_t)(uintptr_t)resource);
+    if (!devPtr || !size) return CUDA_ERROR_INVALID_VALUE;
+    *(void **)devPtr = NULL;
+    *(size_t *)size = 0;
+    r = cuGraphicsResourceGetMappedPointer_v2(&dptr, &sz, (CUgraphicsResource)(uintptr_t)resource);
+    if (r != CUDA_SUCCESS) return r;
+    *(void **)devPtr = (void *)(uintptr_t)dptr;
+    *(size_t *)size = sz;
+    return CUDA_SUCCESS;
 }
 /* id 0x4f: cudaGraphicsSubResourceGetMappedArray */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_sub_resource_get_mapped_array(
