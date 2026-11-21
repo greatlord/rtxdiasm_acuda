@@ -992,6 +992,39 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
     return CUDA_SUCCESS;
 }
 
+/* id 0x111: cudaFuncSetAttribute(const void* func, int attr, int value) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_func_set_attribute(
+        void *func, void *attr, void *value, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_func_set_attribute");
+    if (!func)
+        return CUDA_ERROR_INVALID_VALUE;
+    acuda_dd9e98a4_kernel *k = NULL;
+    for (unsigned i = 0; i < g_dd9e98a4_nkernels; i++) {
+        if (g_dd9e98a4_kernels[i].host_fn == func) { k = &g_dd9e98a4_kernels[i]; break; }
+    }
+    if (!k || !k->fatbin)
+        return CUDA_ERROR_NOT_FOUND;
+    if ((int)(intptr_t)attr == CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES) {
+        k->maxdyn_set = 1;
+        k->maxdyn = (unsigned int)(intptr_t)value;
+    }
+    acuda_dd9e98a4_fatbin *fb = k->fatbin;
+    if (fb->state == 0) {
+        CUresult r = cuModuleLoadFatBinary(&fb->module, fb->blob);
+        fb->state = (r == CUDA_SUCCESS) ? 1 : -1;
+    }
+    if (fb->state != 1)
+        return CUDA_ERROR_INVALID_IMAGE;
+    CUfunction fn = NULL;
+    CUresult r = cuModuleGetFunction(&fn, fb->module, k->device_name);
+    if (r != CUDA_SUCCESS)
+        return r;
+    r = cuFuncSetAttribute(fn, (int)(intptr_t)attr, (int)(intptr_t)value);
+    return r;
+}
+
 /* id 0x1f9: cudaLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
  *                            void **args, size_t sharedMem, cudaStream_t stream) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
@@ -1040,6 +1073,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_launch_kernel(
         acuda_dd9e98a4_htrace("launch", func, stream, (long long)r, 1);
         return r;
     }
+    if (k->maxdyn_set)
+        cuFuncSetAttribute(fn, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, (int)k->maxdyn);
     acuda_dd9e98a4_check_ready_canary("api_launch_kernel_pre_cuLaunch");
     r = cuLaunchKernel(fn, grid->x, grid->y, grid->z, block->x, block->y,
                        block->z, (unsigned int)(size_t)sharedMem,
@@ -2207,7 +2242,8 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     /* 0xFF: Device P2P attribute */
     case 0xff: return (void *)&acuda_dd9e98a4_api_device_get_p2p_attribute;
 
-    /* 0x112-0x116: External memory and semaphore APIs */
+    /* 0x111-0x116: Function attribute and external memory/semaphore APIs */
+    case 0x111: return (void *)&acuda_dd9e98a4_api_func_set_attribute;
     case 0x112: return (void *)&acuda_dd9e98a4_api_import_external_memory;
     case 0x113: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_buffer;
     case 0x114: return (void *)&acuda_dd9e98a4_api_external_memory_get_mapped_mipmapped_array;

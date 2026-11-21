@@ -513,13 +513,15 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     }
     // Static .shared lives in Workgroup storage; dynamic .shared is
     // sized by this launch (spec-constant extern array). Cap the
-    // total against the advertised per-block limit, like hardware,
-    // and honor a raised MAX_DYNAMIC cap when set.
-    if (info->shared_bytes > 65536 ||
-        (uint64_t)info->shared_bytes + (uint64_t)sharedMemBytes > 65536)
+    // total against the device/Vulkan workgroup storage limit.
+    uint32_t shared_limit = 65536u;
+    if (g_actx)
+        shared_limit = g_actx->props.limits.maxComputeSharedMemorySize;
+    if (info->shared_bytes > shared_limit ||
+        (uint64_t)info->shared_bytes + (uint64_t)sharedMemBytes > shared_limit)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES, __LINE__); return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES; }
     if (f->maxdyn_set && sharedMemBytes > f->maxdyn)
-        { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES, __LINE__); return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES; }
+        { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d maxdyn_set=%d maxdyn=%u shm=%u\n", (int)CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES, __LINE__, f->maxdyn_set, f->maxdyn, (unsigned)sharedMemBytes); return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES; }
     uint32_t nptr = 0;
     for (uint32_t i = 0; i < info->num_params; i++)
         nptr += (info->is_ptr[i] == 1 || info->is_ptr[i] == 5 ||

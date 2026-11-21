@@ -23,6 +23,8 @@ typedef struct {
     const void *host_fn;
     const char *device_name; /* owned by the executable image */
     acuda_dd9e98a4_fatbin *fatbin;
+    unsigned int maxdyn;
+    int maxdyn_set;
 } acuda_dd9e98a4_kernel;
 
 typedef struct {
