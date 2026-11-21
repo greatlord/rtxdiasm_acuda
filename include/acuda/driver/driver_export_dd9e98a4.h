@@ -25,6 +25,8 @@ int acuda_dd9e98a4_check_ready_canary(const char *where);
 /* Ensure driver/interface is ready (implicit init, used for all export tables/GUIDs).
  * Returns 1 if ready, 0 on init failure. */
 int acuda_driver_ready(void);
+/* Mark driver ready flags (called by cuInit / acuda_driver_ready). */
+void acuda_driver_mark_ready(void);
 
 /* Diagnostic getters. */
 int acuda_dd9e98a4_ready_state(void);

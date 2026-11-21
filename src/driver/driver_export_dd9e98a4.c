@@ -68,6 +68,12 @@ int acuda_dd9e98a4_ready_state(void) {
 
 int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
 
+void acuda_driver_mark_ready(void) {
+    g_dd9e98a4_was_ready = 1;
+    g_dd9e98a4_init_magic = 0xDDE998A4u;
+    g_dd9e98a4_implicit_init_failed = 0;
+}
+
 int acuda_driver_ready(void) {
 #if defined(_WIN32)
     {
@@ -83,9 +89,7 @@ int acuda_driver_ready(void) {
     acuda_runtime_canary_hook = acuda_dd9e98a4_check_ready_canary;
 
     if (g_init) {
-        g_dd9e98a4_was_ready = 1;
-        g_dd9e98a4_init_magic = 0xDDE998A4u;
-        g_dd9e98a4_implicit_init_failed = 0;
+        acuda_driver_mark_ready();
         return 1;
     }
 
@@ -114,9 +118,7 @@ int acuda_driver_ready(void) {
                 fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init ctx setup failed r=%d (continuing as ready)\n", (int)rctx);
                 fflush(stderr);
             }
-            g_dd9e98a4_was_ready = 1;
-            g_dd9e98a4_init_magic = 0xDDE998A4u;
-            g_dd9e98a4_implicit_init_failed = 0;
+            acuda_driver_mark_ready();
             if (_vt && *_vt) {
                 fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d g_init=%d g_actx=%p caller=%p\n",
                         (int)r, g_init, g_actx, _ra);
