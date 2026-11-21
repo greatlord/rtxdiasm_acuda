@@ -358,7 +358,6 @@ CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject,
     } else {
         return CUDA_ERROR_NOT_SUPPORTED;
     }
-    (void)pResViewDesc;
     acuda_sampler_desc sd;
     memset(&sd, 0, sizeof(sd));
     CUDA_TEXTURE_DESC td;
@@ -420,6 +419,13 @@ CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject,
     e->own_image = own_img;
     e->res = *pResDesc;
     e->td = td;
+    if (pResViewDesc) {
+        e->resView = *pResViewDesc;
+        e->has_resView = 1;
+    } else {
+        memset(&e->resView, 0, sizeof(e->resView));
+        e->has_resView = 0;
+    }
     *pTexObject = e->id;
     return CUDA_SUCCESS;
 }
@@ -453,6 +459,18 @@ CUresult ACUDA_CUDAAPI cuTexObjectGetTextureDesc(CUDA_TEXTURE_DESC *pTexDesc,
     if (!pTexDesc || !e)
         return CUDA_ERROR_INVALID_VALUE;
     *pTexDesc = e->td;
+    return CUDA_SUCCESS;
+}
+
+CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(CUDA_RESOURCE_VIEW_DESC *pResViewDesc,
+                                                      CUtexObject texObject) {
+    driver_texobj_t *e = driver_tex_find(texObject);
+    if (!pResViewDesc || !e)
+        return CUDA_ERROR_INVALID_VALUE;
+    if (e->has_resView)
+        *pResViewDesc = e->resView;
+    else
+        memset(pResViewDesc, 0, sizeof(*pResViewDesc));
     return CUDA_SUCCESS;
 }
 

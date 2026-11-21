@@ -1252,10 +1252,9 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
             d->f = fmt;
             return CUDA_SUCCESS;
         }
-        /* fallback: safe default */
-        d->x = 32; d->y = 32; d->z = 32; d->w = 32; d->f = 0;
+        if (!array) return CUDA_ERROR_INVALID_VALUE;
+        return CUDA_ERROR_INVALID_HANDLE;
     }
-    return CUDA_SUCCESS;
 }
 
 /* id 0x4c: cudaGraphicsMapResources */
@@ -1424,7 +1423,24 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_texture_object(
         td.minMipmapLevelClamp = ((const float *)pTexDesc)[14];
         td.maxMipmapLevelClamp = ((const float *)pTexDesc)[15];
     }
-    r = cuTexObjectCreate(&tex, &rd, &td, NULL);
+    {
+        CUDA_RESOURCE_VIEW_DESC vd;
+        CUDA_RESOURCE_VIEW_DESC *pvd = NULL;
+        if (pResViewDesc) {
+            const unsigned int *v = (const unsigned int *)pResViewDesc;
+            memset(&vd, 0, sizeof(vd));
+            vd.format = (CUresourceViewFormat)v[0];
+            vd.width = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 8);
+            vd.height = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 16);
+            vd.depth = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 24);
+            vd.firstMipmapLevel = v[8];
+            vd.lastMipmapLevel = v[9];
+            vd.firstLayer = v[10];
+            vd.lastLayer = v[11];
+            pvd = &vd;
+        }
+        r = cuTexObjectCreate(&tex, &rd, &td, pvd);
+    }
     if (r != CUDA_SUCCESS) return r;
     *(unsigned long long *)pTexObject = (unsigned long long)tex;
     acuda_dd9e98a4_store_tex_view((unsigned long long)tex, pResViewDesc);
@@ -1436,7 +1452,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_texture_object(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!texObject) return CUDA_SUCCESS;
+    if (!texObject) return CUDA_ERROR_INVALID_VALUE;
     acuda_dd9e98a4_store_tex_view((unsigned long long)(uintptr_t)texObject, NULL);
     return cuTexObjectDestroy((CUtexObject)(uintptr_t)texObject);
 }
@@ -1509,7 +1525,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_surface_object(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!surfObject) return CUDA_SUCCESS;
+    if (!surfObject) return CUDA_ERROR_INVALID_VALUE;
     return cuSurfObjectDestroy((CUsurfObject)(uintptr_t)surfObject);
 }
 /* id 0xbf: cudaGetSurfaceObjectResourceDesc */

@@ -281,7 +281,7 @@ CUresult ACUDA_CUDAAPI cuSurfRefSetArray(void *a1, void *a2, void *a3);
 CUresult ACUDA_CUDAAPI cuTexObjectCreate(CUtexObject *pTexObject, const CUDA_RESOURCE_DESC *pResDesc, const CUDA_TEXTURE_DESC *pTexDesc, const CUDA_RESOURCE_VIEW_DESC *pResViewDesc);
 CUresult ACUDA_CUDAAPI cuTexObjectDestroy(CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuTexObjectGetResourceDesc(CUDA_RESOURCE_DESC *pResDesc, CUtexObject texObject);
-CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(void *a1, void *a2);
+CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(CUDA_RESOURCE_VIEW_DESC *pResViewDesc, CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuTexObjectGetTextureDesc(CUDA_TEXTURE_DESC *pTexDesc, CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuTexRefCreate(CUtexref *pTexRef);
 CUresult ACUDA_CUDAAPI cuTexRefDestroy(CUtexref hTexRef);

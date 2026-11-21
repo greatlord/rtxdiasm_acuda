@@ -11,7 +11,7 @@ ACUDA_COMPAT_NOOP2(cuTexRefSetMipmapFilterMode)
 ACUDA_COMPAT_NOOP2(cuTexRefSetMipmapLevelBias)
 ACUDA_COMPAT_NOOP3(cuTexRefSetMipmapLevelClamp)
 ACUDA_COMPAT_NOOP3(cuTexRefSetMipmappedArray)
-ACUDA_COMPAT_UNIMPL2(cuTexObjectGetResourceViewDesc)
+/* cuTexObjectGetResourceViewDesc implemented in driver_texture.c */
 ACUDA_COMPAT_NOOP2(cuFuncSetCacheConfig)
 ACUDA_COMPAT_NOOP2(cuFuncSetSharedMemConfig)
 ACUDA_COMPAT_NOOP2(cuCtxEnablePeerAccess)

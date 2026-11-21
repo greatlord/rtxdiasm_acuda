@@ -87,7 +87,7 @@ CUresult ACUDA_CUDAAPI cuTexRefSetMipmapFilterMode(void *a1, void *a2);
 CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelBias(void *a1, void *a2);
 CUresult ACUDA_CUDAAPI cuTexRefSetMipmapLevelClamp(void *a1, void *a2, void *a3);
 CUresult ACUDA_CUDAAPI cuTexRefSetMipmappedArray(void *a1, void *a2, void *a3);
-CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(void *a1, void *a2);
+CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(CUDA_RESOURCE_VIEW_DESC *pResViewDesc, CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuFuncSetCacheConfig(void *a1, void *a2);
 CUresult ACUDA_CUDAAPI cuFuncSetSharedMemConfig(void *a1, void *a2);
 CUresult ACUDA_CUDAAPI cuCtxEnablePeerAccess(void *a1, void *a2);

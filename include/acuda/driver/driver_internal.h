@@ -106,6 +106,8 @@ typedef struct {
     acuda_buffer_t own_image;
     CUDA_RESOURCE_DESC res;
     CUDA_TEXTURE_DESC td;
+    CUDA_RESOURCE_VIEW_DESC resView;
+    int has_resView;
 } driver_texobj_t;
 
 typedef struct {

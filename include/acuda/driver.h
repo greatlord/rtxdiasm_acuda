@@ -587,6 +587,8 @@ CUresult ACUDA_CUDAAPI cuTexObjectGetResourceDesc(CUDA_RESOURCE_DESC *pResDesc,
                                     CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuTexObjectGetTextureDesc(CUDA_TEXTURE_DESC *pTexDesc,
                                    CUtexObject texObject);
+CUresult ACUDA_CUDAAPI cuTexObjectGetResourceViewDesc(CUDA_RESOURCE_VIEW_DESC *pResViewDesc,
+                                                      CUtexObject texObject);
 CUresult ACUDA_CUDAAPI cuSurfObjectCreate(CUsurfObject *pSurfObject,
                             const CUDA_RESOURCE_DESC *pResDesc);
 CUresult ACUDA_CUDAAPI cuSurfObjectDestroy(CUsurfObject surfObject);
