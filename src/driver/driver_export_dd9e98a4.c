@@ -1225,17 +1225,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
                                               (acuda_cudaGraphicsResource_t *)resources,
                                               stream);
 }
-static cudaError_t cudaGraphicsUnmapResources(int count, acuda_cudaGraphicsResource_t *resources, void *stream) {
-    (void)stream;
-    if (count < 0) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    if (count > 0 && !resources) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    for (int i = 0; i < count; ++i) {
-        if (!resources[i]) return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
-    }
-    if (count == 0) return (cudaError_t)CUDA_SUCCESS;
-    return (cudaError_t)cuGraphicsUnmapResources((unsigned int)count, (CUgraphicsResource *)resources, (CUstream)stream);
-}
-
 static cudaError_t cudaGraphicsResourceGetMappedPointer(void **devPtr, size_t *size, acuda_cudaGraphicsResource_t resource) {
     CUdeviceptr dptr = 0;
     size_t sz = 0;
@@ -1270,9 +1259,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
         void *count, void *resources, void *stream, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return (CUresult)cudaGraphicsUnmapResources((int)(uintptr_t)count,
-                                                (acuda_cudaGraphicsResource_t *)resources,
-                                                stream);
+    return cuGraphicsUnmapResources((unsigned int)(uintptr_t)count, (CUgraphicsResource *)resources, (CUstream)stream);
 }
 /* id 0x4e: cudaGraphicsResourceGetMappedPointer */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_pointer(
