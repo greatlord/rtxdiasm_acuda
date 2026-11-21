@@ -179,34 +179,10 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_pitch(
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_array(
         void *array, void *desc, void *width, void *height,
         void *flags, void *unused_f, void *unused_g, void *unused_h) {
-    typedef struct { int x, y, z, w, f; } acuda_chfmt;
-    acuda_chfmt *d = (acuda_chfmt *)desc;
-    CUDA_ARRAY_DESCRIPTOR ad;
-    CUarray a = NULL;
-    CUresult r;
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_malloc_array");
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!array || !d) return CUDA_ERROR_INVALID_VALUE;
-    {
-        unsigned n = (d->x?1u:0u)+(d->y?1u:0u)+(d->z?1u:0u)+(d->w?1u:0u);
-        int bits = d->x;
-        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
-        switch (d->f) {
-        case 0: fmt = (bits==8)?CU_AD_FORMAT_SIGNED_INT8:(bits==16)?CU_AD_FORMAT_SIGNED_INT16:CU_AD_FORMAT_SIGNED_INT32; break; /* signed */
-        case 1: fmt = (bits==8)?CU_AD_FORMAT_UNSIGNED_INT8:(bits==16)?CU_AD_FORMAT_UNSIGNED_INT16:CU_AD_FORMAT_UNSIGNED_INT32; break; /* unsigned */
-        case 2: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break; /* float */
-        default: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break;
-        }
-        ad.Width = (size_t)width;
-        ad.Height = (size_t)height;
-        ad.Format = fmt;
-        ad.NumChannels = n;
-    }
-    r = cuArrayCreate_v2(&a, &ad);
-    if (r != CUDA_SUCCESS) return r;
-    *(void **)array = (void *)a;
-    (void)flags;
-    return CUDA_SUCCESS;
+    return (CUresult)cudaMallocArray((cudaArray_t *)array, (const cudaChannelFormatDesc *)desc,
+                                     (size_t)width, (size_t)height, (unsigned int)(uintptr_t)flags);
 }
 
 /* id 0x18: cudaFreeArray(cudaArray_t array) */
@@ -329,31 +305,9 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy(
         void *dst, void *src, void *count, void *kind,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy");
-    int copy_kind = (int)(intptr_t)kind;
-    size_t bytes = (size_t)count;
-    acuda_dd9e98a4_htrace("memcpy", dst, src, (long long)bytes, 0);
+    acuda_dd9e98a4_htrace("memcpy", dst, src, (long long)(size_t)count, 0);
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if ((!dst || !src) && bytes)
-        return CUDA_ERROR_INVALID_VALUE;
-    if (!bytes)
-        return CUDA_SUCCESS;
-    switch (copy_kind) {
-    case 0: /* cudaMemcpyHostToHost */
-        memcpy(dst, src, bytes);
-        return CUDA_SUCCESS;
-    case 1: /* cudaMemcpyHostToDevice */
-        return cuMemcpyHtoD_v2((CUdeviceptr)(uintptr_t)dst, src, bytes);
-    case 2: /* cudaMemcpyDeviceToHost */
-        return cuMemcpyDtoH_v2(dst, (CUdeviceptr)(uintptr_t)src, bytes);
-    case 3: /* cudaMemcpyDeviceToDevice */
-        return cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst,
-                               (CUdeviceptr)(uintptr_t)src, bytes);
-    case 4: /* cudaMemcpyDefault */
-        memcpy(dst, src, bytes);
-        return CUDA_SUCCESS;
-    default:
-        return CUDA_ERROR_INVALID_VALUE;
-    }
+    return (CUresult)cudaMemcpy(dst, (const void *)src, (size_t)count, (cudaMemcpyKind)(intptr_t)kind);
 }
 
 /* id 0x29: cudaMemcpyAsync(void *dst, const void *src, size_t count,
@@ -1060,14 +1014,10 @@ static const char *ACUDA_CUDAAPI acuda_dd9e98a4_api_get_error_string_runtime(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_error_string_runtime");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    switch ((int)(intptr_t)error) {
-    case 0: return "no error";
-    case 1: return "invalid argument";
-    case 2: return "out of memory";
-    case 3: return "initialization error";
-    case 201: return "invalid device context";
-    case 700: return "an illegal memory access was encountered";
-    default: return "unknown error";
+    {
+        const char *str = "unknown error";
+        cuGetErrorString((CUresult)(intptr_t)error, &str);
+        return str ? str : "unknown error";
     }
 }
 

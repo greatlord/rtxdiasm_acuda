@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/runtime_api.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -416,4 +417,28 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
     }
     free(tmp);
     return CUDA_SUCCESS;
+}
+
+cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind) {
+    if ((!dst || !src) && count)
+        return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    if (!count)
+        return (cudaError_t)CUDA_SUCCESS;
+    switch ((int)kind) {
+    case 0: /* cudaMemcpyHostToHost */
+        memcpy(dst, src, count);
+        return (cudaError_t)CUDA_SUCCESS;
+    case 1: /* cudaMemcpyHostToDevice */
+        return (cudaError_t)cuMemcpyHtoD_v2((CUdeviceptr)(uintptr_t)dst, src, count);
+    case 2: /* cudaMemcpyDeviceToHost */
+        return (cudaError_t)cuMemcpyDtoH_v2(dst, (CUdeviceptr)(uintptr_t)src, count);
+    case 3: /* cudaMemcpyDeviceToDevice */
+        return (cudaError_t)cuMemcpyDtoD_v2((CUdeviceptr)(uintptr_t)dst,
+                                            (CUdeviceptr)(uintptr_t)src, count);
+    case 4: /* cudaMemcpyDefault */
+        memcpy(dst, src, count);
+        return (cudaError_t)CUDA_SUCCESS;
+    default:
+        return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    }
 }

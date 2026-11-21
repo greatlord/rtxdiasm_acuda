@@ -235,6 +235,35 @@ cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) {
     return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
 }
 
+cudaError_t cudaMallocArray(cudaArray_t *array,
+                            const cudaChannelFormatDesc *desc, size_t width,
+                            size_t height, unsigned int flags) {
+    CUDA_ARRAY_DESCRIPTOR ad;
+    CUarray a = NULL;
+    CUresult r;
+    if (!array || !desc) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    {
+        unsigned n = (desc->x?1u:0u)+(desc->y?1u:0u)+(desc->z?1u:0u)+(desc->w?1u:0u);
+        int bits = desc->x;
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        switch (desc->f) {
+        case 0: fmt = (bits==8)?CU_AD_FORMAT_SIGNED_INT8:(bits==16)?CU_AD_FORMAT_SIGNED_INT16:CU_AD_FORMAT_SIGNED_INT32; break;
+        case 1: fmt = (bits==8)?CU_AD_FORMAT_UNSIGNED_INT8:(bits==16)?CU_AD_FORMAT_UNSIGNED_INT16:CU_AD_FORMAT_UNSIGNED_INT32; break;
+        case 2: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break;
+        default: fmt = (bits==16)?CU_AD_FORMAT_HALF:CU_AD_FORMAT_FLOAT; break;
+        }
+        ad.Width = width;
+        ad.Height = height;
+        ad.Format = fmt;
+        ad.NumChannels = n;
+    }
+    r = cuArrayCreate_v2(&a, &ad);
+    if (r != CUDA_SUCCESS) return (cudaError_t)r;
+    *array = (cudaArray_t)(void *)a;
+    (void)flags;
+    return (cudaError_t)CUDA_SUCCESS;
+}
+
 CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC *rd) {
     typedef struct { int x, y, z, w, f; } acuda_chfmt;
     typedef struct { void *array; } acuda_res_array;
