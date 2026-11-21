@@ -1202,58 +1202,66 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_runtime_get_version(
     return cuDriverGetVersion((int *)runtimeVersion);
 }
 
+static cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) {
+    if (!desc) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    memset(desc, 0, sizeof(*desc));
+    if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    {
+        CUDA_ARRAY_DESCRIPTOR ad;
+        if (cuArrayGetDescriptor(&ad, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad.NumChannels; int bits = 32; int fmt = 0;
+            switch (ad.Format) {
+            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
+            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
+            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
+            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
+            default: break;
+            }
+            desc->x = (n >= 1) ? bits : 0;
+            desc->y = (n >= 2) ? bits : 0;
+            desc->z = (n >= 3) ? bits : 0;
+            desc->w = (n >= 4) ? bits : 0;
+            desc->f = (enum cudaChannelFormatKind)fmt;
+            return (cudaError_t)CUDA_SUCCESS;
+        }
+    }
+    {
+        CUDA_ARRAY3D_DESCRIPTOR ad3;
+        if (cuArray3DGetDescriptor(&ad3, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad3.NumChannels; int bits = 32; int fmt = 0;
+            switch (ad3.Format) {
+            case CU_AD_FORMAT_UNSIGNED_INT8: bits = 8; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT16: bits = 16; fmt = 1; break;
+            case CU_AD_FORMAT_UNSIGNED_INT32: bits = 32; fmt = 1; break;
+            case CU_AD_FORMAT_SIGNED_INT8: bits = 8; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT16: bits = 16; fmt = 2; break;
+            case CU_AD_FORMAT_SIGNED_INT32: bits = 32; fmt = 2; break;
+            case CU_AD_FORMAT_HALF: bits = 16; fmt = 0; break;
+            case CU_AD_FORMAT_FLOAT: bits = 32; fmt = 0; break;
+            default: break;
+            }
+            desc->x = (n >= 1) ? bits : 0;
+            desc->y = (n >= 2) ? bits : 0;
+            desc->z = (n >= 3) ? bits : 0;
+            desc->w = (n >= 4) ? bits : 0;
+            desc->f = (enum cudaChannelFormatKind)fmt;
+            return (cudaError_t)CUDA_SUCCESS;
+        }
+    }
+    return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
+}
+
 /* id 0x6: cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
         void *desc, void *array, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
     (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!desc) return CUDA_ERROR_INVALID_VALUE;
-    {
-        acuda_channel_desc_t *d = (acuda_channel_desc_t *)desc;
-        CUDA_ARRAY_DESCRIPTOR ad;
-        CUDA_ARRAY3D_DESCRIPTOR ad3;
-        memset(d, 0, sizeof(*d));
-        if (array && cuArrayGetDescriptor(&ad, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
-            unsigned n = ad.NumChannels;
-            int bits = 32, fmt = 0; /* float */
-            if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT8) { bits = 8; fmt = 1; }
-            else if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT16) { bits = 16; fmt = 1; }
-            else if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT32) { bits = 32; fmt = 1; }
-            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT8) { bits = 8; fmt = 2; }
-            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT16) { bits = 16; fmt = 2; }
-            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT32) { bits = 32; fmt = 2; }
-            else if (ad.Format == CU_AD_FORMAT_HALF) { bits = 16; fmt = 0; }
-            else if (ad.Format == CU_AD_FORMAT_FLOAT) { bits = 32; fmt = 0; }
-            d->x = (n >= 1) ? bits : 0;
-            d->y = (n >= 2) ? bits : 0;
-            d->z = (n >= 3) ? bits : 0;
-            d->w = (n >= 4) ? bits : 0;
-            d->f = fmt;
-            return CUDA_SUCCESS;
-        }
-        if (array && cuArray3DGetDescriptor(&ad3, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
-            unsigned n = ad3.NumChannels;
-            int bits = 32, fmt = 0;
-            if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT8) { bits = 8; fmt = 1; }
-            else if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT16) { bits = 16; fmt = 1; }
-            else if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT32) { bits = 32; fmt = 1; }
-            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT8) { bits = 8; fmt = 2; }
-            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT16) { bits = 16; fmt = 2; }
-            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT32) { bits = 32; fmt = 2; }
-            else if (ad3.Format == CU_AD_FORMAT_HALF) { bits = 16; fmt = 0; }
-            else if (ad3.Format == CU_AD_FORMAT_FLOAT) { bits = 32; fmt = 0; }
-            d->x = (n >= 1) ? bits : 0;
-            d->y = (n >= 2) ? bits : 0;
-            d->z = (n >= 3) ? bits : 0;
-            d->w = (n >= 4) ? bits : 0;
-            d->f = fmt;
-            return CUDA_SUCCESS;
-        }
-        if (!array) return CUDA_ERROR_INVALID_VALUE;
-        return CUDA_ERROR_INVALID_HANDLE;
-    }
+    return (CUresult)cudaGetChannelDesc((cudaChannelFormatDesc *)desc, (cudaArray_t)(uintptr_t)array);
 }
 
 /* id 0x4c: cudaGraphicsMapResources */
