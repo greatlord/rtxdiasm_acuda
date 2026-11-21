@@ -955,13 +955,13 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b8(void *a, void *b, void *
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0xb8 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
     return CUDA_SUCCESS;
 }
-static void * ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b9(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+/* id 0xb9: cudaCreateTextureObject */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0b9(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     static int n = 0; int i2 = n++;
-    static unsigned char buf[64];
+    ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0xb9 cudaCreateTextureObject call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
     (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
-    (void)i2;
-    ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0xb9 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
-    return (void *)buf;
+    if (a) *(void **)a = (void *)(uintptr_t)0;
+    return CUDA_ERROR_NOT_SUPPORTED;
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_0ba(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     static int n = 0; int i2 = n++;
@@ -2917,8 +2917,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_23f(void *a, void *b, void *
 void *acuda_dd9e98a4_get_generic_stub(unsigned int id) {
     if (id == 0x7u)
         return (void *)&acuda_dd9e98a4_idstub_007;
-    if (id == 0xb9u)
-        return (void *)&acuda_dd9e98a4_idstub_0b9;
     switch(id){
     case 0x0: return (void*)&acuda_dd9e98a4_idstub_000;
     case 0x1: return (void*)&acuda_dd9e98a4_idstub_001;

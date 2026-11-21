@@ -1183,13 +1183,175 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_api_create_channel_desc(
     return (void *)out;
 }
 
-/* id 0xb9: returns pointer (observed by dct8x8 init; semantics unknown). */
-static void *ACUDA_CUDAAPI acuda_dd9e98a4_api_0b9(
-        void *a, void *b, void *c, void *d,
-        void *e, void *f, void *g, void *h) {
-    static unsigned char buf[64];
-    (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
-    return (void *)buf;
+/* id 0x1: cudaDriverGetVersion(int *driverVersion) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_driver_get_version(
+        void *driverVersion, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (driverVersion) *(int *)driverVersion = 13050;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x2: cudaRuntimeGetVersion(int *runtimeVersion) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_runtime_get_version(
+        void *runtimeVersion, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (runtimeVersion) *(int *)runtimeVersion = 13050;
+    return CUDA_SUCCESS;
+}
+
+/* id 0x6: cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
+        void *desc, void *array, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
+    (void)array; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (desc) {
+        acuda_channel_desc_t *d = (acuda_channel_desc_t *)desc;
+        d->x = 32; d->y = 32; d->z = 32; d->w = 32; d->f = 0;
+    }
+    return CUDA_SUCCESS;
+}
+
+/* id 0x4c: cudaGraphicsMapResources */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
+        void *count, void *resources, void *stream, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)count; (void)resources; (void)stream; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0x4d: cudaGraphicsUnmapResources */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
+        void *count, void *resources, void *stream, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)count; (void)resources; (void)stream; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0x4e: cudaGraphicsResourceGetMappedPointer */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_pointer(
+        void *devPtr, void *size, void *resource, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)devPtr; (void)size; (void)resource; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0x4f: cudaGraphicsSubResourceGetMappedArray */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_sub_resource_get_mapped_array(
+        void *array, void *resource, void *arrayIndex, void *mipLevel,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)array; (void)resource; (void)arrayIndex; (void)mipLevel;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xc4: cudaGraphicsResourceGetMappedMipmappedArray */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mipmapped_array(
+        void *mipmappedArray, void *resource, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)mipmappedArray; (void)resource; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0xb9: cudaCreateTextureObject */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_texture_object(
+        void *pTexObject, void *pResDesc, void *pTexDesc, void *pResViewDesc,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 id=0xb9 cudaCreateTextureObject pTex=%p res=%p tex=%p view=%p\n",
+                      pTexObject, pResDesc, pTexDesc, pResViewDesc);
+    (void)pResDesc; (void)pTexDesc; (void)pResViewDesc;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pTexObject) *(void **)pTexObject = (void *)(uintptr_t)0;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xba: cudaDestroyTextureObject */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_texture_object(
+        void *texObject, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)texObject; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+/* id 0xbb: cudaGetTextureObjectResourceDesc */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_resource_desc(
+        void *pResDesc, void *texObject, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pResDesc; (void)texObject; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pResDesc) memset(pResDesc, 0, 64);
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xbc: cudaGetTextureObjectTextureDesc */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_texture_desc(
+        void *pTexDesc, void *texObject, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pTexDesc; (void)texObject; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pTexDesc) memset(pTexDesc, 0, 64);
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xbd: cudaCreateSurfaceObject */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_surface_object(
+        void *pSurfObject, void *pResDesc, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pResDesc; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pSurfObject) *(void **)pSurfObject = (void *)(uintptr_t)0;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xbe: cudaDestroySurfaceObject */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_surface_object(
+        void *surfObject, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)surfObject; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_SUCCESS;
+}
+/* id 0xbf: cudaGetSurfaceObjectResourceDesc */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_surface_object_resource_desc(
+        void *pResDesc, void *surfObject, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pResDesc; (void)surfObject; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pResDesc) memset(pResDesc, 0, 64);
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+/* id 0xc7: cudaGetTextureObjectResourceViewDesc */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_resource_view_desc(
+        void *pResViewDesc, void *texObject, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)pResViewDesc; (void)texObject; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (pResViewDesc) memset(pResViewDesc, 0, 64);
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+/* id 0x201-0x203: CUDA logs (no-op stubs with correct names) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_register_callback(
+        void *cb, void *userData, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)cb; (void)userData; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_unregister_callback(
+        void *cb, void *userData, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)cb; (void)userData; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_current(
+        void *log, void *unused_b, void *unused_c, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    (void)log; (void)unused_b; (void)unused_c; (void)unused_d;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return CUDA_ERROR_NOT_SUPPORTED;
 }
 
 
@@ -1692,11 +1854,29 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_add_callback(
 
 static void *acuda_dd9e98a4_get_id(unsigned int id) {
     switch (id) {
+    case 0x1:  return (void *)&acuda_dd9e98a4_api_driver_get_version;
+    case 0x2:  return (void *)&acuda_dd9e98a4_api_runtime_get_version;
     case 0x7:  return (void *)&acuda_dd9e98a4_api_create_channel_desc;
-    case 0xb9: return (void *)&acuda_dd9e98a4_api_0b9;
+    case 0x4c: return (void *)&acuda_dd9e98a4_api_graphics_map_resources;
+    case 0x4d: return (void *)&acuda_dd9e98a4_api_graphics_unmap_resources;
+    case 0x4e: return (void *)&acuda_dd9e98a4_api_graphics_resource_get_mapped_pointer;
+    case 0x4f: return (void *)&acuda_dd9e98a4_api_graphics_sub_resource_get_mapped_array;
+    case 0xb9: return (void *)&acuda_dd9e98a4_api_create_texture_object;
+    case 0xba: return (void *)&acuda_dd9e98a4_api_destroy_texture_object;
+    case 0xbb: return (void *)&acuda_dd9e98a4_api_get_texture_object_resource_desc;
+    case 0xbc: return (void *)&acuda_dd9e98a4_api_get_texture_object_texture_desc;
+    case 0xbd: return (void *)&acuda_dd9e98a4_api_create_surface_object;
+    case 0xbe: return (void *)&acuda_dd9e98a4_api_destroy_surface_object;
+    case 0xbf: return (void *)&acuda_dd9e98a4_api_get_surface_object_resource_desc;
+    case 0xc4: return (void *)&acuda_dd9e98a4_api_graphics_resource_get_mapped_mipmapped_array;
+    case 0xc7: return (void *)&acuda_dd9e98a4_api_get_texture_object_resource_view_desc;
+    case 0x201: return (void *)&acuda_dd9e98a4_api_logs_register_callback;
+    case 0x202: return (void *)&acuda_dd9e98a4_api_logs_unregister_callback;
+    case 0x203: return (void *)&acuda_dd9e98a4_api_logs_current;
     /* 0x03-0x31: Device selection, errors, memory management */
     case 0x03: return (void *)&acuda_dd9e98a4_api_device_get_count;
     case 0x05: return (void *)&acuda_dd9e98a4_api_choose_device;
+    case 0x6:  return (void *)&acuda_dd9e98a4_api_get_channel_desc;
     case 0x0a: return (void *)&acuda_dd9e98a4_api_get_last_error;
     case 0x0b: return (void *)&acuda_dd9e98a4_api_peek_at_last_error;
     case 0x0c: return (void *)&acuda_dd9e98a4_api_get_error_string_runtime;
