@@ -47,13 +47,7 @@ ACUDA_COMPAT_UNIMPL3(cuGraphicsD3D11RegisterResource)
 ACUDA_COMPAT_UNIMPL3(cuGraphicsD3D9RegisterResource)
 ACUDA_COMPAT_UNIMPL3(cuGraphicsGLRegisterBuffer)
 ACUDA_COMPAT_UNIMPL4(cuGraphicsGLRegisterImage)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsMapResources)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsUnmapResources)
-ACUDA_COMPAT_UNIMPL1(cuGraphicsUnregisterResource)
-ACUDA_COMPAT_UNIMPL3(cuGraphicsResourceGetMappedPointer_v2)
-ACUDA_COMPAT_UNIMPL2(cuGraphicsResourceSetMapFlags_v2)
-ACUDA_COMPAT_UNIMPL4(cuGraphicsSubResourceGetMappedArray)
-ACUDA_COMPAT_UNIMPL4(cuGraphicsResourceGetMappedMipmappedArray)
+/* cuGraphics map/unmap/query/unregister implemented in driver_graphics.c */
 ACUDA_COMPAT_UNIMPL2(cuWGLGetDevice)
 
 /* IPC handles: 64-byte structs passed by value, like the real driver. */

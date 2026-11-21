@@ -185,6 +185,7 @@ add_library(acuda_driver SHARED
   src/driver/driver_export_195bcbf4_stubs.c
   src/driver/driver_error.c
   src/driver/driver_texture.c
+  src/driver/driver_graphics.c
   src/driver/driver_procaddr.c
   src/driver/driver_event.c
   src/driver/driver_link.c

@@ -1287,37 +1287,80 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
                                               (acuda_cudaGraphicsResource_t *)resources,
                                               stream);
 }
+static cudaError_t cudaGraphicsUnmapResources(int count, acuda_cudaGraphicsResource_t *resources, void *stream) {
+    (void)stream;
+    if (count < 0) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    if (count > 0 && !resources) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    for (int i = 0; i < count; ++i) {
+        if (!resources[i]) return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
+    }
+    if (count == 0) return (cudaError_t)CUDA_SUCCESS;
+    return (cudaError_t)cuGraphicsUnmapResources((unsigned int)count, (CUgraphicsResource *)resources, (CUstream)stream);
+}
+
+static cudaError_t cudaGraphicsResourceGetMappedPointer(void **devPtr, size_t *size, acuda_cudaGraphicsResource_t resource) {
+    CUdeviceptr dptr = 0;
+    size_t sz = 0;
+    CUresult r;
+    if (!devPtr || !size) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    *devPtr = NULL; *size = 0;
+    r = cuGraphicsResourceGetMappedPointer_v2(&dptr, &sz, (CUgraphicsResource)(uintptr_t)resource);
+    if (r != CUDA_SUCCESS) return (cudaError_t)r;
+    *devPtr = (void *)(uintptr_t)dptr;
+    *size = sz;
+    return (cudaError_t)CUDA_SUCCESS;
+}
+
+static cudaError_t cudaGraphicsSubResourceGetMappedArray(void **array, acuda_cudaGraphicsResource_t resource, unsigned int arrayIndex, unsigned int mipLevel) {
+    CUresult r;
+    if (!array) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    *array = NULL;
+    r = cuGraphicsSubResourceGetMappedArray((CUarray *)array, (CUgraphicsResource)(uintptr_t)resource, arrayIndex, mipLevel);
+    return (cudaError_t)r;
+}
+
+static cudaError_t cudaGraphicsResourceGetMappedMipmappedArray(void **mipmappedArray, acuda_cudaGraphicsResource_t resource) {
+    CUresult r;
+    if (!mipmappedArray) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    *mipmappedArray = NULL;
+    r = cuGraphicsResourceGetMappedMipmappedArray((CUmipmappedArray *)mipmappedArray, (CUgraphicsResource)(uintptr_t)resource);
+    return (cudaError_t)r;
+}
+
 /* id 0x4d: cudaGraphicsUnmapResources */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
         void *count, void *resources, void *stream, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)count; (void)resources; (void)stream; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaGraphicsUnmapResources((int)(uintptr_t)count,
+                                                (acuda_cudaGraphicsResource_t *)resources,
+                                                stream);
 }
 /* id 0x4e: cudaGraphicsResourceGetMappedPointer */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_pointer(
         void *devPtr, void *size, void *resource, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)devPtr; (void)size; (void)resource; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaGraphicsResourceGetMappedPointer((void **)devPtr, (size_t *)size,
+                                                          (acuda_cudaGraphicsResource_t)(uintptr_t)resource);
 }
 /* id 0x4f: cudaGraphicsSubResourceGetMappedArray */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_sub_resource_get_mapped_array(
         void *array, void *resource, void *arrayIndex, void *mipLevel,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)array; (void)resource; (void)arrayIndex; (void)mipLevel;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    return (CUresult)cudaGraphicsSubResourceGetMappedArray((void **)array,
+                                                           (acuda_cudaGraphicsResource_t)(uintptr_t)resource,
+                                                           (unsigned int)(uintptr_t)arrayIndex,
+                                                           (unsigned int)(uintptr_t)mipLevel);
 }
 /* id 0xc4: cudaGraphicsResourceGetMappedMipmappedArray */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mipmapped_array(
         void *mipmappedArray, void *resource, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)mipmappedArray; (void)resource; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaGraphicsResourceGetMappedMipmappedArray((void **)mipmappedArray,
+                                                                 (acuda_cudaGraphicsResource_t)(uintptr_t)resource);
 }
 
 typedef struct { unsigned long long tex; unsigned char view[64]; int has; } acuda_tex_view_entry_t;

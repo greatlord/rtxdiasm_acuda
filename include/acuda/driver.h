@@ -34,6 +34,7 @@ typedef struct CUstream_st *CUstream;
 typedef struct CUevent_st *CUevent;
 typedef struct CUlink_st *CUlinkState;
 typedef struct CUmemPool_st *CUmemPool;
+typedef struct CUgraphicsResource_st *CUgraphicsResource;
 /* CUdeviceptr matches the process pointer width, like the NVIDIA headers:
  * 64-bit on 64-bit hosts, 32-bit on 32-bit hosts.  The 32-bit CUDA 6.x
  * runtime passes 4-byte device pointers (its own memset fallback stubs
@@ -297,6 +298,8 @@ typedef struct CUDA_MEMCPY3D_st {
 #define CUDA_ERROR_INVALID_DEVICE 101
 #define CUDA_ERROR_INVALID_IMAGE 200
 #define CUDA_ERROR_INVALID_CONTEXT 201
+#define CUDA_ERROR_ALREADY_MAPPED 205
+#define CUDA_ERROR_NOT_MAPPED 211
 /* No loaded module/kernel matches the installed device; NVIDIA returns this
  * when a module carries no PTX and none of its cubins match the GPU. */
 #define CUDA_ERROR_NO_BINARY_FOR_GPU 209
@@ -594,6 +597,14 @@ CUresult ACUDA_CUDAAPI cuSurfObjectCreate(CUsurfObject *pSurfObject,
 CUresult ACUDA_CUDAAPI cuSurfObjectDestroy(CUsurfObject surfObject);
 CUresult ACUDA_CUDAAPI cuSurfObjectGetResourceDesc(CUDA_RESOURCE_DESC *pResDesc,
                                      CUsurfObject surfObject);
+CUresult ACUDA_CUDAAPI cuGraphicsMapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream);
+CUresult ACUDA_CUDAAPI cuGraphicsUnmapResources(unsigned int count, CUgraphicsResource *resources, CUstream hStream);
+CUresult ACUDA_CUDAAPI cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pDevPtr, size_t *pSize, CUgraphicsResource resource);
+CUresult ACUDA_CUDAAPI cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags);
+CUresult ACUDA_CUDAAPI cuGraphicsSubResourceGetMappedArray(CUarray *pArray, CUgraphicsResource resource, unsigned int arrayIndex, unsigned int mipLevel);
+CUresult ACUDA_CUDAAPI cuGraphicsResourceGetMappedMipmappedArray(CUmipmappedArray *pMipmappedArray, CUgraphicsResource resource);
+CUresult ACUDA_CUDAAPI cuGraphicsUnregisterResource(CUgraphicsResource resource);
+
 CUresult ACUDA_CUDAAPI cuMemcpy2D(const void *pCopy);
 CUresult ACUDA_CUDAAPI cuMemcpy2DAsync(const void *pCopy, CUstream hStream);
 CUresult ACUDA_CUDAAPI cuMemcpy3D(const void *pCopy);
