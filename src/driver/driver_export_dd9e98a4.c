@@ -1202,8 +1202,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
     return (CUresult)cudaGetChannelDesc((cudaChannelFormatDesc *)desc, (cudaArray_t)(uintptr_t)array);
 }
 
-typedef struct acuda_graphics_resource_st *acuda_cudaGraphicsResource_t;
-
 /* id 0x4c: cudaGraphicsMapResources */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
         void *count, void *resources, void *stream, void *unused_d,
@@ -1211,14 +1209,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_map_resources(
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     return cuGraphicsMapResources((unsigned int)(uintptr_t)count, (CUgraphicsResource *)resources, (CUstream)stream);
 }
-static cudaError_t cudaGraphicsResourceGetMappedMipmappedArray(void **mipmappedArray, acuda_cudaGraphicsResource_t resource) {
-    CUresult r;
-    if (!mipmappedArray) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
-    *mipmappedArray = NULL;
-    r = cuGraphicsResourceGetMappedMipmappedArray((CUmipmappedArray *)mipmappedArray, (CUgraphicsResource)(uintptr_t)resource);
-    return (cudaError_t)r;
-}
-
 /* id 0x4d: cudaGraphicsUnmapResources */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_unmap_resources(
         void *count, void *resources, void *stream, void *unused_d,
@@ -1257,8 +1247,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mi
         void *mipmappedArray, void *resource, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return (CUresult)cudaGraphicsResourceGetMappedMipmappedArray((void **)mipmappedArray,
-                                                                 (acuda_cudaGraphicsResource_t)(uintptr_t)resource);
+    if (mipmappedArray) *(void **)mipmappedArray = NULL;
+    return cuGraphicsResourceGetMappedMipmappedArray((CUmipmappedArray *)mipmappedArray, (CUgraphicsResource)(uintptr_t)resource);
 }
 
 typedef struct { unsigned long long tex; unsigned char view[64]; int has; } acuda_tex_view_entry_t;
