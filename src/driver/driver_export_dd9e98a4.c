@@ -1189,8 +1189,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_driver_get_version(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (driverVersion) *(int *)driverVersion = 13050;
-    return CUDA_SUCCESS;
+    return cuDriverGetVersion((int *)driverVersion);
 }
 
 /* id 0x2: cudaRuntimeGetVersion(int *runtimeVersion) */
@@ -1199,8 +1198,8 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_runtime_get_version(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (runtimeVersion) *(int *)runtimeVersion = 13050;
-    return CUDA_SUCCESS;
+    /* Keep runtime and driver version aligned to ACuda's single CUDA version. */
+    return cuDriverGetVersion((int *)runtimeVersion);
 }
 
 /* id 0x6: cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) */
