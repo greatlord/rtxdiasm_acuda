@@ -148,6 +148,7 @@ static CUresult lookup_symbol(const char *symbol, void **pfn) {
     ENTRY(cuCtxSetCacheConfig)
     ENTRY(cuCtxGetCacheConfig)
     ENTRY(cuCtxDetach)
+    ENTRY(cuCtxAttach)
     ENTRY(cuMemGetInfo)
     ENTRY(cuDeviceGetDefaultMemPool)
     ENTRY(cuDeviceGetMemPool)

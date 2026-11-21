@@ -510,6 +510,7 @@ CUresult ACUDA_CUDAAPI cuCtxSetLimit(int limit, size_t value);
 CUresult ACUDA_CUDAAPI cuCtxSetCacheConfig(int config);
 CUresult ACUDA_CUDAAPI cuCtxGetCacheConfig(int *config);
 CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx);
+CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes);
 CUresult ACUDA_CUDAAPI cuDeviceGetDefaultMemPool(CUmemPool *pool_out, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceGetMemPool(CUmemPool *pool_out, CUdevice dev);

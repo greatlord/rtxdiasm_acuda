@@ -243,6 +243,7 @@ typedef struct cudaMemcpy3DParms_st {
     cudaMemcpyKind kind;
 } cudaMemcpy3DParms;
 
+/* CUDA 13.4/13.5-compatible layout (ABI-critical for runtime API callers). */
 struct cudaDeviceProp {
     char name[256];
     cudaUUID_t uuid;
@@ -256,21 +257,16 @@ struct cudaDeviceProp {
     int maxThreadsPerBlock;
     int maxThreadsDim[3];
     int maxGridSize[3];
-    int clockRate;
     size_t totalConstMem;
     int major;
     int minor;
     size_t textureAlignment;
     size_t texturePitchAlignment;
-    int deviceOverlap;
     int multiProcessorCount;
-    int kernelExecTimeoutEnabled;
     int integrated;
     int canMapHostMemory;
-    int computeMode;
     int maxTexture1D;
     int maxTexture1DMipmap;
-    int maxTexture1DLinear;
     int maxTexture2D[2];
     int maxTexture2DMipmap[2];
     int maxTexture2DLinear[3];
@@ -297,7 +293,6 @@ struct cudaDeviceProp {
     int tccDriver;
     int asyncEngineCount;
     int unifiedAddressing;
-    int memoryClockRate;
     int memoryBusWidth;
     int l2CacheSize;
     int persistingL2CacheMaxSize;
@@ -311,13 +306,11 @@ struct cudaDeviceProp {
     int isMultiGpuBoard;
     int multiGpuBoardGroupID;
     int hostNativeAtomicSupported;
-    int singleToDoublePrecisionPerfRatio;
     int pageableMemoryAccess;
     int concurrentManagedAccess;
     int computePreemptionSupported;
     int canUseHostPointerForRegisteredMem;
     int cooperativeLaunch;
-    int cooperativeMultiDeviceLaunch;
     size_t sharedMemPerBlockOptin;
     int pageableMemoryAccessUsesHostPageTables;
     int directManagedMemAccessFromHost;
@@ -337,9 +330,14 @@ struct cudaDeviceProp {
     int ipcEventSupported;
     int clusterLaunch;
     int unifiedFunctionPointers;
-    int reserved2[2];
-    int reserved1[1];
-    int reserved[60];
+    int deviceNumaConfig;
+    int deviceNumaId;
+    int mpsEnabled;
+    int hostNumaId;
+    unsigned int gpuPciDeviceID;
+    unsigned int gpuPciSubsystemID;
+    int hostNumaMultinodeIpcSupported;
+    int reserved[56];
 };
 
 struct cudaFuncAttributes {

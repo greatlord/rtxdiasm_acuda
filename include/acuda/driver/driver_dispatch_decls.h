@@ -12,6 +12,7 @@ CUresult ACUDA_CUDAAPI cuCtxCreate_v2(CUcontext *pctx, unsigned int flags, CUdev
 CUresult ACUDA_CUDAAPI cuCtxDestroy(CUcontext ctx);
 CUresult ACUDA_CUDAAPI cuCtxDestroy_v2(CUcontext ctx);
 CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx);
+CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuCtxDisablePeerAccess(void *a1);
 CUresult ACUDA_CUDAAPI cuCtxEnablePeerAccess(void *a1, void *a2);
 CUresult ACUDA_CUDAAPI cuCtxGetApiVersion(CUcontext ctx, unsigned int *version);

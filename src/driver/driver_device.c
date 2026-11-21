@@ -805,7 +805,6 @@ CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop
             prop->memPitch = (size_t)v;
     }
     acuda_query_attr_int(&prop->regsPerBlock, 12, (CUdevice)device);
-    acuda_query_attr_int(&prop->clockRate, 13, (CUdevice)device);
     {
         int v = 0;
         if (cuDeviceGetAttribute(&v, 14, (CUdevice)device) == CUDA_SUCCESS)
@@ -815,14 +814,11 @@ CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop
             prop->texturePitchAlignment = (size_t)v;
     }
     acuda_query_attr_int(&prop->multiProcessorCount, 16, (CUdevice)device);
-    acuda_query_attr_int(&prop->kernelExecTimeoutEnabled, 17, (CUdevice)device);
     acuda_query_attr_int(&prop->integrated, 18, (CUdevice)device);
     acuda_query_attr_int(&prop->canMapHostMemory, 19, (CUdevice)device);
-    acuda_query_attr_int(&prop->computeMode, 20, (CUdevice)device);
     acuda_query_attr_int(&prop->concurrentKernels, 31, (CUdevice)device);
     acuda_query_attr_int(&prop->pciBusID, 33, (CUdevice)device);
     acuda_query_attr_int(&prop->pciDeviceID, 34, (CUdevice)device);
-    acuda_query_attr_int(&prop->memoryClockRate, 36, (CUdevice)device);
     acuda_query_attr_int(&prop->memoryBusWidth, 37, (CUdevice)device);
     acuda_query_attr_int(&prop->l2CacheSize, 38, (CUdevice)device);
     acuda_query_attr_int(&prop->maxThreadsPerMultiProcessor, 39, (CUdevice)device);
@@ -837,7 +833,6 @@ CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop
     acuda_query_attr_int(&prop->regsPerMultiprocessor, 82, (CUdevice)device);
 
     /* Defaults / capabilities (reasonable values consistent with ACuda driver) */
-    prop->deviceOverlap = 1;
     prop->textureAlignment = prop->textureAlignment ? prop->textureAlignment : 512;
     prop->surfaceAlignment = 512;
     prop->ECCEnabled = 0;
@@ -849,13 +844,11 @@ CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop
     prop->isMultiGpuBoard = 0;
     prop->multiGpuBoardGroupID = 0;
     prop->hostNativeAtomicSupported = 0;
-    prop->singleToDoublePrecisionPerfRatio = 0;
     prop->pageableMemoryAccess = 1;
     prop->concurrentManagedAccess = 0;
     prop->computePreemptionSupported = 0;
     prop->canUseHostPointerForRegisteredMem = 0;
     prop->cooperativeLaunch = 0;
-    prop->cooperativeMultiDeviceLaunch = 0;
     prop->sharedMemPerBlockOptin = prop->sharedMemPerBlock;
     prop->pageableMemoryAccessUsesHostPageTables = 1;
     prop->directManagedMemAccessFromHost = 0;
@@ -875,11 +868,17 @@ CUresult ACUDA_CUDAAPI acuda_query_device_properties(struct cudaDeviceProp *prop
     prop->ipcEventSupported = 0;
     prop->clusterLaunch = 0;
     prop->unifiedFunctionPointers = 0;
+    prop->deviceNumaConfig = 0;
+    prop->deviceNumaId = -1;
+    prop->mpsEnabled = 0;
+    prop->hostNumaId = -1;
+    prop->gpuPciDeviceID = 0;
+    prop->gpuPciSubsystemID = 0;
+    prop->hostNumaMultinodeIpcSupported = 0;
 
     /* Texture/surface limits (sensible defaults) */
     prop->maxTexture1D = 131072;
     prop->maxTexture1DMipmap = 32768;
-    prop->maxTexture1DLinear = 134217728;
     prop->maxTexture2D[0] = 131072; prop->maxTexture2D[1] = 65536;
     prop->maxTexture2DMipmap[0] = 32768; prop->maxTexture2DMipmap[1] = 32768;
     prop->maxTexture2DLinear[0] = 131072; prop->maxTexture2DLinear[1] = 65000; prop->maxTexture2DLinear[2] = 2097120;

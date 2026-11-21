@@ -17,8 +17,8 @@ CUresult ACUDA_CUDAAPI cuCtxCreate_v2(CUcontext *pctx, unsigned int flags, CUdev
         return CUDA_ERROR_INVALID_VALUE;
     *pctx = NULL;
     if (flags & ~ACUDA_CTX_FLAGS_MASK) {
-        ACUDA_DEBUG_PRINT("acuda-trace !! cuCtxCreate_v2 bad flags 0x%x\n", flags);
-        return CUDA_ERROR_INVALID_VALUE; // sched/map-host/lmem bits only
+        ACUDA_DEBUG_PRINT("acuda-trace !! cuCtxCreate_v2 flags 0x%x (ignoring unsupported bits)\n", flags);
+        flags &= ACUDA_CTX_FLAGS_MASK;
     }
     int n = 0;
     CUresult r = cuDeviceGetCount(&n);
@@ -198,6 +198,21 @@ CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx) {
     return CUDA_SUCCESS; // legacy no-op
 }
 
+CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags) {
+    (void)flags;
+    if (!pctx)
+        return CUDA_ERROR_INVALID_VALUE;
+    CUdevice dev = 0;
+    if (need_init() != CUDA_SUCCESS)
+        return CUDA_ERROR_NOT_INITIALIZED;
+    CUcontext cur = current_ctx();
+    if (cur) {
+        *pctx = cur;
+        return ctx_push(cur);
+    }
+    return cuDevicePrimaryCtxRetain(pctx, dev);
+}
+
 CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxRetain(CUcontext *pctx, CUdevice dev) {
     if (!pctx)
         return CUDA_ERROR_INVALID_VALUE;
@@ -260,8 +275,7 @@ CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxReset(CUdevice dev) {
 }
 
 CUresult ACUDA_CUDAAPI cuDevicePrimaryCtxSetFlags(CUdevice dev, unsigned int flags) {
-    if (flags & ~ACUDA_CTX_FLAGS_MASK)
-        return CUDA_ERROR_INVALID_VALUE;
+    (void)flags;
     return check_dev(dev);
 }
 
