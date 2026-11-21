@@ -140,7 +140,7 @@ static void acuda_module_collect_symbols(CUmodule m, const char *ptx) {
                     continue;
                 }
                 if (*r == '=' || *r == '{') {
-                    break; /* initializer present - we won't parse bytes fully, but we need size; treat as uninit for now? */
+                    break; /* initializer present - parse below */
                 }
                 /* identifier/name */
                 if ((*r >= 'A' && *r <= 'Z') || (*r >= 'a' && *r <= 'z') || *r == '_' || *r == '$' || *r == '%') {
@@ -157,9 +157,51 @@ static void acuda_module_collect_symbols(CUmodule m, const char *ptx) {
             }
             if (elem && dim && name[0]) {
                 size_t bytes = elem * dim;
-                /* For now allocate zero-initialized; initialized data parsing can be added if needed. */
+                unsigned char *init = NULL;
+                const char *ir = r;
+                if (*ir == '=' || *ir == '{') {
+                    if (*ir == '=') ir++;
+                    ir = acuda_skip_ws_comments(ir);
+                    if (*ir == '{') {
+                        ir++;
+                        init = (unsigned char *)calloc(1, bytes);
+                        if (init) {
+                            size_t off = 0;
+                            while (*ir && *ir != '}' && off < bytes) {
+                                ir = acuda_skip_ws_comments(ir);
+                                if (*ir == '}') break;
+                                if (*ir == ',') { ir++; continue; }
+                                int neg = 0;
+                                if (*ir == '-') { neg = 1; ir++; }
+                                else if (*ir == '+') { ir++; }
+                                unsigned long long val = 0;
+                                if (*ir == '0' && (ir[1] == 'x' || ir[1] == 'X')) {
+                                    ir += 2;
+                                    while ((*ir >= '0' && *ir <= '9') || (*ir >= 'a' && *ir <= 'f') || (*ir >= 'A' && *ir <= 'F')) {
+                                        unsigned d = (*ir >= '0' && *ir <= '9') ? (unsigned)(*ir - '0') : (unsigned)((*ir | 32) - 'a' + 10);
+                                        val = (val << 4) | d; ir++;
+                                    }
+                                } else if (*ir >= '0' && *ir <= '9') {
+                                    while (*ir >= '0' && *ir <= '9') { val = val * 10 + (unsigned)(*ir - '0'); ir++; }
+                                } else {
+                                    ir++; continue;
+                                }
+                                long long sval = neg ? -(long long)val : (long long)val;
+                                size_t w = elem < 8 ? elem : 8;
+                                if (off + w <= bytes) memcpy(init + off, &sval, w);
+                                off += elem;
+                                ir = acuda_skip_ws_comments(ir);
+                                if (*ir == ',') ir++;
+                            }
+                            if (*ir == '}') ir++;
+                        }
+                    }
+                }
                 (void)is_global; (void)is_const;
-                acuda_module_add_symbol(m, name, bytes, NULL);
+                int had_init = (init != NULL);
+                acuda_module_add_symbol(m, name, bytes, init);
+                free(init);
+                if (had_init) { p = ir; goto next_line; }
             }
         }
 next_line:
