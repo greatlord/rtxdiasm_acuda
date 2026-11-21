@@ -1251,57 +1251,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mi
     return cuGraphicsResourceGetMappedMipmappedArray((CUmipmappedArray *)mipmappedArray, (CUgraphicsResource)(uintptr_t)resource);
 }
 
-typedef struct { unsigned long long tex; unsigned char view[64]; int has; } acuda_tex_view_entry_t;
-static acuda_tex_view_entry_t g_tex_views[256];
-#if defined(_WIN32)
-static SRWLOCK g_tex_views_lock = SRWLOCK_INIT;
-#endif
-static void acuda_dd9e98a4_store_tex_view(unsigned long long tex, const void *view) {
-#if defined(_WIN32)
-    AcquireSRWLockExclusive(&g_tex_views_lock);
-#endif
-    for (int i = 0; i < 256; i++) {
-        if (g_tex_views[i].has && g_tex_views[i].tex == tex) {
-            if (view) memcpy(g_tex_views[i].view, view, 64);
-            else memset(g_tex_views[i].view, 0, 64);
-            g_tex_views[i].has = view ? 1 : 0;
-#if defined(_WIN32)
-            ReleaseSRWLockExclusive(&g_tex_views_lock);
-#endif
-            return;
-        }
-    }
-    if (view) {
-        for (int i = 0; i < 256; i++) {
-            if (!g_tex_views[i].has) {
-                g_tex_views[i].tex = tex;
-                memcpy(g_tex_views[i].view, view, 64);
-                g_tex_views[i].has = 1;
-                break;
-            }
-        }
-    }
-#if defined(_WIN32)
-    ReleaseSRWLockExclusive(&g_tex_views_lock);
-#endif
-}
-static int acuda_dd9e98a4_load_tex_view(unsigned long long tex, void *view) {
-    int ok = 0;
-#if defined(_WIN32)
-    AcquireSRWLockShared(&g_tex_views_lock);
-#endif
-    for (int i = 0; i < 256; i++) {
-        if (g_tex_views[i].has && g_tex_views[i].tex == tex) {
-            if (view) memcpy(view, g_tex_views[i].view, 64);
-            ok = 1; break;
-        }
-    }
-#if defined(_WIN32)
-    ReleaseSRWLockShared(&g_tex_views_lock);
-#endif
-    return ok;
-}
-
 static CUresult acuda_dd9e98a4_to_cu_resdesc(const void *pResDesc, CUDA_RESOURCE_DESC *rd) {
     /* cudart cudaResourceDesc layout: int resType; +pad; union { array, mipmap, linear, pitch2D } */
     typedef struct { int x,y,z,w,f; } acuda_chfmt;
@@ -1396,7 +1345,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_texture_object(
     }
     if (r != CUDA_SUCCESS) return r;
     *(unsigned long long *)pTexObject = (unsigned long long)tex;
-    acuda_dd9e98a4_store_tex_view((unsigned long long)tex, pResViewDesc);
     return CUDA_SUCCESS;
 }
 /* id 0xba: cudaDestroyTextureObject */
@@ -1406,7 +1354,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_texture_object(
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     if (!texObject) return CUDA_ERROR_INVALID_VALUE;
-    acuda_dd9e98a4_store_tex_view((unsigned long long)(uintptr_t)texObject, NULL);
     return cuTexObjectDestroy((CUtexObject)(uintptr_t)texObject);
 }
 /* id 0xbb: cudaGetTextureObjectResourceDesc */
@@ -1512,15 +1459,13 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_resource_vie
     if (!pResViewDesc) return CUDA_ERROR_INVALID_VALUE;
     memset(&vd, 0, sizeof(vd));
     r = cuTexObjectGetResourceViewDesc(&vd, (CUtexObject)(uintptr_t)texObject);
-    if (r == CUDA_SUCCESS) {
+    if (r != CUDA_SUCCESS) {
         memset(pResViewDesc, 0, 64);
-        memcpy(pResViewDesc, &vd, sizeof(vd) < 64 ? sizeof(vd) : 64);
-        return CUDA_SUCCESS;
+        return r;
     }
-    if (acuda_dd9e98a4_load_tex_view((unsigned long long)(uintptr_t)texObject, pResViewDesc))
-        return CUDA_SUCCESS;
     memset(pResViewDesc, 0, 64);
-    return r;
+    memcpy(pResViewDesc, &vd, sizeof(vd) < 64 ? sizeof(vd) : 64);
+    return CUDA_SUCCESS;
 }
 
 /* id 0x201-0x203: CUDA logs */
