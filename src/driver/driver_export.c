@@ -50,7 +50,7 @@ CUresult ACUDA_CUDAAPI cuGetExportTable(const void **ppExportTable,
                           const struct CUuuid_st *pExportTableId) {
     acuda_log_caller("cuGetExportTable");
     if (acuda_export_table_is_dd9e98a4(pExportTableId)) {
-        if (!acuda_dd9e98a4_driver_ready())
+        if (!acuda_driver_ready())
             return CUDA_ERROR_NOT_INITIALIZED;
         return acuda_export_table_get_dd9e98a4(ppExportTable);
     }
@@ -60,6 +60,8 @@ CUresult ACUDA_CUDAAPI cuGetExportTable(const void **ppExportTable,
                 (const void *)ppExportTable, (const void *)pExportTableId);
         return CUDA_ERROR_INVALID_VALUE;
     }
+    if (!acuda_driver_ready())
+        return CUDA_ERROR_NOT_INITIALIZED;
     ACUDA_DEBUG_PRINT( "ACuda-debug: cuGetExportTable(%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x)\n",
             (unsigned char)pExportTableId->bytes[0],
             (unsigned char)pExportTableId->bytes[1],

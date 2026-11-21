@@ -68,7 +68,7 @@ int acuda_dd9e98a4_ready_state(void) {
 
 int acuda_dd9e98a4_was_ready_flag(void) { return g_dd9e98a4_was_ready; }
 
-int acuda_dd9e98a4_driver_ready(void) {
+int acuda_driver_ready(void) {
 #if defined(_WIN32)
     {
         static int _errmode_set = 0;
@@ -1995,7 +1995,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_wait_event(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_wait_event");
     (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
     if (!event)
         return CUDA_ERROR_INVALID_VALUE;
@@ -2011,7 +2011,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_add_callback(
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_stream_add_callback");
     (void)flags; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!acuda_dd9e98a4_driver_ready())
+    if (!acuda_driver_ready())
         return CUDA_ERROR_NOT_INITIALIZED;
     if (!callback)
         return CUDA_ERROR_INVALID_VALUE;
