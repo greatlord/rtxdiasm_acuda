@@ -1208,10 +1208,51 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_channel_desc(
         void *desc, void *array, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
-    (void)array; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    if (desc) {
+    if (!desc) return CUDA_ERROR_INVALID_VALUE;
+    {
         acuda_channel_desc_t *d = (acuda_channel_desc_t *)desc;
+        CUDA_ARRAY_DESCRIPTOR ad;
+        CUDA_ARRAY3D_DESCRIPTOR ad3;
+        memset(d, 0, sizeof(*d));
+        if (array && cuArrayGetDescriptor(&ad, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad.NumChannels;
+            int bits = 32, fmt = 0; /* float */
+            if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT8) { bits = 8; fmt = 1; }
+            else if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT16) { bits = 16; fmt = 1; }
+            else if (ad.Format == CU_AD_FORMAT_UNSIGNED_INT32) { bits = 32; fmt = 1; }
+            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT8) { bits = 8; fmt = 2; }
+            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT16) { bits = 16; fmt = 2; }
+            else if (ad.Format == CU_AD_FORMAT_SIGNED_INT32) { bits = 32; fmt = 2; }
+            else if (ad.Format == CU_AD_FORMAT_HALF) { bits = 16; fmt = 0; }
+            else if (ad.Format == CU_AD_FORMAT_FLOAT) { bits = 32; fmt = 0; }
+            d->x = (n >= 1) ? bits : 0;
+            d->y = (n >= 2) ? bits : 0;
+            d->z = (n >= 3) ? bits : 0;
+            d->w = (n >= 4) ? bits : 0;
+            d->f = fmt;
+            return CUDA_SUCCESS;
+        }
+        if (array && cuArray3DGetDescriptor(&ad3, (CUarray)(uintptr_t)array) == CUDA_SUCCESS) {
+            unsigned n = ad3.NumChannels;
+            int bits = 32, fmt = 0;
+            if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT8) { bits = 8; fmt = 1; }
+            else if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT16) { bits = 16; fmt = 1; }
+            else if (ad3.Format == CU_AD_FORMAT_UNSIGNED_INT32) { bits = 32; fmt = 1; }
+            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT8) { bits = 8; fmt = 2; }
+            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT16) { bits = 16; fmt = 2; }
+            else if (ad3.Format == CU_AD_FORMAT_SIGNED_INT32) { bits = 32; fmt = 2; }
+            else if (ad3.Format == CU_AD_FORMAT_HALF) { bits = 16; fmt = 0; }
+            else if (ad3.Format == CU_AD_FORMAT_FLOAT) { bits = 32; fmt = 0; }
+            d->x = (n >= 1) ? bits : 0;
+            d->y = (n >= 2) ? bits : 0;
+            d->z = (n >= 3) ? bits : 0;
+            d->w = (n >= 4) ? bits : 0;
+            d->f = fmt;
+            return CUDA_SUCCESS;
+        }
+        /* fallback: safe default */
         d->x = 32; d->y = 32; d->z = 32; d->w = 32; d->f = 0;
     }
     return CUDA_SUCCESS;
@@ -1258,100 +1299,313 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mi
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 
+typedef struct { unsigned long long tex; unsigned char view[64]; int has; } acuda_tex_view_entry_t;
+static acuda_tex_view_entry_t g_tex_views[256];
+#if defined(_WIN32)
+static SRWLOCK g_tex_views_lock = SRWLOCK_INIT;
+#endif
+static void acuda_dd9e98a4_store_tex_view(unsigned long long tex, const void *view) {
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&g_tex_views_lock);
+#endif
+    for (int i = 0; i < 256; i++) {
+        if (g_tex_views[i].has && g_tex_views[i].tex == tex) {
+            if (view) memcpy(g_tex_views[i].view, view, 64);
+            else memset(g_tex_views[i].view, 0, 64);
+            g_tex_views[i].has = view ? 1 : 0;
+#if defined(_WIN32)
+            ReleaseSRWLockExclusive(&g_tex_views_lock);
+#endif
+            return;
+        }
+    }
+    if (view) {
+        for (int i = 0; i < 256; i++) {
+            if (!g_tex_views[i].has) {
+                g_tex_views[i].tex = tex;
+                memcpy(g_tex_views[i].view, view, 64);
+                g_tex_views[i].has = 1;
+                break;
+            }
+        }
+    }
+#if defined(_WIN32)
+    ReleaseSRWLockExclusive(&g_tex_views_lock);
+#endif
+}
+static int acuda_dd9e98a4_load_tex_view(unsigned long long tex, void *view) {
+    int ok = 0;
+#if defined(_WIN32)
+    AcquireSRWLockShared(&g_tex_views_lock);
+#endif
+    for (int i = 0; i < 256; i++) {
+        if (g_tex_views[i].has && g_tex_views[i].tex == tex) {
+            if (view) memcpy(view, g_tex_views[i].view, 64);
+            ok = 1; break;
+        }
+    }
+#if defined(_WIN32)
+    ReleaseSRWLockShared(&g_tex_views_lock);
+#endif
+    return ok;
+}
+
+static CUresult acuda_dd9e98a4_to_cu_resdesc(const void *pResDesc, CUDA_RESOURCE_DESC *rd) {
+    /* cudart cudaResourceDesc layout: int resType; +pad; union { array, mipmap, linear, pitch2D } */
+    typedef struct { int x,y,z,w,f; } acuda_chfmt;
+    typedef struct { void *array; } acuda_res_array;
+    typedef struct { void *mipmap; } acuda_res_mip;
+    typedef struct { void *devPtr; acuda_chfmt desc; size_t sizeInBytes; } acuda_res_linear;
+    typedef struct { void *devPtr; acuda_chfmt desc; size_t pitchInBytes; size_t width; size_t height; } acuda_res_pitch2d;
+    typedef struct { int resType; int pad; union { acuda_res_array array; acuda_res_mip mipmap; acuda_res_linear linear; acuda_res_pitch2d pitch2D; char raw[64]; } res; } acuda_cuda_resdesc;
+    const acuda_cuda_resdesc *src = (const acuda_cuda_resdesc *)pResDesc;
+    memset(rd, 0, sizeof(*rd));
+    if (!src) return CUDA_ERROR_INVALID_VALUE;
+    rd->resType = (CUresourcetype)src->resType;
+    if (src->resType == 0) { /* cudaResourceTypeArray */
+        rd->res.array.hArray = (CUarray)(uintptr_t)src->res.array.array;
+        return CUDA_SUCCESS;
+    } else if (src->resType == 1) { /* cudaResourceTypeMipmappedArray */
+        rd->res.mipmap.hMipmappedArray = (CUmipmappedArray)(uintptr_t)src->res.mipmap.mipmap;
+        return CUDA_SUCCESS;
+    } else if (src->resType == 2) { /* cudaResourceTypeLinear */
+        unsigned n = (src->res.linear.desc.x?1:0)+(src->res.linear.desc.y?1:0)+(src->res.linear.desc.z?1:0)+(src->res.linear.desc.w?1:0);
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        if (src->res.linear.desc.f == 1) fmt = CU_AD_FORMAT_UNSIGNED_INT32;
+        else if (src->res.linear.desc.f == 2) fmt = CU_AD_FORMAT_SIGNED_INT32;
+        rd->res.linear.devPtr = (CUdeviceptr)(uintptr_t)src->res.linear.devPtr;
+        rd->res.linear.format = fmt;
+        rd->res.linear.numChannels = n;
+        rd->res.linear.sizeInBytes = src->res.linear.sizeInBytes;
+        return CUDA_SUCCESS;
+    } else if (src->resType == 3) { /* cudaResourceTypePitch2D */
+        unsigned n = (src->res.pitch2D.desc.x?1:0)+(src->res.pitch2D.desc.y?1:0)+(src->res.pitch2D.desc.z?1:0)+(src->res.pitch2D.desc.w?1:0);
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        if (src->res.pitch2D.desc.f == 1) fmt = CU_AD_FORMAT_UNSIGNED_INT32;
+        else if (src->res.pitch2D.desc.f == 2) fmt = CU_AD_FORMAT_SIGNED_INT32;
+        rd->res.pitch2D.devPtr = (CUdeviceptr)(uintptr_t)src->res.pitch2D.devPtr;
+        rd->res.pitch2D.format = fmt;
+        rd->res.pitch2D.numChannels = n;
+        rd->res.pitch2D.width = src->res.pitch2D.width;
+        rd->res.pitch2D.height = src->res.pitch2D.height;
+        rd->res.pitch2D.pitchInBytes = src->res.pitch2D.pitchInBytes;
+        return CUDA_SUCCESS;
+    }
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
 /* id 0xb9: cudaCreateTextureObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_texture_object(
         void *pTexObject, void *pResDesc, void *pTexDesc, void *pResViewDesc,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 id=0xb9 cudaCreateTextureObject pTex=%p res=%p tex=%p view=%p\n",
-                      pTexObject, pResDesc, pTexDesc, pResViewDesc);
-    (void)pResDesc; (void)pTexDesc; (void)pResViewDesc;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pTexObject) *(void **)pTexObject = (void *)(uintptr_t)0;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_RESOURCE_DESC rd;
+    CUDA_TEXTURE_DESC td;
+    CUtexObject tex = 0;
+    CUresult r;
+    (void)pResViewDesc; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pTexObject || !pResDesc || !pTexDesc) return CUDA_ERROR_INVALID_VALUE;
+    r = acuda_dd9e98a4_to_cu_resdesc(pResDesc, &rd);
+    if (r != CUDA_SUCCESS) return r;
+    memset(&td, 0, sizeof(td));
+    {
+        /* cudart cudaTextureDesc: addressMode[3], filterMode, readMode, sRGB, borderColor[4], normalizedCoords, maxAnisotropy, mipmapFilterMode, mipmapLevelBias, minMipmapLevelClamp, maxMipmapLevelClamp */
+        const int *src = (const int *)pTexDesc;
+        for (int i = 0; i < 3; i++) td.addressMode[i] = (CUaddress_mode)src[i];
+        td.filterMode = (CUfilter_mode)src[3];
+        /* src[4]=readMode, src[5]=sRGB */
+        td.borderColor[0] = ((const float *)pTexDesc)[6];
+        td.borderColor[1] = ((const float *)pTexDesc)[7];
+        td.borderColor[2] = ((const float *)pTexDesc)[8];
+        td.borderColor[3] = ((const float *)pTexDesc)[9];
+        td.flags = src[10] ? 0x2u : 0u; /* normalizedCoords -> CU_TRSF_NORMALIZED_COORDINATES */
+        td.maxAnisotropy = (unsigned)src[11];
+        td.mipmapFilterMode = (CUfilter_mode)src[12];
+        td.mipmapLevelBias = ((const float *)pTexDesc)[13];
+        td.minMipmapLevelClamp = ((const float *)pTexDesc)[14];
+        td.maxMipmapLevelClamp = ((const float *)pTexDesc)[15];
+    }
+    r = cuTexObjectCreate(&tex, &rd, &td, NULL);
+    if (r != CUDA_SUCCESS) return r;
+    *(unsigned long long *)pTexObject = (unsigned long long)tex;
+    acuda_dd9e98a4_store_tex_view((unsigned long long)tex, pResViewDesc);
+    return CUDA_SUCCESS;
 }
 /* id 0xba: cudaDestroyTextureObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_texture_object(
         void *texObject, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)texObject; (void)unused_b; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_SUCCESS;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!texObject) return CUDA_SUCCESS;
+    acuda_dd9e98a4_store_tex_view((unsigned long long)(uintptr_t)texObject, NULL);
+    return cuTexObjectDestroy((CUtexObject)(uintptr_t)texObject);
 }
 /* id 0xbb: cudaGetTextureObjectResourceDesc */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_resource_desc(
         void *pResDesc, void *texObject, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)pResDesc; (void)texObject; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pResDesc) memset(pResDesc, 0, 64);
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_RESOURCE_DESC rd;
+    CUresult r;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pResDesc) return CUDA_ERROR_INVALID_VALUE;
+    r = cuTexObjectGetResourceDesc(&rd, (CUtexObject)(uintptr_t)texObject);
+    if (r != CUDA_SUCCESS) return r;
+    memset(pResDesc, 0, 64);
+    {
+        typedef struct { int resType; int pad; union { struct { void *array; } array; struct { void *mipmap; } mipmap; char raw[64]; } res; } out_t;
+        out_t *o = (out_t *)pResDesc;
+        o->resType = (int)rd.resType;
+        if (rd.resType == CU_RESOURCE_TYPE_ARRAY) o->res.array.array = (void *)rd.res.array.hArray;
+        else if (rd.resType == CU_RESOURCE_TYPE_MIPMAPPED_ARRAY) o->res.mipmap.mipmap = (void *)rd.res.mipmap.hMipmappedArray;
+        else memcpy(&o->res, &rd.res, sizeof(o->res));
+    }
+    return CUDA_SUCCESS;
 }
 /* id 0xbc: cudaGetTextureObjectTextureDesc */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_texture_desc(
         void *pTexDesc, void *texObject, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)pTexDesc; (void)texObject; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pTexDesc) memset(pTexDesc, 0, 64);
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_TEXTURE_DESC td;
+    CUresult r;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pTexDesc) return CUDA_ERROR_INVALID_VALUE;
+    r = cuTexObjectGetTextureDesc(&td, (CUtexObject)(uintptr_t)texObject);
+    if (r != CUDA_SUCCESS) return r;
+    memset(pTexDesc, 0, 64);
+    {
+        int *dst = (int *)pTexDesc;
+        float *fdst = (float *)pTexDesc;
+        for (int i = 0; i < 3; i++) dst[i] = (int)td.addressMode[i];
+        dst[3] = (int)td.filterMode;
+        dst[4] = 0; /* readMode */
+        dst[5] = 0; /* sRGB */
+        fdst[6] = td.borderColor[0]; fdst[7] = td.borderColor[1]; fdst[8] = td.borderColor[2]; fdst[9] = td.borderColor[3];
+        dst[10] = (td.flags & 0x2u) ? 1 : 0;
+        dst[11] = (int)td.maxAnisotropy;
+        dst[12] = (int)td.mipmapFilterMode;
+        fdst[13] = td.mipmapLevelBias; fdst[14] = td.minMipmapLevelClamp; fdst[15] = td.maxMipmapLevelClamp;
+    }
+    return CUDA_SUCCESS;
 }
 /* id 0xbd: cudaCreateSurfaceObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_surface_object(
         void *pSurfObject, void *pResDesc, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)pResDesc; (void)unused_c; (void)unused_d; (void)unused_e;
-    (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pSurfObject) *(void **)pSurfObject = (void *)(uintptr_t)0;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_RESOURCE_DESC rd;
+    CUsurfObject surf = 0;
+    CUresult r;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pSurfObject || !pResDesc) return CUDA_ERROR_INVALID_VALUE;
+    r = acuda_dd9e98a4_to_cu_resdesc(pResDesc, &rd);
+    if (r != CUDA_SUCCESS) return r;
+    r = cuSurfObjectCreate(&surf, &rd);
+    if (r != CUDA_SUCCESS) return r;
+    *(unsigned long long *)pSurfObject = (unsigned long long)surf;
+    return CUDA_SUCCESS;
 }
 /* id 0xbe: cudaDestroySurfaceObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_surface_object(
         void *surfObject, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)surfObject; (void)unused_b; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_SUCCESS;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
+    (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!surfObject) return CUDA_SUCCESS;
+    return cuSurfObjectDestroy((CUsurfObject)(uintptr_t)surfObject);
 }
 /* id 0xbf: cudaGetSurfaceObjectResourceDesc */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_surface_object_resource_desc(
         void *pResDesc, void *surfObject, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)pResDesc; (void)surfObject; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pResDesc) memset(pResDesc, 0, 64);
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_RESOURCE_DESC rd;
+    CUresult r;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pResDesc) return CUDA_ERROR_INVALID_VALUE;
+    r = cuSurfObjectGetResourceDesc(&rd, (CUsurfObject)(uintptr_t)surfObject);
+    if (r != CUDA_SUCCESS) return r;
+    memset(pResDesc, 0, 64);
+    {
+        typedef struct { int resType; int pad; union { struct { void *array; } array; struct { void *mipmap; } mipmap; char raw[64]; } res; } out_t;
+        out_t *o = (out_t *)pResDesc;
+        o->resType = (int)rd.resType;
+        if (rd.resType == CU_RESOURCE_TYPE_ARRAY) o->res.array.array = (void *)rd.res.array.hArray;
+        else if (rd.resType == CU_RESOURCE_TYPE_MIPMAPPED_ARRAY) o->res.mipmap.mipmap = (void *)rd.res.mipmap.hMipmappedArray;
+        else memcpy(&o->res, &rd.res, sizeof(o->res));
+    }
+    return CUDA_SUCCESS;
 }
 /* id 0xc7: cudaGetTextureObjectResourceViewDesc */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_texture_object_resource_view_desc(
         void *pResViewDesc, void *texObject, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)pResViewDesc; (void)texObject; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (pResViewDesc) memset(pResViewDesc, 0, 64);
-    return CUDA_ERROR_NOT_SUPPORTED;
+    CUDA_RESOURCE_VIEW_DESC vd;
+    CUresult r;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pResViewDesc) return CUDA_ERROR_INVALID_VALUE;
+    memset(&vd, 0, sizeof(vd));
+    r = cuTexObjectGetResourceViewDesc(&vd, (CUtexObject)(uintptr_t)texObject);
+    if (r == CUDA_SUCCESS) {
+        memset(pResViewDesc, 0, 64);
+        memcpy(pResViewDesc, &vd, sizeof(vd) < 64 ? sizeof(vd) : 64);
+        return CUDA_SUCCESS;
+    }
+    if (acuda_dd9e98a4_load_tex_view((unsigned long long)(uintptr_t)texObject, pResViewDesc))
+        return CUDA_SUCCESS;
+    memset(pResViewDesc, 0, 64);
+    return r;
 }
 
-/* id 0x201-0x203: CUDA logs (no-op stubs with correct names) */
+/* id 0x201-0x203: CUDA logs */
+typedef struct { void *cb; void *userData; } acuda_log_cb_t;
+static acuda_log_cb_t g_log_cbs[16];
+#if defined(_WIN32)
+static SRWLOCK g_log_cbs_lock = SRWLOCK_INIT;
+#endif
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_register_callback(
         void *cb, void *userData, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)cb; (void)userData; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!cb) return CUDA_ERROR_INVALID_VALUE;
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&g_log_cbs_lock);
+#endif
+    for (int i = 0; i < 16; i++) {
+        if (g_log_cbs[i].cb == cb && g_log_cbs[i].userData == userData) {
+#if defined(_WIN32)
+            ReleaseSRWLockExclusive(&g_log_cbs_lock);
+#endif
+            return CUDA_SUCCESS;
+        }
+    }
+    for (int i = 0; i < 16; i++) {
+        if (!g_log_cbs[i].cb) { g_log_cbs[i].cb = cb; g_log_cbs[i].userData = userData; break; }
+    }
+#if defined(_WIN32)
+    ReleaseSRWLockExclusive(&g_log_cbs_lock);
+#endif
+    return CUDA_SUCCESS;
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_unregister_callback(
         void *cb, void *userData, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)cb; (void)userData; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)userData; (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!cb) return CUDA_ERROR_INVALID_VALUE;
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&g_log_cbs_lock);
+#endif
+    for (int i = 0; i < 16; i++) {
+        if (g_log_cbs[i].cb == cb) { g_log_cbs[i].cb = NULL; g_log_cbs[i].userData = NULL; }
+    }
+#if defined(_WIN32)
+    ReleaseSRWLockExclusive(&g_log_cbs_lock);
+#endif
+    return CUDA_SUCCESS;
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_logs_current(
         void *log, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    (void)log; (void)unused_b; (void)unused_c; (void)unused_d;
-    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_ERROR_NOT_SUPPORTED;
+    (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (log) *(void **)log = NULL;
+    return CUDA_SUCCESS;
 }
 
 
