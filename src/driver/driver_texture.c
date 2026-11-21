@@ -269,7 +269,7 @@ CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC
     typedef struct { void *array; } acuda_res_array;
     typedef struct { void *mipmap; } acuda_res_mip;
     typedef struct { void *devPtr; acuda_chfmt desc; size_t sizeInBytes; } acuda_res_linear;
-    typedef struct { void *devPtr; acuda_chfmt desc; size_t pitchInBytes; size_t width; size_t height; } acuda_res_pitch2d;
+    typedef struct { void *devPtr; acuda_chfmt desc; size_t width; size_t height; size_t pitchInBytes; } acuda_res_pitch2d;
     typedef struct { int resType; int pad; union { acuda_res_array array; acuda_res_mip mipmap; acuda_res_linear linear; acuda_res_pitch2d pitch2D; char raw[64]; } res; } acuda_cuda_resdesc;
     const acuda_cuda_resdesc *src = (const acuda_cuda_resdesc *)pResDesc;
     memset(rd, 0, sizeof(*rd));
