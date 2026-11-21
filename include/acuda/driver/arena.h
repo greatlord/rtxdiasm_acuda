@@ -47,6 +47,8 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out);
 int acuda_arena_free(uint64_t virt);
 // Resolves [virt, virt+size) to mapped host memory. 0 ok, -1 invalid.
 int acuda_arena_host(uint64_t virt, size_t size, void **host_out);
+// Like acuda_arena_host, but resolves a raw buffer device address (BDA).
+int acuda_arena_host_bda(uint64_t bda, size_t size, void **host_out);
 // Remaining bytes from virt to the end of its allocation. 0 ok, -1 invalid.
 int acuda_arena_capacity(uint64_t virt, size_t *remain_out);
 // Resolves to (buffer, buffer-offset) for descriptor binding.

@@ -402,6 +402,27 @@ int acuda_arena_host(uint64_t virt, size_t size, void **host_out) {
     return 0;
 }
 
+int acuda_arena_host_bda(uint64_t bda, size_t size, void **host_out) {
+    if (!g_ctx || !bda || !host_out)
+        return -1;
+    for (size_t i = 0; i < g_nallocs; i++) {
+        alloc_t *a = &g_allocs[i];
+        VkBufferDeviceAddressInfo bdai = {
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, NULL, a->buf
+        };
+        VkDeviceAddress addr = vkGetBufferDeviceAddress(g_ctx->device, &bdai);
+        if (bda >= (uint64_t)addr &&
+            bda + size <= (uint64_t)addr + a->size) {
+            size_t base = (size_t)arena_vbase(a->arena);
+            size_t off_in_arena = (size_t)(a->virt - base);
+            *host_out = (unsigned char *)g_arenas[a->arena].mapped +
+                        off_in_arena + (size_t)(bda - (uint64_t)addr);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int acuda_arena_bind(uint64_t virt, size_t size, VkBuffer *buf_out,
                      size_t *offset_out) {
     alloc_t *a = find_alloc(virt, size);

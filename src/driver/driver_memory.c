@@ -159,9 +159,11 @@ CUresult ACUDA_CUDAAPI cuMemPoolTrimTo(CUmemPool pool, size_t minBytesToKeep) {
 CUresult host_for(CUdeviceptr dptr, size_t bytes, void **host) {
     if (!dptr || !host)
         return CUDA_ERROR_INVALID_VALUE;
-    if (acuda_arena_host((uint64_t)dptr, bytes, host) != 0)
-        return CUDA_ERROR_INVALID_VALUE;
-    return CUDA_SUCCESS;
+    if (acuda_arena_host((uint64_t)dptr, bytes, host) == 0)
+        return CUDA_SUCCESS;
+    if (acuda_arena_host_bda((uint64_t)dptr, bytes, host) == 0)
+        return CUDA_SUCCESS;
+    return CUDA_ERROR_INVALID_VALUE;
 }
 
 CUresult bind_for(CUdeviceptr dptr, size_t bytes, VkBuffer *buf,

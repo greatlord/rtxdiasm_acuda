@@ -3,6 +3,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 
 /* Surface dummy helpers (moved from driver.c for launch). */
@@ -76,6 +82,152 @@ static void driver_surf_meta(acuda_buffer_t h, uint32_t out[6]) {
     case 3: cdt = 1; order = 1; break; // R32_UINT
     }
     out[4] = (cdt & 0xffu) | (order << 8);
+}
+
+static int acuda_host_read_ptr(void *dst, uint64_t ptr, size_t n) {
+    if (!ptr || !dst || !n) return 0;
+    if (cuMemcpyDtoH_v2(dst, (CUdeviceptr)ptr, n) == CUDA_SUCCESS)
+        return 1;
+#ifdef _WIN32
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)(uintptr_t)ptr, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+        DWORD prot = mbi.Protect & 0xff;
+        if (mbi.State == MEM_COMMIT &&
+            prot != PAGE_NOACCESS && prot != PAGE_GUARD) {
+            uintptr_t base = (uintptr_t)mbi.BaseAddress;
+            size_t avail = (size_t)(base + mbi.RegionSize - (uintptr_t)ptr);
+            size_t copy = avail < n ? avail : n;
+            if (copy > 0) {
+                memcpy(dst, (const void *)(uintptr_t)ptr, copy);
+                if (copy < n)
+                    memset((uint8_t *)dst + copy, 0, n - copy);
+                return 1;
+            }
+        }
+    }
+#endif
+    return 0;
+}
+
+static int driver_host_vprintf(void *user, const uint8_t *args,
+                                size_t args_bytes, uint8_t *ret,
+                                size_t ret_bytes) {
+    (void)user;
+    if (ret && ret_bytes >= 4) {
+        int32_t zero = 0;
+        memcpy(ret, &zero, 4);
+    }
+    if (args_bytes < 16)
+        return 0;
+    uint64_t fmt_ptr = 0, vlist_ptr = 0;
+    memcpy(&fmt_ptr, args, 8);
+    memcpy(&vlist_ptr, args + 8, 8);
+    if (!fmt_ptr)
+        return 0;
+    char fmt[4096];
+    memset(fmt, 0, sizeof(fmt));
+    /* Pointer args may be host-rewritten (state/buffer mapped) or raw device
+     * pointers (BDA / bind==0xffffffff). */
+    int fmt_ok = acuda_host_read_ptr(fmt, fmt_ptr, 256);
+    if (!fmt_ok) {
+        /* Try smaller D2H for device strings near buffer end. */
+        size_t got = 0;
+        for (size_t i = 0; i < sizeof(fmt) - 1; i++) {
+            char ch = 0;
+            if (cuMemcpyDtoH_v2(&ch, (CUdeviceptr)(fmt_ptr + i), 1) != CUDA_SUCCESS)
+                break;
+            fmt[i] = ch;
+            got = i + 1;
+            if (ch == 0) break;
+        }
+        fmt_ok = (got > 0);
+    }
+    fmt[sizeof(fmt) - 1] = 0;
+    if (!fmt_ok) return 0;
+
+    uint8_t vbuf[4096];
+    size_t vlen = sizeof(vbuf);
+    if (vlist_ptr) {
+        if (!acuda_host_read_ptr(vbuf, vlist_ptr, vlen))
+            memset(vbuf, 0, vlen);
+    }
+    size_t voff = 0;
+    char out[8192];
+    size_t opos = 0;
+    for (size_t i = 0; fmt[i] && opos + 1 < sizeof(out); i++) {
+        if (fmt[i] != '%') {
+            out[opos++] = fmt[i];
+            continue;
+        }
+        i++;
+        if (fmt[i] == '%') { out[opos++] = '%'; continue; }
+        char spec[64];
+        size_t si = 0;
+        spec[si++] = '%';
+        while (fmt[i] && si + 2 < sizeof(spec)) {
+            char c = fmt[i];
+            spec[si++] = c;
+            if (c == 'd' || c == 'i' || c == 'u' || c == 'x' || c == 'X' ||
+                c == 'o' || c == 'f' || c == 'e' || c == 'E' || c == 'g' ||
+                c == 'G' || c == 'c' || c == 's' || c == 'p' || c == 'n') {
+                spec[si] = 0;
+                break;
+            }
+            i++;
+        }
+        if (!fmt[i]) break;
+        char c = fmt[i];
+        if (c == 'n') continue;
+        size_t is_long = (strstr(spec, "ll") || strstr(spec, "l")) ? 1 : 0;
+        size_t is_ptr = (c == 's' || c == 'p');
+        size_t sz = 4;
+        if (c == 'f' || c == 'e' || c == 'E' || c == 'g' || c == 'G' || c == 'p' || is_long)
+            sz = 8;
+        if (is_ptr) sz = 8;
+        size_t align = sz;
+        voff = (voff + align - 1) & ~(align - 1);
+        if (voff + sz > vlen) { out[opos++] = '?'; continue; }
+        int n = 0;
+        char tmp[512];
+        if (c == 's') {
+            uint64_t sp = 0; memcpy(&sp, vbuf + voff, 8);
+            char sbuf[1024]; memset(sbuf, 0, sizeof(sbuf));
+            if (sp && acuda_host_read_ptr(sbuf, sp, sizeof(sbuf)-1))
+                n = snprintf(tmp, sizeof(tmp), "%s", sbuf);
+            else
+                n = snprintf(tmp, sizeof(tmp), "(null)");
+        } else if (c == 'p') {
+            uint64_t pv = 0; memcpy(&pv, vbuf + voff, 8);
+            n = snprintf(tmp, sizeof(tmp), "0x%llx", (unsigned long long)pv);
+        } else if (c == 'f' || c == 'e' || c == 'E' || c == 'g' || c == 'G') {
+            double dv = 0; memcpy(&dv, vbuf + voff, 8);
+            n = snprintf(tmp, sizeof(tmp), spec, dv);
+        } else if (c == 'c') {
+            int cv = 0; memcpy(&cv, vbuf + voff, 4);
+            n = snprintf(tmp, sizeof(tmp), "%c", cv);
+        } else if (strstr(spec, "ll") || strstr(spec, "z")) {
+            unsigned long long uv = 0; memcpy(&uv, vbuf + voff, 8);
+            n = snprintf(tmp, sizeof(tmp), spec, uv);
+        } else if (strstr(spec, "l")) {
+            unsigned long long uv = 0; memcpy(&uv, vbuf + voff, 8);
+            n = snprintf(tmp, sizeof(tmp), spec, uv);
+        } else {
+            unsigned int uv = 0; memcpy(&uv, vbuf + voff, 4);
+            n = snprintf(tmp, sizeof(tmp), spec, uv);
+        }
+        voff += sz;
+        if (n < 0) n = 0;
+        if ((size_t)n >= sizeof(tmp)) n = (int)sizeof(tmp) - 1;
+        size_t copy = (size_t)n;
+        if (opos + copy >= sizeof(out)) copy = sizeof(out) - 1 - opos;
+        memcpy(out + opos, tmp, copy);
+        opos += copy;
+    }
+    out[opos] = 0;
+    if (opos > 0)
+        fputs(out, stdout);
+    fflush(stdout);
+    return 0;
 }
 
 /* Default host-call stub for driver API launches. */
@@ -352,9 +504,12 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     // callback the application already registered.
     for (uint32_t hi = 0; hi < info->host_call_count; hi++) {
         const char *hname = info->host_call_names[hi];
-        if (!acuda_host_call_find(g_actx, hname))
-            acuda_host_call_register(g_actx, hname, driver_host_identity,
-                                     NULL);
+        if (!acuda_host_call_find(g_actx, hname)) {
+            if (strcmp(hname, "vprintf") == 0)
+                acuda_host_call_register(g_actx, hname, driver_host_vprintf, NULL);
+            else
+                acuda_host_call_register(g_actx, hname, driver_host_identity, NULL);
+        }
     }
     // Static .shared lives in Workgroup storage; dynamic .shared is
     // sized by this launch (spec-constant extern array). Cap the
