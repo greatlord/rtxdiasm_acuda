@@ -1157,18 +1157,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
 
 /* id 0x7: cudaCreateChannelDesc(int x, int y, int z, int w, cudaChannelFormatKind f)
  * Returns pointer to cudaChannelFormatDesc { int x,y,z,w; enum cudaChannelFormatKind f; } (20 bytes). */
+static cudaChannelFormatDesc cudaCreateChannelDesc(int x, int y, int z, int w, enum cudaChannelFormatKind f) {
+    cudaChannelFormatDesc d;
+    d.x = x; d.y = y; d.z = z; d.w = w; d.f = f;
+    return d;
+}
+
 static void *ACUDA_CUDAAPI acuda_dd9e98a4_api_create_channel_desc(
         void *a, void *b, void *c, void *d,
         void *e, void *f, void *g, void *h) {
-    typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
-    static acuda_channel_desc_t s_desc;
-    acuda_channel_desc_t *out = (acuda_channel_desc_t *)a;
+    static cudaChannelFormatDesc s_desc;
+    cudaChannelFormatDesc *out = (cudaChannelFormatDesc *)a;
     if (!out) out = &s_desc;
-    out->x = (int)(size_t)b;
-    out->y = (int)(size_t)c;
-    out->z = (int)(size_t)d;
-    out->w = (int)(size_t)e;
-    out->f = (int)(size_t)f;
+    *out = cudaCreateChannelDesc((int)(size_t)b, (int)(size_t)c, (int)(size_t)d, (int)(size_t)e, (enum cudaChannelFormatKind)(int)(size_t)f);
     (void)g; (void)h;
     return (void *)out;
 }
