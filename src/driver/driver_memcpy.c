@@ -54,6 +54,47 @@ CUresult driver_memcpy_common(size_t src_xb, size_t src_y, size_t src_z,
         return driver_array_rw(src_array, 0, src_xb, src_y, src_z, hp,
                                wbytes, h, depth, dst_pitch);
     }
+    /* 2D/3D host<->device / device<->device / host<->host (non-array). */
+    if (src_type != CU_MEMORYTYPE_ARRAY && dst_type != CU_MEMORYTYPE_ARRAY) {
+        if (wbytes == 0 || h == 0 || depth == 0)
+            return CUDA_SUCCESS;
+        if (src_pitch == 0) src_pitch = wbytes;
+        if (dst_pitch == 0) dst_pitch = wbytes;
+        size_t src_plane = src_pitch * (src_height ? src_height : h);
+        size_t dst_plane = dst_pitch * (dst_height ? dst_height : h);
+        unsigned char *sp = NULL, *dp = NULL;
+        CUresult r = CUDA_SUCCESS;
+        if (src_type == CU_MEMORYTYPE_DEVICE) {
+            void *base = NULL;
+            r = host_for(src_dev, src_z * src_plane + src_y * src_pitch + src_xb + (depth - 1) * src_plane + (h - 1) * src_pitch + wbytes, &base);
+            if (r != CUDA_SUCCESS) return r;
+            sp = (unsigned char *)base;
+        } else {
+            if (!src_host && (wbytes * h * depth)) return CUDA_ERROR_INVALID_VALUE;
+            sp = (unsigned char *)src_host;
+        }
+        if (dst_type == CU_MEMORYTYPE_DEVICE) {
+            void *base = NULL;
+            r = host_for(dst_dev, dst_z * dst_plane + dst_y * dst_pitch + dst_xb + (depth - 1) * dst_plane + (h - 1) * dst_pitch + wbytes, &base);
+            if (r != CUDA_SUCCESS) return r;
+            dp = (unsigned char *)base;
+        } else {
+            if (!dst_host && (wbytes * h * depth)) return CUDA_ERROR_INVALID_VALUE;
+            dp = (unsigned char *)dst_host;
+        }
+        r = map_status(acuda_stream_synchronize(g_actx, NULL));
+        if (r != CUDA_SUCCESS) return r;
+        for (size_t z = 0; z < depth; z++) {
+            const unsigned char *splane = sp + (src_z + z) * src_plane;
+            unsigned char *dplane = dp + (dst_z + z) * dst_plane;
+            for (size_t y = 0; y < h; y++) {
+                const unsigned char *srow = splane + (src_y + y) * src_pitch + src_xb;
+                unsigned char *drow = dplane + (dst_y + y) * dst_pitch + dst_xb;
+                memmove(drow, srow, wbytes);
+            }
+        }
+        return CUDA_SUCCESS;
+    }
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 

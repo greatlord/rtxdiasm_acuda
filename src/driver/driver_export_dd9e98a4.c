@@ -2196,19 +2196,7 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
 }
 
 
-static ACUDA_DD9E98A4_TLS void *g_dd9e98a4_target = NULL;
-static ACUDA_DD9E98A4_TLS unsigned int g_dd9e98a4_target_id = 0;
-
-static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_dispatch_wrapper(
-        void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
-    typedef CUresult (ACUDA_CUDAAPI *fn_t)(void*,void*,void*,void*,void*,void*,void*,void*);
-    fn_t fn = (fn_t)g_dd9e98a4_target;
-    unsigned int id = g_dd9e98a4_target_id;
-    CUresult r = fn ? fn(a,b,c,d,e,f,g,h) : CUDA_ERROR_NOT_SUPPORTED;
-    if (id != 0x0a && id != 0x0b)
-        g_dd9e98a4_last_error = r;
-    return r;
-}
+#include "driver_export_dd9e98a4_wrappers.inc"
 
 static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         void *request, void *arg_b, void *arg_c, void *arg_d, void *arg_e,
@@ -2270,9 +2258,7 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         void *fn = acuda_dd9e98a4_get_id(id);
         if (id == 0x0c)
             return fn; /* const char* signature */
-        g_dd9e98a4_target = fn;
-        g_dd9e98a4_target_id = id;
-        return (void *)&acuda_dd9e98a4_dispatch_wrapper;
+        return acuda_dd9e98a4_get_wrapper(id);
     }
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_slot01(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {

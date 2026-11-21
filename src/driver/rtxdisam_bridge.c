@@ -253,11 +253,47 @@ static acuda_rtxdisam_status_t lift_with_helper(
                     "\\..\\..\\..\\win-x64\\rtxdisam_host.exe",
                     NULL
                 };
-                for (int r = 0; rel[r]; r++) {
+                int found = 0;
+                for (int r = 0; rel[r] && !found; r++) {
                     snprintf(helper_buf, sizeof(helper_buf), "%s%s", mod, rel[r]);
                     if (GetFileAttributesA(helper_buf) != INVALID_FILE_ATTRIBUTES) {
                         helper = helper_buf;
-                        break;
+                        found = 1;
+                    }
+                }
+                if (!found) {
+                    char exedir[MAX_PATH];
+                    DWORD en = GetModuleFileNameA(NULL, exedir, MAX_PATH);
+                    if (en > 0 && en < MAX_PATH) {
+                        for (int i = (int)en - 1; i >= 0; i--) {
+                            if (exedir[i] == '\\' || exedir[i] == '/') { exedir[i] = '\0'; break; }
+                        }
+                        for (int r = 0; rel[r] && !found; r++) {
+                            snprintf(helper_buf, sizeof(helper_buf), "%s%s", exedir, rel[r]);
+                            if (GetFileAttributesA(helper_buf) != INVALID_FILE_ATTRIBUTES) {
+                                helper = helper_buf;
+                                found = 1;
+                            }
+                        }
+                    }
+                }
+                if (!found) {
+                    HMODULE nvcuda = GetModuleHandleA("nvcuda.dll");
+                    if (nvcuda) {
+                        char npath[MAX_PATH];
+                        DWORD nn = GetModuleFileNameA(nvcuda, npath, MAX_PATH);
+                        if (nn > 0 && nn < MAX_PATH) {
+                            for (int i = (int)nn - 1; i >= 0; i--) {
+                                if (npath[i] == '\\' || npath[i] == '/') { npath[i] = '\0'; break; }
+                            }
+                            for (int r = 0; rel[r] && !found; r++) {
+                                snprintf(helper_buf, sizeof(helper_buf), "%s%s", npath, rel[r]);
+                                if (GetFileAttributesA(helper_buf) != INVALID_FILE_ATTRIBUTES) {
+                                    helper = helper_buf;
+                                    found = 1;
+                                }
+                            }
+                        }
                     }
                 }
             }
