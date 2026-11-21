@@ -1165,13 +1165,22 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_device_set_shared_mem_config(
     return CUDA_SUCCESS;
 }
 
-/* id 0x7: returns pointer to 20-byte struct (observed by dct8x8). */
-static void *ACUDA_CUDAAPI acuda_dd9e98a4_api_007(
+/* id 0x7: cudaCreateChannelDesc(int x, int y, int z, int w, cudaChannelFormatKind f)
+ * Returns pointer to cudaChannelFormatDesc { int x,y,z,w; enum cudaChannelFormatKind f; } (20 bytes). */
+static void *ACUDA_CUDAAPI acuda_dd9e98a4_api_create_channel_desc(
         void *a, void *b, void *c, void *d,
         void *e, void *f, void *g, void *h) {
-    static unsigned char buf[64];
-    (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
-    return (void *)buf;
+    typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
+    static acuda_channel_desc_t s_desc;
+    acuda_channel_desc_t *out = (acuda_channel_desc_t *)a;
+    if (!out) out = &s_desc;
+    out->x = (int)(size_t)b;
+    out->y = (int)(size_t)c;
+    out->z = (int)(size_t)d;
+    out->w = (int)(size_t)e;
+    out->f = (int)(size_t)f;
+    (void)g; (void)h;
+    return (void *)out;
 }
 
 /* id 0xb9: returns pointer (observed by dct8x8 init; semantics unknown). */
@@ -1683,7 +1692,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_stream_add_callback(
 
 static void *acuda_dd9e98a4_get_id(unsigned int id) {
     switch (id) {
-    case 0x7:  return (void *)&acuda_dd9e98a4_api_007;
+    case 0x7:  return (void *)&acuda_dd9e98a4_api_create_channel_desc;
     case 0xb9: return (void *)&acuda_dd9e98a4_api_0b9;
     /* 0x03-0x31: Device selection, errors, memory management */
     case 0x03: return (void *)&acuda_dd9e98a4_api_device_get_count;

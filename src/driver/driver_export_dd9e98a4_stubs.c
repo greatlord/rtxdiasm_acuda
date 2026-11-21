@@ -53,14 +53,22 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_006(void *a, void *b, void *
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0x6 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
     return CUDA_SUCCESS;
 }
-/* id 0x7: returns pointer struct (20 bytes observed by dct8x8). */
+/* id 0x7: cudaCreateChannelDesc(int x, int y, int z, int w, cudaChannelFormatKind f) -> cudaChannelFormatDesc* */
 static void * ACUDA_CUDAAPI acuda_dd9e98a4_idstub_007(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+    typedef struct { int x; int y; int z; int w; int f; } acuda_channel_desc_t;
     static int n = 0; int i2 = n++;
-    static unsigned char buf[64];
-    (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
+    static acuda_channel_desc_t s_desc;
+    acuda_channel_desc_t *out = (acuda_channel_desc_t *)a;
     (void)i2;
-    ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0x7 call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
-    return (void *)buf;
+    if (!out) out = &s_desc;
+    out->x = (int)(size_t)b;
+    out->y = (int)(size_t)c;
+    out->z = (int)(size_t)d;
+    out->w = (int)(size_t)e;
+    out->f = (int)(size_t)f;
+    (void)g; (void)h;
+    ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 id=0x7 cudaCreateChannelDesc call[%d] a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", i2,a,b,c,d,e,f,g,h);
+    return (void *)out;
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_idstub_008(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     static int n = 0; int i2 = n++;
