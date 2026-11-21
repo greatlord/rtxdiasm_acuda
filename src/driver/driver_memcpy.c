@@ -54,6 +54,22 @@ CUresult driver_memcpy_common(size_t src_xb, size_t src_y, size_t src_z,
         return driver_array_rw(src_array, 0, src_xb, src_y, src_z, hp,
                                wbytes, h, depth, dst_pitch);
     }
+    /* Array-to-array: stage through host buffer. */
+    if (src_type == CU_MEMORYTYPE_ARRAY && dst_type == CU_MEMORYTYPE_ARRAY) {
+        if (wbytes == 0 || h == 0 || depth == 0) return CUDA_SUCCESS;
+        size_t buf = wbytes * h * depth;
+        void *tmp = malloc(buf ? buf : 1);
+        if (!tmp) return CUDA_ERROR_OUT_OF_MEMORY;
+        CUresult r = driver_memcpy_common(src_xb, src_y, src_z, src_type, src_host, src_dev, src_array,
+                                          src_pitch, src_height, 0, 0, 0, CU_MEMORYTYPE_HOST, tmp, 0, NULL,
+                                          wbytes, 0, wbytes, h, depth);
+        if (r == CUDA_SUCCESS)
+            r = driver_memcpy_common(0, 0, 0, CU_MEMORYTYPE_HOST, tmp, 0, NULL, wbytes, 0,
+                                     dst_xb, dst_y, dst_z, dst_type, dst_host, dst_dev, dst_array,
+                                     dst_pitch, dst_height, wbytes, h, depth);
+        free(tmp);
+        return r;
+    }
     /* 2D/3D host<->device / device<->device / host<->host (non-array). */
     if (src_type != CU_MEMORYTYPE_ARRAY && dst_type != CU_MEMORYTYPE_ARRAY) {
         if (wbytes == 0 || h == 0 || depth == 0)
@@ -425,6 +441,7 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
             lb = tmp;
             st = acuda_image_download(g_actx, img, level, layer, lb);
             if (st != ACUDA_SUCCESS) {
+                fprintf(stderr, "ACuda-dbg: array_rw download fail st=%d\n", (int)st);
                 free(tmp);
                 return map_status(st);
             }
@@ -442,8 +459,15 @@ CUresult driver_array_rw(CUarray a, int write, size_t xb, size_t y,
                 memcpy(hp, lp, wbytes);
         }
         if (!img->dim3d) {
+            if (write && dz == 0 && y == 0) {
+                const float *fv = (const float *)host;
+                fprintf(stderr, "ACuda-dbg: array_rw write wbytes=%zu h=%zu depth=%zu pitch=%zu elem=%zu lw=%u lh=%u first=%f %f %f %f\n",
+                        wbytes, h, depth, pitch, elem, (unsigned)lw, (unsigned)lh,
+                        fv[0], fv[1], fv[2], fv[3]);
+            }
             st = acuda_image_upload(g_actx, img, level, layer, lb);
             if (st != ACUDA_SUCCESS) {
+                fprintf(stderr, "ACuda-dbg: array_rw upload fail st=%d\n", (int)st);
                 free(tmp);
                 return map_status(st);
             }
@@ -482,4 +506,41 @@ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind 
     default:
         return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
     }
+}
+
+CUresult ACUDA_CUDAAPI cuMemcpyHtoA_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount) {
+    CUcontext c = NULL; CUresult r = need_ctx(&c); if (r != CUDA_SUCCESS) return r;
+    if (!dstArray || (!srcHost && ByteCount)) return CUDA_ERROR_INVALID_VALUE;
+    return driver_memcpy_common(dstOffset, 0, 0, CU_MEMORYTYPE_HOST, srcHost, 0, NULL, ByteCount, 0,
+                                0, 0, 0, CU_MEMORYTYPE_ARRAY, NULL, 0, dstArray, 0, 0, ByteCount, 1, 1);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyHtoA(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount) {
+    return cuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoH_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount) {
+    CUcontext c = NULL; CUresult r = need_ctx(&c); if (r != CUDA_SUCCESS) return r;
+    if (!srcArray || (!dstHost && ByteCount)) return CUDA_ERROR_INVALID_VALUE;
+    return driver_memcpy_common(srcOffset, 0, 0, CU_MEMORYTYPE_ARRAY, NULL, 0, srcArray, 0, 0,
+                                0, 0, 0, CU_MEMORYTYPE_HOST, dstHost, 0, NULL, ByteCount, 0, ByteCount, 1, 1);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoH(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount) {
+    return cuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoA_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount) {
+    CUcontext c = NULL; CUresult r = need_ctx(&c); if (r != CUDA_SUCCESS) return r;
+    if (!dstArray || !srcArray) return CUDA_ERROR_INVALID_VALUE;
+    return driver_memcpy_common(srcOffset, 0, 0, CU_MEMORYTYPE_ARRAY, NULL, 0, srcArray, 0, 0,
+                                dstOffset, 0, 0, CU_MEMORYTYPE_ARRAY, NULL, 0, dstArray, 0, 0, ByteCount, 1, 1);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoA(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount) {
+    return cuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyHtoAAsync_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount, CUstream hStream) {
+    (void)hStream; return cuMemcpyHtoA_v2(dstArray, dstOffset, srcHost, ByteCount);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoHAsync_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream) {
+    (void)hStream; return cuMemcpyAtoH_v2(dstHost, srcArray, srcOffset, ByteCount);
+}
+CUresult ACUDA_CUDAAPI cuMemcpyAtoAAsync_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream) {
+    (void)hStream; return cuMemcpyAtoA_v2(dstArray, dstOffset, srcArray, srcOffset, ByteCount);
 }

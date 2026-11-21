@@ -190,7 +190,11 @@ typedef struct cudaResourceDesc_st {
             size_t height;
             size_t pitchInBytes;
         } pitch2D;
+        struct {
+            int reserved[32];
+        } reserved;
     } res;
+    unsigned int flags;
 } cudaResourceDesc;
 
 typedef struct cudaTextureDesc_st {
@@ -230,6 +234,7 @@ typedef struct cudaResourceViewDesc_st {
     unsigned int lastMipmapLevel;
     unsigned int firstLayer;
     unsigned int lastLayer;
+    unsigned int reserved[16];
 } cudaResourceViewDesc;
 
 typedef struct cudaMemcpy3DParms_st {
@@ -458,6 +463,24 @@ cudaError_t cudaCreateSurfaceObject(cudaSurfaceObject_t *pSurfObject,
 cudaError_t cudaDestroySurfaceObject(cudaSurfaceObject_t surfObject);
 cudaError_t cudaGetSurfaceObjectResourceDesc(
     cudaResourceDesc *pResDesc, cudaSurfaceObject_t surfObject);
+cudaError_t cudaMemcpyToArray(cudaArray_t dst, size_t wOffset, size_t hOffset,
+                               const void *src, size_t count,
+                               cudaMemcpyKind kind);
+cudaError_t cudaMemcpyFromArray(void *dst, cudaArray_const_t src,
+                                size_t wOffset, size_t hOffset, size_t count,
+                                cudaMemcpyKind kind);
+cudaError_t cudaMemcpyArrayToArray(cudaArray_t dst, size_t wOffsetDst,
+                                   size_t hOffsetDst, cudaArray_const_t src,
+                                   size_t wOffsetSrc, size_t hOffsetSrc,
+                                   size_t count, cudaMemcpyKind kind);
+cudaError_t cudaMemcpyToArrayAsync(cudaArray_t dst, size_t wOffset,
+                                   size_t hOffset, const void *src,
+                                   size_t count, cudaMemcpyKind kind,
+                                   cudaStream_t stream);
+cudaError_t cudaMemcpyFromArrayAsync(void *dst, cudaArray_const_t src,
+                                     size_t wOffset, size_t hOffset,
+                                     size_t count, cudaMemcpyKind kind,
+                                     cudaStream_t stream);
 cudaError_t cudaMemcpy2DToArray(cudaArray_t dst, size_t wOffset,
                                 size_t hOffset, const void *src, size_t spitch,
                                 size_t width, size_t height,
@@ -477,6 +500,11 @@ cudaError_t cudaMemcpy2DFromArrayAsync(void *dst, size_t dpitch,
                                        size_t height,
                                        cudaMemcpyKind kind,
                                        cudaStream_t stream);
+cudaError_t cudaMemcpy2DArrayToArray(cudaArray_t dst, size_t wOffsetDst,
+                                     size_t hOffsetDst, cudaArray_const_t src,
+                                     size_t wOffsetSrc, size_t hOffsetSrc,
+                                     size_t width, size_t height,
+                                     cudaMemcpyKind kind);
 cudaError_t cudaMemcpy3D(const struct cudaMemcpy3DParms_st *p);
 cudaError_t cudaMemcpy3DAsync(const struct cudaMemcpy3DParms_st *p,
                               cudaStream_t stream);
@@ -485,6 +513,8 @@ cudaError_t cudaPointerGetAttributes(struct cudaPointerAttributes *attrs,
                                      const void *ptr);
 cudaError_t cudaHostAlloc(void **ptr, size_t size, unsigned int flags);
 cudaError_t cudaFreeHost(void *ptr);
+cudaError_t cudaHostGetDevicePointer(void **pDevice, void *pHost, unsigned int flags);
+cudaError_t cudaHostGetFlags(unsigned int *pFlags, void *pHost);
 cudaError_t cudaMemPoolGetAttribute(cudaMemPool_t memPool,
                                    int attr, void *value);
 cudaError_t cudaMemPoolSetAttribute(cudaMemPool_t memPool,

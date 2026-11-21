@@ -172,6 +172,9 @@ typedef struct CUDA_RESOURCE_DESC_st {
             size_t height;
             size_t pitchInBytes;
         } pitch2D;
+        struct {
+            int reserved[32];
+        } reserved;
    } res;
     unsigned int flags;
 } CUDA_RESOURCE_DESC;
@@ -518,6 +521,17 @@ CUresult ACUDA_CUDAAPI cuCtxGetCacheConfig(int *config);
 CUresult ACUDA_CUDAAPI cuCtxDetach(CUcontext ctx);
 CUresult ACUDA_CUDAAPI cuCtxAttach(CUcontext *pctx, unsigned int flags);
 CUresult ACUDA_CUDAAPI cuMemGetInfo(size_t *freeBytes, size_t *totalBytes);
+CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemHostAlloc_v2(void **pp, size_t bytesize, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemAllocHost(void **pp, size_t bytesize);
+CUresult ACUDA_CUDAAPI cuMemAllocHost_v2(void **pp, size_t bytesize);
+CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p);
+CUresult ACUDA_CUDAAPI cuMemHostRegister(void *p, size_t bytesize, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemHostRegister_v2(void *p, size_t bytesize, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemHostUnregister(void *p);
+CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer(void **pdptr, void *p, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemHostGetDevicePointer_v2(void **pdptr, void *p, unsigned int Flags);
+CUresult ACUDA_CUDAAPI cuMemHostGetFlags(unsigned int *pFlags, void *p);
 CUresult ACUDA_CUDAAPI cuDeviceGetDefaultMemPool(CUmemPool *pool_out, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceGetMemPool(CUmemPool *pool_out, CUdevice dev);
 CUresult ACUDA_CUDAAPI cuDeviceSetMemPool(CUdevice dev, CUmemPool pool);
@@ -612,6 +626,15 @@ CUresult ACUDA_CUDAAPI cuMemcpy2D(const void *pCopy);
 CUresult ACUDA_CUDAAPI cuMemcpy2DAsync(const void *pCopy, CUstream hStream);
 CUresult ACUDA_CUDAAPI cuMemcpy3D(const void *pCopy);
 CUresult ACUDA_CUDAAPI cuMemcpy3DAsync(const void *pCopy, CUstream hStream);
+CUresult ACUDA_CUDAAPI cuMemcpyHtoA(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyHtoA_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoH(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoH_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoA(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoA_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount);
+CUresult ACUDA_CUDAAPI cuMemcpyHtoAAsync_v2(CUarray dstArray, size_t dstOffset, const void *srcHost, size_t ByteCount, CUstream hStream);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoHAsync_v2(void *dstHost, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream);
+CUresult ACUDA_CUDAAPI cuMemcpyAtoAAsync_v2(CUarray dstArray, size_t dstOffset, CUarray srcArray, size_t srcOffset, size_t ByteCount, CUstream hStream);
 
 // Result reported by cuGetProcAddress_v2 (CUDA 12.0+ ABI).
 typedef enum CUdriverProcAddressQueryResult_enum {

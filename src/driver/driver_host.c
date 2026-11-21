@@ -1,4 +1,5 @@
 #include "acuda/driver/driver_internal.h"
+#include "acuda/driver/arena.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -278,10 +279,10 @@ static int acuda_host_heap_free(void *p) {
 }
 #endif
 
-// Pinned host memory.  The arena is persistently mapped and coherent, so
-// pinned and pageable host memory are the same thing here; cudart's
-// cudaHostAlloc used by torch's caching host allocator only needs a
-// stable host pointer that can feed the copy paths.
+// Pinned host memory.  Prefer the ACuda arena so the pointer is
+// registered for launch binding, acuda_arena_capacity/host lookups, and
+// zero-copy kernel access. Fall back to host heap/OS allocation for
+// contexts where the arena is unavailable.
 CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int flags) {
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemHostAlloc(%zu flags=%x)\n",
                 bytesize, flags);
@@ -290,11 +291,15 @@ CUresult ACUDA_CUDAAPI cuMemHostAlloc(void **pp, size_t bytesize, unsigned int f
     *pp = NULL;
     if (bytesize == 0)
         return CUDA_ERROR_INVALID_VALUE;
-    // CUDA host allocations are page-aligned and pinned.  Use the OS
-    // virtual allocator on Windows: it bypasses the (already fragmented)
-    // CRT heap in this 32-bit process and gives PhysX a page-aligned
-    // staging buffer.  The CRT's own later malloc failures are what turn
-    // into unchecked-NULL crashes inside PhysXCore.
+    CUcontext c = NULL;
+    if (need_ctx(&c) == CUDA_SUCCESS) {
+        uint64_t virt = 0;
+        VkBuffer buf = VK_NULL_HANDLE;
+        if (acuda_arena_alloc(bytesize, &virt, &buf) == 0) {
+            *pp = (void *)(uintptr_t)virt;
+            return CUDA_SUCCESS;
+        }
+    }
 #if defined(_WIN32)
     void *p = acuda_host_heap_alloc(bytesize);
     if (!p)
@@ -329,11 +334,13 @@ CUresult ACUDA_CUDAAPI cuMemAllocHost_v2(void **pp, size_t bytesize) {
 }
 
 CUresult ACUDA_CUDAAPI cuMemFreeHost(void *p) {
+    if (!p)
+        return CUDA_SUCCESS;
+    if (acuda_arena_free((uint64_t)(uintptr_t)p) == 0)
+        return CUDA_SUCCESS;
 #if defined(_WIN32)
-    if (p) {
-        if (!acuda_host_heap_free(p))
-            VirtualFree(p, 0, MEM_RELEASE);
-    }
+    if (!acuda_host_heap_free(p))
+        VirtualFree(p, 0, MEM_RELEASE);
 #else
     free(p);
 #endif

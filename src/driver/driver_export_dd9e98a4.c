@@ -207,8 +207,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_malloc_host(
     if (!ptr)
         return CUDA_ERROR_INVALID_VALUE;
     *(void **)ptr = NULL;
-    *(void **)ptr = malloc((size_t)size ? (size_t)size : 1);
-    return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
+    return cuMemHostAlloc((void **)ptr, (size_t)size, 0);
 }
 
 /* id 0x1b: cudaMallocHost/cudaHostAlloc-style host allocation used by
@@ -218,13 +217,23 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_host_alloc(
         void *ptr, void *size, void *flags, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_host_alloc");
-    (void)flags; (void)unused_d; (void)unused_e; (void)unused_f;
+    (void)unused_d; (void)unused_e; (void)unused_f;
     (void)unused_g; (void)unused_h;
     if (!ptr)
         return CUDA_ERROR_INVALID_VALUE;
     *(void **)ptr = NULL;
-    *(void **)ptr = malloc((size_t)size ? (size_t)size : 1);
-    return *(void **)ptr ? CUDA_SUCCESS : CUDA_ERROR_OUT_OF_MEMORY;
+    return cuMemHostAlloc((void **)ptr, (size_t)size, (unsigned int)(uintptr_t)flags);
+}
+
+/* id 0x1c: cudaHostGetDevicePointer(void **pDevice, void *pHost, unsigned int flags) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_host_get_device_pointer(
+        void *pDevice, void *pHost, void *flags, void *unused_d,
+        void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_host_get_device_pointer");
+    (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    if (!pDevice)
+        return CUDA_ERROR_INVALID_VALUE;
+    return cuMemHostGetDevicePointer((void **)pDevice, pHost, (unsigned int)(uintptr_t)flags);
 }
 
 /* id 0x10: cudaSetDevice(int device) */
@@ -376,6 +385,71 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy2d(
     return cuMemcpy2D(&m);
 }
 
+/* id 0x21: cudaMemcpyToArray(dst, wOffset, hOffset, src, count, kind) */
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_to_array(
+        void *dst, void *wOffset, void *hOffset, void *src,
+        void *count, void *kind, void *unused_g, void *unused_h) {
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_memcpy_to_array");
+    (void)unused_g; (void)unused_h;
+    CUarray arr = (CUarray)(uintptr_t)dst;
+    size_t total = (size_t)count;
+    size_t rowBytes = total;
+    if (arr && arr->image) {
+        size_t elem = (size_t)driver_elem_bytes(arr->image->format);
+        uint32_t lw = arr->image->width >> arr->level;
+        if (!lw) lw = 1;
+        if (elem) rowBytes = (size_t)lw * elem;
+    }
+    size_t wo = (size_t)wOffset;
+    if (rowBytes > wo && total > (rowBytes - wo)) {
+        /* Multi-row copy: span full rows. */
+        CUDA_MEMCPY2D m;
+        memset(&m, 0, sizeof(m));
+        m.srcMemoryType = CU_MEMORYTYPE_HOST;
+        m.srcHost = src;
+        m.srcPitch = rowBytes;
+        m.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+        m.dstArray = arr;
+        m.dstXInBytes = wo;
+        m.dstY = (size_t)hOffset;
+        m.WidthInBytes = rowBytes - wo;
+        size_t first = m.WidthInBytes;
+        size_t rem = total - first;
+        m.Height = 1 + (rem / rowBytes);
+        /* handle non-multiple tail by doing a second copy */
+        CUresult r = cuMemcpy2D(&m);
+        if (r != CUDA_SUCCESS) return r;
+        size_t copied = first + (m.Height - 1) * rowBytes;
+        if (copied < total) {
+            CUDA_MEMCPY2D t;
+            memset(&t, 0, sizeof(t));
+            t.srcMemoryType = CU_MEMORYTYPE_HOST;
+            t.srcHost = (const unsigned char *)src + copied;
+            t.srcPitch = total - copied;
+            t.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+            t.dstArray = arr;
+            t.dstXInBytes = 0;
+            t.dstY = (size_t)hOffset + m.Height;
+            t.WidthInBytes = total - copied;
+            t.Height = 1;
+            return cuMemcpy2D(&t);
+        }
+        return CUDA_SUCCESS;
+    }
+    CUDA_MEMCPY2D m;
+    memset(&m, 0, sizeof(m));
+    m.srcMemoryType = CU_MEMORYTYPE_HOST;
+    m.srcHost = src;
+    m.srcPitch = total;
+    m.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+    m.dstArray = arr;
+    m.dstXInBytes = wo;
+    m.dstY = (size_t)hOffset;
+    m.WidthInBytes = total;
+    m.Height = 1;
+    return cuMemcpy2D(&m);
+}
+
 /* id 0x22: cudaMemcpy2DToArray(dst, wOffset, hOffset, src, spitch, width, height, kind) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy2d_to_array(
         void *dst, void *wOffset, void *hOffset, void *src,
@@ -447,8 +521,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_free_host(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_free_host");
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
-    free(ptr);
-    return CUDA_SUCCESS;
+    return cuMemFreeHost(ptr);
 }
 
 /* id 0xa4: cudaDeviceReset(void) */
@@ -2066,8 +2139,10 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0x19: return (void *)&acuda_dd9e98a4_api_malloc_host;
     case 0x1a: return (void *)&acuda_dd9e98a4_api_free_host;
     case 0x1b: return (void *)&acuda_dd9e98a4_api_host_alloc;
+    case 0x1c: return (void *)&acuda_dd9e98a4_api_host_get_device_pointer;
     case 0x1f: return (void *)&acuda_dd9e98a4_api_memcpy;
     case 0x20: return (void *)&acuda_dd9e98a4_api_memcpy2d;
+    case 0x21: return (void *)&acuda_dd9e98a4_api_memcpy_to_array;
     case 0x22: return (void *)&acuda_dd9e98a4_api_memcpy2d_to_array;
     case 0x24: return (void *)&acuda_dd9e98a4_api_memcpy2d_from_array;
     case 0x27: return (void *)&acuda_dd9e98a4_api_memcpy_to_symbol;
