@@ -987,6 +987,13 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_choose_device(
     return CUDA_SUCCESS;
 }
 
+#if defined(_MSC_VER)
+#define ACUDA_DD9E98A4_TLS __declspec(thread)
+#else
+#define ACUDA_DD9E98A4_TLS __thread
+#endif
+static ACUDA_DD9E98A4_TLS CUresult g_dd9e98a4_last_error = CUDA_SUCCESS;
+
 /* id 0xa: cudaGetLastError(void) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
@@ -994,7 +1001,11 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_SUCCESS;
+    {
+        CUresult e = g_dd9e98a4_last_error;
+        g_dd9e98a4_last_error = CUDA_SUCCESS;
+        return e;
+    }
 }
 
 /* id 0xb: cudaPeekAtLastError(void) */
@@ -1004,7 +1015,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_peek_at_last_error(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_peek_at_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return CUDA_SUCCESS;
+    return g_dd9e98a4_last_error;
 }
 
 /* id 0xc: cudaGetErrorString(cudaError_t error) -> const char * */
@@ -2183,6 +2194,20 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
 }
 
 
+static ACUDA_DD9E98A4_TLS void *g_dd9e98a4_target = NULL;
+static ACUDA_DD9E98A4_TLS unsigned int g_dd9e98a4_target_id = 0;
+
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_dispatch_wrapper(
+        void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
+    typedef CUresult (ACUDA_CUDAAPI *fn_t)(void*,void*,void*,void*,void*,void*,void*,void*);
+    fn_t fn = (fn_t)g_dd9e98a4_target;
+    unsigned int id = g_dd9e98a4_target_id;
+    CUresult r = fn ? fn(a,b,c,d,e,f,g,h) : CUDA_ERROR_NOT_SUPPORTED;
+    if (id != 0x0a && id != 0x0b)
+        g_dd9e98a4_last_error = r;
+    return r;
+}
+
 static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
         void *request, void *arg_b, void *arg_c, void *arg_d, void *arg_e,
         void *arg_f, void *arg_g, void *arg_h) {
@@ -2239,7 +2264,14 @@ static void *ACUDA_CUDAAPI acuda_dd9e98a4_dispatcher(
     ReleaseSRWLockExclusive(&trace_lock);
 #endif
     (void)arg_f;
-    return acuda_dd9e98a4_get_id(id);
+    {
+        void *fn = acuda_dd9e98a4_get_id(id);
+        if (id == 0x0c)
+            return fn; /* const char* signature */
+        g_dd9e98a4_target = fn;
+        g_dd9e98a4_target_id = id;
+        return (void *)&acuda_dd9e98a4_dispatch_wrapper;
+    }
 }
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_slot01(void *a, void *b, void *c, void *d, void *e, void *f, void *g, void *h) {
     ACUDA_DEBUG_PRINT( "ACuda-debug: dd9e98a4 slot01 a=%p b=%p c=%p d=%p e=%p f=%p g=%p h=%p\n", a,b,c,d,e,f,g,h);
