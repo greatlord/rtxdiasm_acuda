@@ -1251,101 +1251,15 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_graphics_resource_get_mapped_mi
     return cuGraphicsResourceGetMappedMipmappedArray((CUmipmappedArray *)mipmappedArray, (CUgraphicsResource)(uintptr_t)resource);
 }
 
-static CUresult acuda_dd9e98a4_to_cu_resdesc(const void *pResDesc, CUDA_RESOURCE_DESC *rd) {
-    /* cudart cudaResourceDesc layout: int resType; +pad; union { array, mipmap, linear, pitch2D } */
-    typedef struct { int x,y,z,w,f; } acuda_chfmt;
-    typedef struct { void *array; } acuda_res_array;
-    typedef struct { void *mipmap; } acuda_res_mip;
-    typedef struct { void *devPtr; acuda_chfmt desc; size_t sizeInBytes; } acuda_res_linear;
-    typedef struct { void *devPtr; acuda_chfmt desc; size_t pitchInBytes; size_t width; size_t height; } acuda_res_pitch2d;
-    typedef struct { int resType; int pad; union { acuda_res_array array; acuda_res_mip mipmap; acuda_res_linear linear; acuda_res_pitch2d pitch2D; char raw[64]; } res; } acuda_cuda_resdesc;
-    const acuda_cuda_resdesc *src = (const acuda_cuda_resdesc *)pResDesc;
-    memset(rd, 0, sizeof(*rd));
-    if (!src) return CUDA_ERROR_INVALID_VALUE;
-    rd->resType = (CUresourcetype)src->resType;
-    if (src->resType == 0) { /* cudaResourceTypeArray */
-        rd->res.array.hArray = (CUarray)(uintptr_t)src->res.array.array;
-        return CUDA_SUCCESS;
-    } else if (src->resType == 1) { /* cudaResourceTypeMipmappedArray */
-        rd->res.mipmap.hMipmappedArray = (CUmipmappedArray)(uintptr_t)src->res.mipmap.mipmap;
-        return CUDA_SUCCESS;
-    } else if (src->resType == 2) { /* cudaResourceTypeLinear */
-        unsigned n = (src->res.linear.desc.x?1:0)+(src->res.linear.desc.y?1:0)+(src->res.linear.desc.z?1:0)+(src->res.linear.desc.w?1:0);
-        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
-        if (src->res.linear.desc.f == 1) fmt = CU_AD_FORMAT_UNSIGNED_INT32;
-        else if (src->res.linear.desc.f == 2) fmt = CU_AD_FORMAT_SIGNED_INT32;
-        rd->res.linear.devPtr = (CUdeviceptr)(uintptr_t)src->res.linear.devPtr;
-        rd->res.linear.format = fmt;
-        rd->res.linear.numChannels = n;
-        rd->res.linear.sizeInBytes = src->res.linear.sizeInBytes;
-        return CUDA_SUCCESS;
-    } else if (src->resType == 3) { /* cudaResourceTypePitch2D */
-        unsigned n = (src->res.pitch2D.desc.x?1:0)+(src->res.pitch2D.desc.y?1:0)+(src->res.pitch2D.desc.z?1:0)+(src->res.pitch2D.desc.w?1:0);
-        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
-        if (src->res.pitch2D.desc.f == 1) fmt = CU_AD_FORMAT_UNSIGNED_INT32;
-        else if (src->res.pitch2D.desc.f == 2) fmt = CU_AD_FORMAT_SIGNED_INT32;
-        rd->res.pitch2D.devPtr = (CUdeviceptr)(uintptr_t)src->res.pitch2D.devPtr;
-        rd->res.pitch2D.format = fmt;
-        rd->res.pitch2D.numChannels = n;
-        rd->res.pitch2D.width = src->res.pitch2D.width;
-        rd->res.pitch2D.height = src->res.pitch2D.height;
-        rd->res.pitch2D.pitchInBytes = src->res.pitch2D.pitchInBytes;
-        return CUDA_SUCCESS;
-    }
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
-
 /* id 0xb9: cudaCreateTextureObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_texture_object(
         void *pTexObject, void *pResDesc, void *pTexDesc, void *pResViewDesc,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
-    CUDA_RESOURCE_DESC rd;
-    CUDA_TEXTURE_DESC td;
-    CUtexObject tex = 0;
-    CUresult r;
-    (void)pResViewDesc; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    if (!pTexObject || !pResDesc || !pTexDesc) return CUDA_ERROR_INVALID_VALUE;
-    r = acuda_dd9e98a4_to_cu_resdesc(pResDesc, &rd);
-    if (r != CUDA_SUCCESS) return r;
-    memset(&td, 0, sizeof(td));
-    {
-        /* cudart cudaTextureDesc: addressMode[3], filterMode, readMode, sRGB, borderColor[4], normalizedCoords, maxAnisotropy, mipmapFilterMode, mipmapLevelBias, minMipmapLevelClamp, maxMipmapLevelClamp */
-        const int *src = (const int *)pTexDesc;
-        for (int i = 0; i < 3; i++) td.addressMode[i] = (CUaddress_mode)src[i];
-        td.filterMode = (CUfilter_mode)src[3];
-        /* src[4]=readMode, src[5]=sRGB */
-        td.borderColor[0] = ((const float *)pTexDesc)[6];
-        td.borderColor[1] = ((const float *)pTexDesc)[7];
-        td.borderColor[2] = ((const float *)pTexDesc)[8];
-        td.borderColor[3] = ((const float *)pTexDesc)[9];
-        td.flags = src[10] ? 0x2u : 0u; /* normalizedCoords -> CU_TRSF_NORMALIZED_COORDINATES */
-        td.maxAnisotropy = (unsigned)src[11];
-        td.mipmapFilterMode = (CUfilter_mode)src[12];
-        td.mipmapLevelBias = ((const float *)pTexDesc)[13];
-        td.minMipmapLevelClamp = ((const float *)pTexDesc)[14];
-        td.maxMipmapLevelClamp = ((const float *)pTexDesc)[15];
-    }
-    {
-        CUDA_RESOURCE_VIEW_DESC vd;
-        CUDA_RESOURCE_VIEW_DESC *pvd = NULL;
-        if (pResViewDesc) {
-            const unsigned int *v = (const unsigned int *)pResViewDesc;
-            memset(&vd, 0, sizeof(vd));
-            vd.format = (CUresourceViewFormat)v[0];
-            vd.width = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 8);
-            vd.height = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 16);
-            vd.depth = (size_t)*(const unsigned long long *)((const char *)pResViewDesc + 24);
-            vd.firstMipmapLevel = v[8];
-            vd.lastMipmapLevel = v[9];
-            vd.firstLayer = v[10];
-            vd.lastLayer = v[11];
-            pvd = &vd;
-        }
-        r = cuTexObjectCreate(&tex, &rd, &td, pvd);
-    }
-    if (r != CUDA_SUCCESS) return r;
-    *(unsigned long long *)pTexObject = (unsigned long long)tex;
-    return CUDA_SUCCESS;
+    (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
+    return (CUresult)cudaCreateTextureObject((cudaTextureObject_t *)pTexObject,
+                                             (const cudaResourceDesc *)pResDesc,
+                                             (const cudaTextureDesc *)pTexDesc,
+                                             (const cudaResourceViewDesc *)pResViewDesc);
 }
 /* id 0xba: cudaDestroyTextureObject */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_destroy_texture_object(
@@ -1412,7 +1326,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_create_surface_object(
     CUresult r;
     (void)unused_c; (void)unused_d; (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
     if (!pSurfObject || !pResDesc) return CUDA_ERROR_INVALID_VALUE;
-    r = acuda_dd9e98a4_to_cu_resdesc(pResDesc, &rd);
+    r = acuda_cuda_resource_desc_to_cu(pResDesc, &rd);
     if (r != CUDA_SUCCESS) return r;
     r = cuSurfObjectCreate(&surf, &rd);
     if (r != CUDA_SUCCESS) return r;

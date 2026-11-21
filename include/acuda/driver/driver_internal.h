@@ -148,6 +148,7 @@ extern uint32_t g_surf_slot_cap;
 
 driver_surfobj_t *driver_surf_find(CUsurfObject id);
 void driver_img_type(acuda_buffer_t img, int *dim, int *arrayed, int *isint);
+CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC *rd);
 
 struct CUfunc_st {
     uint32_t magic;

@@ -235,6 +235,113 @@ cudaError_t cudaGetChannelDesc(cudaChannelFormatDesc *desc, cudaArray_t array) {
     return (cudaError_t)CUDA_ERROR_INVALID_HANDLE;
 }
 
+CUresult acuda_cuda_resource_desc_to_cu(const void *pResDesc, CUDA_RESOURCE_DESC *rd) {
+    typedef struct { int x, y, z, w, f; } acuda_chfmt;
+    typedef struct { void *array; } acuda_res_array;
+    typedef struct { void *mipmap; } acuda_res_mip;
+    typedef struct { void *devPtr; acuda_chfmt desc; size_t sizeInBytes; } acuda_res_linear;
+    typedef struct { void *devPtr; acuda_chfmt desc; size_t pitchInBytes; size_t width; size_t height; } acuda_res_pitch2d;
+    typedef struct { int resType; int pad; union { acuda_res_array array; acuda_res_mip mipmap; acuda_res_linear linear; acuda_res_pitch2d pitch2D; char raw[64]; } res; } acuda_cuda_resdesc;
+    const acuda_cuda_resdesc *src = (const acuda_cuda_resdesc *)pResDesc;
+    memset(rd, 0, sizeof(*rd));
+    if (!src) return CUDA_ERROR_INVALID_VALUE;
+    rd->resType = (CUresourcetype)src->resType;
+    if (src->resType == 0) { /* cudaResourceTypeArray */
+        rd->res.array.hArray = (CUarray)(uintptr_t)src->res.array.array;
+        return CUDA_SUCCESS;
+    }
+    if (src->resType == 1) { /* cudaResourceTypeMipmappedArray */
+        rd->res.mipmap.hMipmappedArray = (CUmipmappedArray)(uintptr_t)src->res.mipmap.mipmap;
+        return CUDA_SUCCESS;
+    }
+    if (src->resType == 2) { /* cudaResourceTypeLinear */
+        unsigned n = (src->res.linear.desc.x?1u:0u)+(src->res.linear.desc.y?1u:0u)+(src->res.linear.desc.z?1u:0u)+(src->res.linear.desc.w?1u:0u);
+        int bits = src->res.linear.desc.x;
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        switch (src->res.linear.desc.f) {
+        case 1: /* unsigned */
+            fmt = (bits == 8) ? CU_AD_FORMAT_UNSIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_UNSIGNED_INT16 : CU_AD_FORMAT_UNSIGNED_INT32;
+            break;
+        case 2: /* signed */
+            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+            break;
+        default: /* float */
+            fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;
+            break;
+        }
+        rd->res.linear.devPtr = (CUdeviceptr)(uintptr_t)src->res.linear.devPtr;
+        rd->res.linear.format = fmt;
+        rd->res.linear.numChannels = n;
+        rd->res.linear.sizeInBytes = src->res.linear.sizeInBytes;
+        return CUDA_SUCCESS;
+    }
+    if (src->resType == 3) { /* cudaResourceTypePitch2D */
+        unsigned n = (src->res.pitch2D.desc.x?1u:0u)+(src->res.pitch2D.desc.y?1u:0u)+(src->res.pitch2D.desc.z?1u:0u)+(src->res.pitch2D.desc.w?1u:0u);
+        int bits = src->res.pitch2D.desc.x;
+        CUarray_format fmt = CU_AD_FORMAT_FLOAT;
+        switch (src->res.pitch2D.desc.f) {
+        case 1:
+            fmt = (bits == 8) ? CU_AD_FORMAT_UNSIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_UNSIGNED_INT16 : CU_AD_FORMAT_UNSIGNED_INT32;
+            break;
+        case 2:
+            fmt = (bits == 8) ? CU_AD_FORMAT_SIGNED_INT8 : (bits == 16) ? CU_AD_FORMAT_SIGNED_INT16 : CU_AD_FORMAT_SIGNED_INT32;
+            break;
+        default:
+            fmt = (bits == 16) ? CU_AD_FORMAT_HALF : CU_AD_FORMAT_FLOAT;
+            break;
+        }
+        rd->res.pitch2D.devPtr = (CUdeviceptr)(uintptr_t)src->res.pitch2D.devPtr;
+        rd->res.pitch2D.format = fmt;
+        rd->res.pitch2D.numChannels = n;
+        rd->res.pitch2D.width = src->res.pitch2D.width;
+        rd->res.pitch2D.height = src->res.pitch2D.height;
+        rd->res.pitch2D.pitchInBytes = src->res.pitch2D.pitchInBytes;
+        return CUDA_SUCCESS;
+    }
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+
+cudaError_t cudaCreateTextureObject(cudaTextureObject_t *pTexObject,
+                                    const cudaResourceDesc *pResDesc,
+                                    const cudaTextureDesc *pTexDesc,
+                                    const cudaResourceViewDesc *pResViewDesc) {
+    CUDA_RESOURCE_DESC rd;
+    CUDA_TEXTURE_DESC td;
+    CUDA_RESOURCE_VIEW_DESC vd;
+    CUDA_RESOURCE_VIEW_DESC *pvd = NULL;
+    CUtexObject tex = 0;
+    CUresult r;
+    if (!pTexObject || !pResDesc || !pTexDesc) return (cudaError_t)CUDA_ERROR_INVALID_VALUE;
+    r = acuda_cuda_resource_desc_to_cu(pResDesc, &rd);
+    if (r != CUDA_SUCCESS) return (cudaError_t)r;
+    memset(&td, 0, sizeof(td));
+    for (int i = 0; i < 3; i++) td.addressMode[i] = (CUaddress_mode)pTexDesc->addressMode[i];
+    td.filterMode = (CUfilter_mode)pTexDesc->filterMode;
+    td.mipmapFilterMode = (CUfilter_mode)pTexDesc->mipmapFilterMode;
+    td.flags = pTexDesc->normalizedCoords ? 0x2u : 0u;
+    td.maxAnisotropy = pTexDesc->maxAnisotropy;
+    td.mipmapLevelBias = pTexDesc->mipmapLevelBias;
+    td.minMipmapLevelClamp = pTexDesc->minMipmapLevelClamp;
+    td.maxMipmapLevelClamp = pTexDesc->maxMipmapLevelClamp;
+    for (int i = 0; i < 4; i++) td.borderColor[i] = pTexDesc->borderColor[i];
+    if (pResViewDesc) {
+        memset(&vd, 0, sizeof(vd));
+        vd.format = (CUresourceViewFormat)pResViewDesc->format;
+        vd.width = pResViewDesc->width;
+        vd.height = pResViewDesc->height;
+        vd.depth = pResViewDesc->depth;
+        vd.firstMipmapLevel = pResViewDesc->firstMipmapLevel;
+        vd.lastMipmapLevel = pResViewDesc->lastMipmapLevel;
+        vd.firstLayer = pResViewDesc->firstLayer;
+        vd.lastLayer = pResViewDesc->lastLayer;
+        pvd = &vd;
+    }
+    r = cuTexObjectCreate(&tex, &rd, &td, pvd);
+    if (r != CUDA_SUCCESS) return (cudaError_t)r;
+    *pTexObject = (cudaTextureObject_t)tex;
+    return (cudaError_t)CUDA_SUCCESS;
+}
+
 CUresult ACUDA_CUDAAPI cuMipmappedArrayCreate(
     CUmipmappedArray *pHandle,
     const CUDA_ARRAY3D_DESCRIPTOR *pMipmappedArrayDesc,
