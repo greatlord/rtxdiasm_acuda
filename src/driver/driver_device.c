@@ -162,6 +162,7 @@ CUresult ACUDA_CUDAAPI cuDriverGetVersion(int *driverVersion) {
     if (!driverVersion)
         return CUDA_ERROR_INVALID_VALUE;
     *driverVersion = ACUDA_DRIVER_VERSION;
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuDriverGetVersion -> %d\n", *driverVersion);
     return CUDA_SUCCESS;
 }
 

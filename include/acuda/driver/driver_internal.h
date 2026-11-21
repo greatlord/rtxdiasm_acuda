@@ -40,7 +40,7 @@
 
 #define ACUDA_CC_MAJOR 8
 #define ACUDA_CC_MINOR 6
-#define ACUDA_DRIVER_VERSION 13040
+#define ACUDA_DRIVER_VERSION 13050
 #if defined(__i386__) || (defined(_WIN32) && !defined(_WIN64))
 #define ACUDA_DEVICE_MEM (512ull << 20)
 #else
