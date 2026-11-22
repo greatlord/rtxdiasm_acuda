@@ -558,6 +558,8 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
         }
     }
     acuda_stream_t s = NULL;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL;
     if (hStream) {
         if (hStream->ctx != c) {
             free(vkb);

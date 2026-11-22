@@ -55,6 +55,8 @@ CUresult ACUDA_CUDAAPI cuEventRecord(CUevent hEvent, CUstream hStream) {
     if (hEvent->ctx != c)
         return CUDA_ERROR_INVALID_HANDLE;
     acuda_stream_t s = NULL;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL;
     if (hStream) {
         if (hStream->ctx != c)
             return CUDA_ERROR_INVALID_HANDLE;

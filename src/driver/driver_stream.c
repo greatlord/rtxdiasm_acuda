@@ -52,6 +52,8 @@ CUresult ACUDA_CUDAAPI cuStreamSynchronize(CUstream hStream) {
         return r;
     }
     acuda_stream_t s = NULL;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL; /* legacy/per-thread default */
     if (hStream) {
         if (hStream->ctx != c)
             return CUDA_ERROR_INVALID_HANDLE;
@@ -155,6 +157,8 @@ CUresult ACUDA_CUDAAPI cuStreamGetCaptureInfo_v3(void *stream, int *status,
 CUresult ACUDA_CUDAAPI cuStreamGetCtx(CUstream hStream, CUcontext *pctx) {
     if (!pctx)
         return CUDA_ERROR_INVALID_VALUE;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL;
     if (hStream) {
         *pctx = hStream->ctx;
         return CUDA_SUCCESS;
@@ -194,6 +198,8 @@ CUresult ACUDA_CUDAAPI cuStreamQuery(CUstream hStream) {
     CUresult r = need_ctx(&c);
     if (r != CUDA_SUCCESS)
         return r;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL;
     if (!hStream)
         return CUDA_SUCCESS; // default stream: host-synchronous view
     if (hStream->ctx != c)
@@ -219,6 +225,8 @@ CUresult ACUDA_CUDAAPI cuStreamWaitEvent(CUstream hStream, CUevent hEvent,
     if (hEvent->ctx != c)
         return CUDA_ERROR_INVALID_HANDLE;
     acuda_stream_t s = NULL;
+    if (hStream == (CUstream)1 || hStream == (CUstream)2)
+        hStream = NULL;
     if (hStream) {
         if (hStream->ctx != c)
             return CUDA_ERROR_INVALID_HANDLE;
