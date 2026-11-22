@@ -785,8 +785,9 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             ranges[bi] = cap;
             bi++;
         } else if (info->is_ptr[i] == 6) {
-            // Mixed blob: bind word0 target like a plain pointer,
-            // then push word1 as the scalar word.
+            // Mixed blob: word0 is a device pointer (binding). Remaining bytes
+            // are scalar push words. 32-bit 8-byte blob: 1 scalar at offset 4.
+            // 64-bit wide blob: (wide_words-1)*8 scalar bytes at offset 8.
             CUdeviceptr dp6 = 0;
             memcpy(&dp6, karg, sizeof(dp6));
             ACUDA_DEBUG_PRINT("acuda-trace ?? bind kind-6 param [%u] dp=%llx stride=%u\n",
@@ -837,7 +838,17 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
                 ranges[bi] = cap6;
                 bi++;
             }
-            memcpy(&words[wi++], (const char *)karg + 4, 4);
+            {
+                uint32_t ww = info->wide_words ? info->wide_words[i] : 0;
+                if (ww <= 1) {
+                    memcpy(&words[wi++], (const char *)karg + 4, 4);
+                } else {
+                    uint32_t nq6 = (ww - 1) * 2;
+                    if (wi & 1u) wi++; // even-align multi-word scalar block
+                    for (uint32_t q = 0; q < nq6; q++)
+                        memcpy(&words[wi++], (const char *)karg + 8 + (size_t)q * 4u, 4);
+                }
+            }
         } else if (info->is_ptr[i] == 2) {
             // 64-bit scalars take two push words and are even-aligned
             // by the compiler; honor the same padding here.
