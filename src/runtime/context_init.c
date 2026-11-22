@@ -298,6 +298,17 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
                     ctx->device_mem_bytes = hw_mem_bytes;
             }
 #endif
+            if (ctx->device_mem_bytes == 0) {
+                VkPhysicalDeviceMemoryProperties mp;
+                vkGetPhysicalDeviceMemoryProperties(ctx->phys, &mp);
+                for (uint32_t hi = 0; hi < mp.memoryHeapCount; hi++) {
+                    if (mp.memoryHeaps[hi].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                        uint64_t sz = (uint64_t)mp.memoryHeaps[hi].size;
+                        if (sz > ctx->device_mem_bytes)
+                            ctx->device_mem_bytes = sz;
+                    }
+                }
+            }
             found = 1;
             break;
         }
