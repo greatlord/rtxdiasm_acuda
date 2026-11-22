@@ -25,6 +25,23 @@ int acuda_query_adl_gpu_clock_khz(uint32_t pci_domain, uint32_t pci_bus,
                                   uint32_t pci_device, uint32_t pci_function,
                                   int *out_graphics_khz, int *out_memory_khz);
 
+/*
+ * Query real GPU dedicated memory for the PCI device at the given BDF.
+ * Returns 1 if a memory value was obtained, 0 otherwise.
+ * Output value is in bytes.
+ */
+int acuda_query_real_gpu_memory_bytes(uint32_t pci_domain, uint32_t pci_bus,
+                                      uint32_t pci_device, uint32_t pci_function,
+                                      uint64_t *out_bytes);
+
+/*
+ * Query GPU dedicated memory via AMD ADL2 (Windows, runtime-loaded atiadlxx.dll).
+ * Returns 1 if a memory value was obtained, 0 otherwise. Bytes.
+ */
+int acuda_query_adl_gpu_memory_bytes(uint32_t pci_domain, uint32_t pci_bus,
+                                     uint32_t pci_device, uint32_t pci_function,
+                                     uint64_t *out_bytes);
+
 #ifdef __cplusplus
 }
 #endif

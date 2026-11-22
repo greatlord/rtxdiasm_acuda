@@ -7,15 +7,19 @@ int acuda_dd9e98a4_check_ready_canary(const char *where);
  * ACUDA_DEVICE_MEM_MB=<n> overrides the reported total without touching
  * the arenas.  Cached once per process. */
 unsigned long long acuda_device_mem_total(void) {
-    static unsigned long long cached;
-    static int cached_ok;
-    if (!cached_ok) {
+    static unsigned long long env_cached;
+    static int env_checked;
+    if (!env_checked) {
         const char *s = getenv("ACUDA_DEVICE_MEM_MB");
         unsigned long mb = s && *s ? strtoul(s, NULL, 0) : 0;
-        cached = mb ? (unsigned long long)mb << 20 : ACUDA_DEVICE_MEM;
-        cached_ok = 1;
+        env_cached = mb ? (unsigned long long)mb << 20 : 0;
+        env_checked = 1;
     }
-    return cached;
+    if (env_cached)
+        return env_cached;
+    if (g_actx && g_actx->device_mem_bytes > 0)
+        return (unsigned long long)g_actx->device_mem_bytes;
+    return ACUDA_DEVICE_MEM;
 }
 
 CUresult ACUDA_CUDAAPI cuMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize) {

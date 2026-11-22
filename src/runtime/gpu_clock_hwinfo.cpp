@@ -82,3 +82,43 @@ extern "C" int acuda_query_real_gpu_clock_khz(uint32_t pci_domain, uint32_t pci_
 
     return ok;
 }
+
+extern "C" int acuda_query_real_gpu_memory_bytes(uint32_t pci_domain, uint32_t pci_bus,
+                                                 uint32_t pci_device, uint32_t pci_function,
+                                                 uint64_t *out_bytes) {
+    if (out_bytes)
+        *out_bytes = 0;
+
+    char bdf[32];
+    std::snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x", pci_domain, pci_bus, pci_device, pci_function);
+
+    hwinfo::GpuQuery query{};
+    query.cuda = false;
+    query.opencl = false;
+    auto gpus = hwinfo::gpus(query);
+    if (!gpus) {
+        return 0;
+    }
+
+    const hwinfo::Gpu *match = nullptr;
+    for (const auto &g : *gpus) {
+        if (g.pci && g.pci->address && *g.pci->address == bdf) {
+            match = &g;
+            break;
+        }
+    }
+    if (!match) {
+        return 0;
+    }
+
+    uint64_t bytes = 0;
+    if (match->dedicated_memory && match->dedicated_memory->value > 0) {
+        bytes = match->dedicated_memory->value;
+    } else if (match->shared_memory && match->shared_memory->value > 0) {
+        bytes = match->shared_memory->value;
+    }
+
+    if (out_bytes)
+        *out_bytes = bytes;
+    return bytes > 0 ? 1 : 0;
+}

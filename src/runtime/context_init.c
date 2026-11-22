@@ -276,6 +276,28 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
                     ctx->mem_clock_khz = hw_mem;
             }
 #endif
+            /* GPU memory reporting: prefer ADL2 (AMD, Windows) when available,
+             * then fall back to hwinfo for any still-missing value. */
+#if defined(_WIN32)
+            if (ctx->device_mem_bytes == 0 && ctx->props.vendorID == 0x1002) {
+                uint64_t adl_mem_bytes = 0;
+                if (acuda_query_adl_gpu_memory_bytes(ctx->pci_domain, ctx->pci_bus,
+                                                     ctx->pci_device, ctx->pci_function,
+                                                     &adl_mem_bytes) &&
+                    adl_mem_bytes > 0)
+                    ctx->device_mem_bytes = adl_mem_bytes;
+            }
+#endif
+#ifdef ACUDA_USE_HWINFO
+            if (ctx->device_mem_bytes == 0) {
+                uint64_t hw_mem_bytes = 0;
+                if (acuda_query_real_gpu_memory_bytes(ctx->pci_domain, ctx->pci_bus,
+                                                      ctx->pci_device, ctx->pci_function,
+                                                      &hw_mem_bytes) &&
+                    hw_mem_bytes > 0)
+                    ctx->device_mem_bytes = hw_mem_bytes;
+            }
+#endif
             found = 1;
             break;
         }
