@@ -1244,10 +1244,11 @@ CUresult ACUDA_CUDAAPI cuFuncGetAttribute(int *pi, int attrib, CUfunction hfunc)
         *pi = (int)info->num_regs;
         break;
     case CU_FUNC_ATTRIBUTE_PTX_VERSION: // .version as major*10+minor
-        *pi = (int)info->ptx_version;
-        break;
     case CU_FUNC_ATTRIBUTE_BINARY_VERSION: // .target sm
-        *pi = (int)info->sm_version;
+        // ACuda compiles PTX through the Vulkan/SPIR-V backend for the
+        // configured device SM.  Report the device SM (not the PTX source
+        // .version/.target) so cudart/CUB dispatch picks the matching arch.
+        *pi = cc_major() * 10 + cc_minor();
         break;
     case CU_FUNC_ATTRIBUTE_CACHE_MODE_CA: // always cached, report 1
         *pi = 1;
