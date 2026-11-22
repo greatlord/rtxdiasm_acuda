@@ -992,6 +992,90 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_pop_config(
     return CUDA_SUCCESS;
 }
 
+/* id 0x00f: cudaFuncGetAttributes(struct cudaFuncAttributes *attr, const void *func) */
+struct acuda_dd9e98a4_cudaFuncAttributes {
+    size_t sharedSizeBytes;
+    size_t constSizeBytes;
+    size_t localSizeBytes;
+    int maxThreadsPerBlock;
+    int numRegs;
+    int ptxVersion;
+    int binaryVersion;
+    int cacheModeCA;
+    int maxDynamicSharedSizeBytes;
+    int preferredShmemCarveout;
+    int clusterDimMustBeSet;
+    int requiredClusterWidth;
+    int requiredClusterHeight;
+    int requiredClusterDepth;
+    int clusterSchedulingPolicyPreference;
+    int nonPortableClusterSizeAllowed;
+    int reserved[16];
+};
+
+static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_func_get_attributes(
+        void *a, void *b, void *c, void *d,
+        void *e, void *f, void *g, void *h) {
+    (void)c; (void)d; (void)e; (void)f; (void)g; (void)h;
+    struct acuda_dd9e98a4_cudaFuncAttributes *attr =
+        (struct acuda_dd9e98a4_cudaFuncAttributes *)a;
+    void *func = b;
+    acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_func_get_attributes");
+    if (!attr || !func)
+        return CUDA_ERROR_INVALID_VALUE;
+
+    acuda_dd9e98a4_kernel *k = NULL;
+    for (unsigned i = 0; i < g_dd9e98a4_nkernels; i++) {
+        if (g_dd9e98a4_kernels[i].host_fn == func) { k = &g_dd9e98a4_kernels[i]; break; }
+    }
+    if (!k || !k->fatbin)
+        return CUDA_ERROR_NOT_FOUND;
+
+    acuda_dd9e98a4_fatbin *fb = k->fatbin;
+    if (fb->state == 0) {
+        CUresult r = cuModuleLoadFatBinary(&fb->module, fb->blob);
+        fb->state = (r == CUDA_SUCCESS) ? 1 : -1;
+    }
+    if (fb->state != 1)
+        return CUDA_ERROR_INVALID_IMAGE;
+
+    CUfunction cuFunc = NULL;
+    CUresult cr = cuModuleGetFunction(&cuFunc, fb->module, k->device_name);
+    if (cr != CUDA_SUCCESS)
+        return cr;
+
+    memset(attr, 0, sizeof(*attr));
+    attr->maxThreadsPerBlock = 1024;
+    attr->numRegs = 32;
+    attr->ptxVersion = 80;
+    attr->binaryVersion = 80;
+
+    int v = 0;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK, cuFunc) == CUDA_SUCCESS)
+        attr->maxThreadsPerBlock = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_NUM_REGS, cuFunc) == CUDA_SUCCESS)
+        attr->numRegs = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, cuFunc) == CUDA_SUCCESS)
+        attr->sharedSizeBytes = (size_t)v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, cuFunc) == CUDA_SUCCESS)
+        attr->constSizeBytes = (size_t)v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, cuFunc) == CUDA_SUCCESS)
+        attr->localSizeBytes = (size_t)v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, cuFunc) == CUDA_SUCCESS)
+        attr->maxDynamicSharedSizeBytes = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_PTX_VERSION, cuFunc) == CUDA_SUCCESS)
+        attr->ptxVersion = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_BINARY_VERSION, cuFunc) == CUDA_SUCCESS)
+        attr->binaryVersion = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_CACHE_MODE_CA, cuFunc) == CUDA_SUCCESS)
+        attr->cacheModeCA = v;
+    if (cuFuncGetAttribute(&v, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, cuFunc) == CUDA_SUCCESS)
+        attr->preferredShmemCarveout = v;
+
+    acuda_dd9e98a4_htrace("func_get_attr", attr, func, CUDA_SUCCESS, 1);
+    return CUDA_SUCCESS;
+}
+
 /* id 0x111: cudaFuncSetAttribute(const void* func, int attr, int value) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_func_set_attribute(
         void *func, void *attr, void *value, void *unused_d,
@@ -2162,6 +2246,7 @@ static void *acuda_dd9e98a4_get_id(unsigned int id) {
     case 0x0a: return (void *)&acuda_dd9e98a4_api_get_last_error;
     case 0x0b: return (void *)&acuda_dd9e98a4_api_peek_at_last_error;
     case 0x0c: return (void *)&acuda_dd9e98a4_api_get_error_string_runtime;
+    case 0x0f: return (void *)&acuda_dd9e98a4_api_func_get_attributes;
     case 0x10: return (void *)&acuda_dd9e98a4_api_set_device;
     case 0x11: return (void *)&acuda_dd9e98a4_api_get_device;
     case 0x12: return (void *)&acuda_dd9e98a4_api_set_valid_devices;
