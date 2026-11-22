@@ -2,21 +2,9 @@
 
 int acuda_dd9e98a4_check_ready_canary(const char *where);
 
-/* Diagnostics: PhysX-era capability gates may key off total device memory
- * (the 32-bit default is 512 MiB; real cards of the era had 1+ GiB).
- * ACUDA_DEVICE_MEM_MB=<n> overrides the reported total without touching
- * the arenas.  Cached once per process. */
+/* Diagnostics: report real GPU VRAM when available; fall back to the
+ * build-time ACUDA_DEVICE_MEM default. */
 unsigned long long acuda_device_mem_total(void) {
-    static unsigned long long env_cached;
-    static int env_checked;
-    if (!env_checked) {
-        const char *s = getenv("ACUDA_DEVICE_MEM_MB");
-        unsigned long mb = s && *s ? strtoul(s, NULL, 0) : 0;
-        env_cached = mb ? (unsigned long long)mb << 20 : 0;
-        env_checked = 1;
-    }
-    if (env_cached)
-        return env_cached;
     if (g_actx && g_actx->device_mem_bytes > 0)
         return (unsigned long long)g_actx->device_mem_bytes;
     return ACUDA_DEVICE_MEM;

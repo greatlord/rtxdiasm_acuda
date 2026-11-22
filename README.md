@@ -288,7 +288,6 @@ These variables allow developers to modify ACuda behavior without changing appli
 | `ACUDA_PCI_BUS_ID` | PCI bus ID selection or identification hint. |
 | `ACUDA_CC_MAJOR` | Override reported or simulated compute capability major version. |
 | `ACUDA_CC_MINOR` | Override reported or simulated compute capability minor version. |
-| `ACUDA_DEVICE_MEM_MB` | Configure device memory sizing in MB. |
 | `ACUDA_HOST_HEAP_MB` | Configure host heap sizing in MB. |
 | `ACUDA_BIG_ARENA_LOW` | Control low-memory placement or sizing of the large memory arena. |
 | `ACUDA_UNIFIED_ADDRESSING` | Control unified addressing behavior. |
