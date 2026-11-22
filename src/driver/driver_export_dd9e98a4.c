@@ -343,6 +343,19 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_memcpy_async(
         if (_r != CUDA_SUCCESS)
             goto out;
     }
+    if (copy_kind == 4) { /* cudaMemcpyDefault: infer from pointer type */
+        extern int acuda_arena_host(uint64_t, size_t, void**);
+        extern int acuda_arena_host_bda(uint64_t, size_t, void**);
+        void *_p = 0;
+        int dst_dev = (acuda_arena_host((uint64_t)(uintptr_t)dst, bytes, &_p) == 0 ||
+                        acuda_arena_host_bda((uint64_t)(uintptr_t)dst, bytes, &_p) == 0);
+        int src_dev = (acuda_arena_host((uint64_t)(uintptr_t)src, bytes, &_p) == 0 ||
+                        acuda_arena_host_bda((uint64_t)(uintptr_t)src, bytes, &_p) == 0);
+        if (dst_dev && src_dev) copy_kind = 3;       /* D2D */
+        else if (dst_dev)       copy_kind = 1;       /* H2D */
+        else if (src_dev)       copy_kind = 2;       /* D2H */
+        else                    copy_kind = 0;       /* H2H */
+    }
     switch (copy_kind) {
     case 0: /* cudaMemcpyHostToHost */
         memmove(dst, src, bytes);
