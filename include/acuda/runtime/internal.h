@@ -184,6 +184,8 @@ struct acuda_context_impl {
     uint32_t pci_function;
     int core_clock_khz; // real graphics/core clock in kHz, 0 if unknown
     int mem_clock_khz;  // real memory clock in kHz, 0 if unknown
+    int gpu_load_percent; // live utilisation 0-100, -1 if unknown
+    uint32_t clock_tick;  // last clock refresh tick (ms), 0 = never
     uint64_t device_mem_bytes; // real dedicated VRAM in bytes, 0 if unknown
     VkDevice device;
     VkQueue queue;

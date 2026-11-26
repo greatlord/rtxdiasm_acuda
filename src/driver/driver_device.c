@@ -1,4 +1,4 @@
-#include "acuda/driver/driver_internal.h"
+﻿#include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_export_dd9e98a4.h"
 #include "acuda/runtime_api.h"
 #include <stdio.h>
@@ -309,6 +309,7 @@ CUresult ACUDA_CUDAAPI cuDeviceGetUuid_v2(CUuuid *uuid, CUdevice dev) {
 }
 
 
+
 CUresult ACUDA_CUDAAPI cuDeviceGetUuid(CUuuid *uuid, CUdevice dev) {
     if (!uuid)
         return CUDA_ERROR_INVALID_VALUE;
@@ -490,20 +491,27 @@ CUresult ACUDA_CUDAAPI cuDeviceGetAttribute(int *value, int attrib, CUdevice dev
     case CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT:
         *value = 40; // RTX 3070 laptop GPU
         return CUDA_SUCCESS;
-    case CU_DEVICE_ATTRIBUTE_CLOCK_RATE: {
-        int clock = 1290000; // kHz fallback
-        if (g_actx && g_actx->core_clock_khz > 0)
-            clock = g_actx->core_clock_khz;
-        *value = clock;
+    case CU_DEVICE_ATTRIBUTE_CLOCK_RATE:
+        if (g_actx)
+            acuda_context_refresh_clocks(g_actx);
+        *value = (g_actx && g_actx->core_clock_khz > 0)
+                     ? g_actx->core_clock_khz
+                     : 1290000;
         return CUDA_SUCCESS;
-    }
-    case CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE: {
-        int clock = 6001000; // kHz fallback
-        if (g_actx && g_actx->mem_clock_khz > 0)
-            clock = g_actx->mem_clock_khz;
-        *value = clock;
+    case CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE:
+        if (g_actx)
+            acuda_context_refresh_clocks(g_actx);
+        *value = (g_actx && g_actx->mem_clock_khz > 0)
+                     ? g_actx->mem_clock_khz
+                     : 6001000;
         return CUDA_SUCCESS;
-    }
+    case 0x20080403:
+        /* Private: live GPU utilisation percentage from ADL2/hwinfo/NVML,
+         * so the NVAPI shim can report a real load value. */
+        if (g_actx)
+            acuda_context_refresh_clocks(g_actx);
+        *value = g_actx ? g_actx->gpu_load_percent : 0;
+        return CUDA_SUCCESS;
     case CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH:
         *value = 256; // TODO per-device
         return CUDA_SUCCESS;

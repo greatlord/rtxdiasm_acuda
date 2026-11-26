@@ -554,6 +554,13 @@ static uint64_t acuda_cache_hash(const char *ptx, const char *entry) {
         h ^= *s;
         h *= 1099511628211ull;
     }
+    /* Always mix the build stamp as well: a rebuilt compiler must never
+     * read blobs (or .failed markers) produced by an older one, even when
+     * the caller pins ACUDA_CACHE_TAG. */
+    for (s = (const unsigned char *)acuda_cache_default_tag(); *s; s++) {
+        h ^= *s;
+        h *= 1099511628211ull;
+    }
     if (ptx)
         for (s = (const unsigned char *)ptx; *s; s++) {
             h ^= *s;
@@ -638,8 +645,17 @@ static acuda_status_t acuda_cache_load(const char *ptx, const char *entry,
     fclose(src);
     fclose(dst);
     st = acuda_kernel_deserialize_file(tpath, out);
-    if (st != ACUDA_SUCCESS)
+    if (st != ACUDA_SUCCESS) {
         remove(tpath);
+        /* A blob the current compiler cannot deserialize is stale, not a
+         * kernel that fails to compile: drop it and report a cache miss so
+         * the caller recompiles instead of caching a phantom failure. */
+        remove(path);
+        ACUDA_DEBUG_PRINT(
+            "acuda-trace .. cache load %016llx (%s) stale st=%d, dropped\n",
+            (unsigned long long)h, entry, (int)st);
+        return ACUDA_ERROR_INVALID_VALUE;
+    }
     ACUDA_DEBUG_PRINT("acuda-trace .. cache load %016llx (%s) st=%d\n",
                 (unsigned long long)h, entry, (int)st);
     return st;

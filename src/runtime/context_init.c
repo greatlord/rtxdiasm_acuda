@@ -1105,3 +1105,61 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
     *out_ctx = ctx;
     return ACUDA_SUCCESS;
 }
+
+// Live GPU clock/utilisation refresh.
+//
+// The context clocks are sampled once at init; monitoring UIs re-read them
+// every second and showed stale (or zero) values.  Refresh on demand, with a
+// short throttle so attribute-heavy callers do not hammer the backends.
+// Source priority: ADL2 (AMD, Windows) -> hwinfo (x64/Linux) -> NVML
+// (NVIDIA, and the only live source in the 32-bit build where hwinfo cannot
+// be compiled).
+void acuda_context_refresh_clocks(acuda_context_t ctx) {
+    int core = 0, mem = 0, load = -1;
+    uint32_t now = 0;
+    if (!ctx)
+        return;
+#if defined(_WIN32)
+    now = (uint32_t)GetTickCount();
+#else
+    {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+            now = (uint32_t)((uint32_t)ts.tv_sec * 1000u +
+                             (uint32_t)(ts.tv_nsec / 1000000));
+    }
+#endif
+    if (ctx->clock_tick && now - ctx->clock_tick < 500u)
+        return;
+    ctx->clock_tick = now ? now : 1u;
+#if defined(_WIN32)
+    if (ctx->props.vendorID == 0x1002)
+        (void)acuda_query_adl_gpu_clock_khz(
+            ctx->pci_domain, ctx->pci_bus, ctx->pci_device, ctx->pci_function,
+            &core, &mem);
+#endif
+#ifdef ACUDA_USE_HWINFO
+    if (core <= 0 || mem <= 0) {
+        int hc = 0, hm = 0;
+        (void)acuda_query_real_gpu_clock_khz(
+            ctx->pci_domain, ctx->pci_bus, ctx->pci_device, ctx->pci_function,
+            &hc, &hm);
+        if (core <= 0)
+            core = hc;
+        if (mem <= 0)
+            mem = hm;
+    }
+#endif
+    if (core <= 0 || mem <= 0)
+        (void)acuda_query_nvml_gpu_clock_khz(
+            ctx->pci_domain, ctx->pci_bus, ctx->pci_device, ctx->pci_function,
+            &core, &mem);
+    if (acuda_query_nvml_gpu_load_percent(ctx->pci_domain, ctx->pci_bus,
+                                          ctx->pci_device, ctx->pci_function,
+                                          &load))
+        ctx->gpu_load_percent = load;
+    if (core > 0)
+        ctx->core_clock_khz = core;
+    if (mem > 0)
+        ctx->mem_clock_khz = mem;
+}

@@ -42,6 +42,23 @@ int acuda_query_adl_gpu_memory_bytes(uint32_t pci_domain, uint32_t pci_bus,
                                      uint32_t pci_device, uint32_t pci_function,
                                      uint64_t *out_bytes);
 
+/*
+ * Query live NVIDIA clocks via NVML (runtime-loaded nvml.dll on Windows).
+ * Returns 1 if any clock was obtained, 0 otherwise. Values in kHz.
+ * This is the Win32 source because hwinfo cannot be built for Win32.
+ */
+int acuda_query_nvml_gpu_clock_khz(uint32_t pci_domain, uint32_t pci_bus,
+                                   uint32_t pci_device, uint32_t pci_function,
+                                   int *out_graphics_khz,
+                                   int *out_memory_khz);
+
+/*
+ * Query live NVIDIA utilisation via NVML.  Returns 1 and 0-100 percent.
+ */
+int acuda_query_nvml_gpu_load_percent(uint32_t pci_domain, uint32_t pci_bus,
+                                      uint32_t pci_device,
+                                      uint32_t pci_function, int *out_percent);
+
 #ifdef __cplusplus
 }
 #endif

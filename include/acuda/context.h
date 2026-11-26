@@ -40,6 +40,10 @@ acuda_status_t acuda_shutdown(acuda_context_t ctx);
 acuda_status_t acuda_device_count(acuda_context_t ctx, uint32_t *out_count);
 acuda_status_t acuda_device_get(acuda_context_t ctx, uint32_t index,
                                 acuda_device_info_t *out_info);
+// Refreshes the live GPU clock/utilisation cache (ADL2 for AMD, hwinfo where
+// available, NVML for NVIDIA).  Throttled internally; called by the driver
+// before answering clock/utilisation queries so the values are not stale.
+void acuda_context_refresh_clocks(acuda_context_t ctx);
 // Original Vulkan enumeration index for an exposed device slot.
 acuda_status_t acuda_device_vulkan_index(acuda_context_t ctx, uint32_t index,
                                          uint32_t *out_index);

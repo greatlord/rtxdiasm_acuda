@@ -70,6 +70,9 @@ endif()
 if(WIN32)
   list(APPEND ACUDA_GPU_CLOCK_SOURCE src/runtime/gpu_clock_adl.c)
 endif()
+# NVML live clocks/utilisation: the Win32 fallback (hwinfo cannot build for
+# Win32) and a live source on Win64.  Stubs exist for other platforms.
+list(APPEND ACUDA_GPU_CLOCK_SOURCE src/runtime/gpu_clock_nvml.c)
 
 # --- Runtime library (internal foundation used by driver/consumers) ---
 add_library(acuda_runtime STATIC
