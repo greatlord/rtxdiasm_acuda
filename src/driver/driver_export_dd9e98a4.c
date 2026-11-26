@@ -110,14 +110,11 @@ int acuda_driver_ready(void) {
         }
         CUresult r = cuInit(0);
         if (r == CUDA_SUCCESS) {
-            CUcontext ctx = NULL;
-            CUresult rctx = cuDevicePrimaryCtxRetain(&ctx, 0);
-            if (rctx == CUDA_SUCCESS)
-                rctx = cuCtxSetCurrent(ctx);
-            if (rctx != CUDA_SUCCESS) {
-                fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init ctx setup failed r=%d (continuing as ready)\n", (int)rctx);
-                fflush(stderr);
-            }
+            /* One context for the process: create the shared driver context
+             * through the canonical path.  Retaining a separate primary
+             * context here produced a second context that diverged from the
+             * one every cu* call actually uses. */
+            (void)need_actx();
             acuda_driver_mark_ready();
             if (_vt && *_vt) {
                 fprintf(stderr, "ACuda-debug: dd9e98a4 implicit init -> %d g_init=%d g_actx=%p caller=%p\n",
@@ -241,15 +238,17 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_set_device(
         void *device, void *unused_b, void *unused_c, void *unused_d,
         void *unused_e, void *unused_f, void *unused_g, void *unused_h) {
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_set_device");
-    CUcontext ctx = NULL;
     CUresult r;
     (void)unused_b; (void)unused_c; (void)unused_d; (void)unused_e;
     (void)unused_f; (void)unused_g; (void)unused_h;
     ACUDA_DEBUG_PRINT("ACuda-debug: dd9e98a4 CALL set_device dev=%d\n", (int)(intptr_t)device);
-    r = cuDevicePrimaryCtxRetain(&ctx, (CUdevice)(intptr_t)device);
+    /* Device selection goes through the single shared context; retaining a
+     * primary context here created a second one whose stream timeline never
+     * matched the context the launches were recorded on. */
+    r = need_actx();
     if (r != CUDA_SUCCESS)
         return r;
-    return cuCtxSetCurrent(ctx);
+    return CUDA_SUCCESS;
 }
 
 /* id 0x11: cudaGetDevice(int *device) */

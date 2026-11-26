@@ -365,7 +365,28 @@ CUresult ACUDA_CUDAAPI cuMemcpyDtoHAsync_v2(void *dst, CUdeviceptr src,
 CUresult ACUDA_CUDAAPI cuMemcpyDtoDAsync_v2(CUdeviceptr dst, CUdeviceptr src,
                               size_t bytes, void *stream) {
     (void)stream;
-    return cuMemcpyDtoD_v2(dst, src, bytes);
+    /* Asynchronous DtoD: device memory is host mapped, so apply the copy
+     * immediately and let the caller order it on its stream.  Taking the
+     * synchronising path here blocks PhysX's worker thread inside
+     * vkWaitSemaphores when a queued signal does not arrive. */
+    ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyDtoDAsync(dst=%llx src=%llx bytes=%zu)\n",
+                (unsigned long long)dst, (unsigned long long)src, bytes);
+    CUcontext c = NULL;
+    CUresult r = need_ctx(&c);
+    (void)c;
+    if (r != CUDA_SUCCESS)
+        return r;
+    if (bytes == 0)
+        return CUDA_SUCCESS;
+    void *hd = NULL, *hs = NULL;
+    r = host_for(dst, bytes, &hd);
+    if (r != CUDA_SUCCESS)
+        return r;
+    r = host_for(src, bytes, &hs);
+    if (r != CUDA_SUCCESS)
+        return r;
+    memmove(hd, hs, bytes);
+    return CUDA_SUCCESS;
 }
 
 CUresult ACUDA_CUDAAPI cuMemcpyHtoDAsync(CUdeviceptr dst, const void *src,
