@@ -315,6 +315,21 @@ char *fatbin_first_ptx(const unsigned char *blob, size_t cap) {
     size_t ptx_len = 0;
     if (rtxdiasm_fatbin_extract_first_ptx(blob, cap, &ptx, &ptx_len) != RTXDIASM_FATBIN_OK)
         return NULL;
+    {
+        /* ACUDA_DUMP_PTX=<dir>: write the PTX member this driver compiles so
+         * the selected target can be compared with the reference runtime. */
+        const char *dd = getenv("ACUDA_DUMP_PTX");
+        if (dd && *dd) {
+            static int dump_n = 0;
+            char path[512];
+            snprintf(path, sizeof(path), "%s/ptx_%d.ptx", dd, dump_n++);
+            FILE *df = fopen(path, "wb");
+            if (df) {
+                fwrite(ptx, 1, ptx_len, df);
+                fclose(df);
+            }
+        }
+    }
     /* Preserve driver behavior: accept large PTX without eager full validate,
      * and tolerate 32-bit validation OOM/internal failures (compile host revalidates). */
     if (ptx_len > ACUDA_PTX_EAGER_VALIDATE_MAX) {
