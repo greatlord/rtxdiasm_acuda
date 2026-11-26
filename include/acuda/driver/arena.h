@@ -25,9 +25,13 @@
 // solver requests one 256 MiB block).  No 32 MiB slot can serve it, so
 // without this every cuMemAlloc(256 MiB) fails and PhysX reports no GPU.
 // Committed eagerly at boot while VA is unfragmented; best effort.
+// Several big slots exist because PhysX's GPU heap is not the only large
+// solver buffer: a partial big slot cannot serve the 256 MiB heap, so the
+// next one is committed on demand instead of failing.
 #define ACUDA_ARENA_BIG_SIZE ((256ull << 20) + (16ull << 20))
+#define ACUDA_ARENA_BIG_SLOTS 3
 #define ACUDA_ARENA_BIG_INDEX ACUDA_ARENA_MAX
-#define ACUDA_ARENA_SLOTS (ACUDA_ARENA_MAX + 1)
+#define ACUDA_ARENA_SLOTS (ACUDA_ARENA_MAX + ACUDA_ARENA_BIG_SLOTS)
 #else
 #define ACUDA_ARENA_SIZE (1ull << 30) // 1 GiB committed per arena
 #define ACUDA_ARENA_MAX 8

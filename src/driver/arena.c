@@ -38,7 +38,7 @@ static int commit_arena(int idx);
 // Size of one arena slot's virtual window.
 static size_t arena_vsize(int idx) {
 #if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-    if (idx == ACUDA_ARENA_BIG_INDEX)
+    if (idx >= ACUDA_ARENA_MAX)
         return (size_t)ACUDA_ARENA_BIG_SIZE;
 #endif
     (void)idx;
@@ -208,10 +208,13 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out) {
     int order[ACUDA_ARENA_SLOTS];
     int norder = 0;
 #if ACUDA_ARENA_SLOTS > ACUDA_ARENA_MAX
-    // Requests that cannot fit a standard slot go to the big slot only;
-    // keep it pristine for the PhysX-style 256 MiB heap.
+    // Requests that cannot fit a standard slot go to the big slots only.
+    // PhysX's 256 MiB GPU heap is one such request, and the big slot that
+    // served an earlier large solver buffer may no longer have a fitting
+    // span: try every big slot so a fresh one is committed on demand.
     if (size > (size_t)ACUDA_ARENA_SIZE) {
-        order[norder++] = ACUDA_ARENA_BIG_INDEX;
+        for (int i = ACUDA_ARENA_MAX; i < ACUDA_ARENA_SLOTS; i++)
+            order[norder++] = i;
     } else
 #endif
     if (size >= (16u << 20)) {
