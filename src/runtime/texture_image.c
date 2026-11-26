@@ -232,7 +232,11 @@ void image_copy_level(acuda_context_t ctx, VkCommandBuffer cmd,
         .regionCount = 1,
         .pRegions = &region,
     };
-    vkCmdCopyBufferToImage2(cmd, &cinfo);
+    /* ACUDA_TEX_NO_SNAPSHOT: skip the buffer->image upload so the simulation
+     * can be tested without the snapshot copies (diagnoses hangs in the
+     * texture path).  The image keeps its previous/undefined contents. */
+    if (!getenv("ACUDA_TEX_NO_SNAPSHOT"))
+        vkCmdCopyBufferToImage2(cmd, &cinfo);
     (void)ctx;
 }
 
