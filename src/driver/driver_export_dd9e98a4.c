@@ -5,6 +5,7 @@
 #include "acuda/driver.h"
 #include "acuda/runtime_api.h"
 
+extern void cudaSetLastError(cudaError_t e);
 extern CUresult ACUDA_CUDAAPI cuModuleGetGlobal_v2(CUdeviceptr *dptr, size_t *bytes, CUmodule hmod, const char *name);
 
 #include <stdint.h>
@@ -1193,13 +1194,6 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_choose_device(
     return CUDA_SUCCESS;
 }
 
-#if defined(_MSC_VER)
-#define ACUDA_DD9E98A4_TLS __declspec(thread)
-#else
-#define ACUDA_DD9E98A4_TLS __thread
-#endif
-static ACUDA_DD9E98A4_TLS CUresult g_dd9e98a4_last_error = CUDA_SUCCESS;
-
 /* id 0xa: cudaGetLastError(void) */
 static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
         void *unused_a, void *unused_b, void *unused_c, void *unused_d,
@@ -1207,11 +1201,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_get_last_error(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_get_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    {
-        CUresult e = g_dd9e98a4_last_error;
-        g_dd9e98a4_last_error = CUDA_SUCCESS;
-        return e;
-    }
+    return (CUresult)cudaGetLastError();
 }
 
 /* id 0xb: cudaPeekAtLastError(void) */
@@ -1221,7 +1211,7 @@ static CUresult ACUDA_CUDAAPI acuda_dd9e98a4_api_peek_at_last_error(
     acuda_dd9e98a4_check_ready_canary("acuda_dd9e98a4_api_peek_at_last_error");
     (void)unused_a; (void)unused_b; (void)unused_c; (void)unused_d;
     (void)unused_e; (void)unused_f; (void)unused_g; (void)unused_h;
-    return g_dd9e98a4_last_error;
+    return (CUresult)cudaPeekAtLastError();
 }
 
 /* id 0xc: cudaGetErrorString(cudaError_t error) -> const char * */

@@ -1,4 +1,5 @@
 ﻿#include "acuda/driver.h"
+#include "acuda/runtime_api.h"
 #include <stddef.h>
 
 static const struct { CUresult code; const char *name, *str; } err_table[] = {    { CUDA_SUCCESS, "CUDA_SUCCESS", "no error" },
@@ -44,3 +45,25 @@ CUresult ACUDA_CUDAAPI cuGetErrorName(CUresult error, const char **pStr) {
     *pStr = "CUDA_ERROR_UNKNOWN";
     return CUDA_SUCCESS;
 }
+
+/* Single runtime error state for the driver.  The CUDA 13 hybrid runtime
+ * reaches cudaGetLastError/cudaPeekAtLastError through the dd9e98a4 interface,
+ * and the rest of the exported runtime API lives in this DLL too, so there is
+ * one per-thread state here instead of a second one in the interface shim. */
+#if defined(_MSC_VER)
+#define ACUDA_RT_TLS __declspec(thread)
+#else
+#define ACUDA_RT_TLS __thread
+#endif
+
+static ACUDA_RT_TLS cudaError_t g_cuda_last_error = cudaSuccess;
+
+cudaError_t cudaGetLastError(void) {
+    cudaError_t e = g_cuda_last_error;
+    g_cuda_last_error = cudaSuccess;
+    return e;
+}
+
+cudaError_t cudaPeekAtLastError(void) { return g_cuda_last_error; }
+
+void cudaSetLastError(cudaError_t e) { g_cuda_last_error = e; }
