@@ -1,4 +1,4 @@
-# rtxdiasm_acuda
+﻿# rtxdiasm_acuda
 
 **A Vulkan-based CUDA Driver API compatibility layer.**
 
@@ -30,7 +30,7 @@ The project produces platform-native CUDA Driver API compatibility libraries.
 | Platform | Output | SONAME |
 |---|---|---|
 | Linux | `libcuda.so.1` | `libcuda.so.1` |
-| Windows | `nvcuda.dll` | — |
+| Windows | `nvcuda.dll` | â€” |
 
 These libraries expose the CUDA Driver API interface expected by applications and higher-level CUDA compatibility layers.
 
@@ -69,9 +69,9 @@ The runtime is intended as an internal foundation shared by the driver and other
 
 ### Required build dependencies
 
-- **Vulkan SDK and loader** — Vulkan headers, loader and development libraries.
-- **CMake** — Build-system integration.
-- **`rtxdiasm-ptx-to-spirv`** — PTX-to-SPIR-V compiler module.
+- **Vulkan SDK and loader** â€” Vulkan headers, loader and development libraries.
+- **CMake** â€” Build-system integration.
+- **`rtxdiasm-ptx-to-spirv`** â€” PTX-to-SPIR-V compiler module.
 
 Vulkan is discovered through:
 
@@ -162,8 +162,8 @@ If an optional capability is unavailable, ACuda can use alternative instruction 
 
 Optional Vulkan debugging facilities include:
 
-- `VK_EXT_debug_utils` — Vulkan debug messages and diagnostics.
-- `VK_LAYER_KHRONOS_validation` — Vulkan API validation.
+- `VK_EXT_debug_utils` â€” Vulkan debug messages and diagnostics.
+- `VK_LAYER_KHRONOS_validation` â€” Vulkan API validation.
 
 Enable validation using:
 
@@ -242,8 +242,8 @@ The backend can select between its internal C parser and the external rtxdisam S
 
 The external lifting bridge supports:
 
-- `rtxdisam_native` — Native shared library.
-- `rtxdisam_host` — External helper executable.
+- `rtxdisam_native` â€” Native shared library.
+- `rtxdisam_host` â€” External helper executable.
 
 Both paths can be configured through environment variables.
 
@@ -431,17 +431,30 @@ This reference documents configuration variables exposed by the current implemen
 
 The primary goals of `rtxdiasm_acuda` are:
 
-1. **CUDA compatibility** — Provide a CUDA Driver API-compatible interface without requiring NVIDIA hardware.
-2. **Cross-vendor execution** — Use Vulkan as the underlying GPU execution backend.
-3. **Modularity** — Keep the driver and runtime infrastructure independently maintainable.
-4. **Extensibility** — Allow additional CUDA features and instruction paths to be implemented over time.
-5. **Hardware acceleration** — Take advantage of optional Vulkan capabilities when available.
-6. **Fallback support** — Provide alternative implementations for selected instructions when native GPU features are unavailable.
-7. **Integration** — Provide a reusable foundation for other ACuda components and CUDA compatibility layers.
+1. **CUDA compatibility** â€” Provide a CUDA Driver API-compatible interface without requiring NVIDIA hardware.
+2. **Cross-vendor execution** â€” Use Vulkan as the underlying GPU execution backend.
+3. **Modularity** â€” Keep the driver and runtime infrastructure independently maintainable.
+4. **Extensibility** â€” Allow additional CUDA features and instruction paths to be implemented over time.
+5. **Hardware acceleration** â€” Take advantage of optional Vulkan capabilities when available.
+6. **Fallback support** â€” Provide alternative implementations for selected instructions when native GPU features are unavailable.
+7. **Integration** â€” Provide a reusable foundation for other ACuda components and CUDA compatibility layers.
+
+## 32-bit clients and large GPU heaps
+
+PhysX 2.8.4 creates a 256 MiB GPU heap when hardware acceleration is
+enabled. The driver backs CUDA allocations with persistently mapped
+Vulkan memory, and a non-LAA 32-bit client has only 2 GiB of address
+space, so big-slot commits start failing once the process has mapped
+~1.4 GiB (`vkAllocateMemory` returns `VK_ERROR_OUT_OF_DEVICE_MEMORY`,
+PhysX reports no GPU and then faults on the null heap). Mark the client
+`IMAGE_FILE_LARGE_ADDRESS_AWARE` (`editbin /LARGEADDRESSAWARE app.exe`)
+to give it 4 GiB; the 272 MiB big arena then commits and PhysX reports
+one PPU. The arena keeps three big slots because the GPU heap is not
+the only large solver allocation.
 
 ## Copyright and Authorship
 
-Copyright © 2026 Magnus Olsen.
+Copyright Â© 2026 Magnus Olsen.
 
 Development was assisted by AI models, including DeepFlash 4.1, Muse Spark 1.3, and Iceman.
 
