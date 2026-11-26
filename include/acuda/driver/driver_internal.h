@@ -183,8 +183,20 @@ struct CUlink_st {
 extern int g_init;
 extern acuda_context_t g_actx;
 extern int g_actx_exit_registered;
-extern CUcontext g_stack[ACUDA_CTX_STACK];
-extern size_t g_depth;
+
+/* CUDA's context stack and current context are per thread, not process
+ * global.  PhysX drives the runtime from a worker thread while the main
+ * thread also enters the driver; a shared stack lets one thread pop the
+ * other's context, leaving current_ctx() NULL or wrong. */
+#if defined(_MSC_VER)
+#define ACUDA_CTX_TLS __declspec(thread)
+#elif defined(__GNUC__)
+#define ACUDA_CTX_TLS __thread
+#else
+#define ACUDA_CTX_TLS
+#endif
+extern ACUDA_CTX_TLS CUcontext g_stack[ACUDA_CTX_STACK];
+extern ACUDA_CTX_TLS size_t g_depth;
 
 unsigned long long acuda_device_mem_total(void);
 CUresult map_status(acuda_status_t st);

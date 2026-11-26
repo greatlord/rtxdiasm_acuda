@@ -321,8 +321,8 @@ CUresult check_dev(int dev) {
 int g_init;
 acuda_context_t g_actx;
 int g_actx_exit_registered;
-CUcontext g_stack[ACUDA_CTX_STACK];
-size_t g_depth;
+ACUDA_CTX_TLS CUcontext g_stack[ACUDA_CTX_STACK];
+ACUDA_CTX_TLS size_t g_depth;
 
 // The driver keeps one process-wide runtime context that outlives individual
 // CUDA contexts. At exit, stop its ACUDA_HIGH_PERF keep-busy thread so it is
