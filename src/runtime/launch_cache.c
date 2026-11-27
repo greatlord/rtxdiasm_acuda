@@ -530,7 +530,13 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
     // Specialize the workgroup-size spec constants (0, 1, 2) so any
     // blockDimX in 1..1024 launches without recompiling the module,
-    // plus the dynamic-.shared word count (3) for extern kernels.
+    // plus the dynamic-.shared word count (3) that sizes an
+    // `.extern .shared` array. Slot 3 is always supplied: a kernel
+    // without an extern array has no spec constant id 3 and Vulkan
+    // ignores the extra map entry, while gating it on info->has_extern
+    // left the array at its default length 1 and corrupted shared-
+    // memory indexing in kernels (e.g. the fluid reorder) whose extern
+    // flag was not propagated.
     uint32_t spec_data[4] = { block_dim_x, block_dim_y, block_dim_z,
                               dyn_words };
     VkSpecializationMapEntry spec_map[4] = {
@@ -540,11 +546,15 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
         { .constantID = 3, .offset = 12, .size = sizeof(uint32_t) },
     };
     VkSpecializationInfo spec_info = {
-        .mapEntryCount = info->has_extern ? 4u : 3u,
+        .mapEntryCount = 4u,
         .pMapEntries = spec_map,
-        .dataSize = info->has_extern ? sizeof(spec_data) : 3 * sizeof(uint32_t),
+        .dataSize = sizeof(spec_data),
         .pData = spec_data,
     };
+    if (getenv("ACUDA_TRACE"))
+        ACUDA_DEBUG_PRINT("acuda-trace .. specialize %s has_extern=%u dyn_words=%u block=%u\n",
+                          info->entry, info->has_extern, dyn_words,
+                          block_dim_x);
     stage.pSpecializationInfo = &spec_info;
     VkComputePipelineCreateInfo cpci = {
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
