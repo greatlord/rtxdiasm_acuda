@@ -168,6 +168,11 @@ static int commit_arena(int idx) {
         g_arenas[idx].mem = mem;
         g_arenas[idx].mapped = mapped;
         g_arenas[idx].committed = 1;
+        /* Vulkan device memory is not guaranteed zero-initialised, but CUDA
+         * clients (PhysX's GPU heap, sort/hash buffers) assume a fresh
+         * allocation reads as zero.  Garbage indices otherwise turn into
+         * out-of-bounds reads and VK_ERROR_DEVICE_LOST. */
+        memset(mapped, 0, req.size);
         ACUDA_DEBUG_PRINT(
                 "acuda-arena commit[%d] mapped=%p size=%llu %s\n",
                 idx, mapped, (unsigned long long)req.size,
@@ -320,6 +325,10 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out) {
                 g_acap = ncap;
             }
             uint64_t virt = arena_vbase(i) + aligned;
+            /* CUDA clients assume a fresh cuMemAlloc reads as zero; Vulkan
+             * does not guarantee it.  The arena reuses freed blocks, so zero
+             * this range on every allocation (not only on first commit). */
+            memset((unsigned char *)g_arenas[i].mapped + aligned, 0, size);
             g_allocs[g_nallocs].virt = virt;
             g_allocs[g_nallocs].size = size;
             g_allocs[g_nallocs].buf = buf;
