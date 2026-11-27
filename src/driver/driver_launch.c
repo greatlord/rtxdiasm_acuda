@@ -499,6 +499,14 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
                 info->entry, info->num_params, info->num_ptr_params, info->bda,
                 gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY,
                 blockDimZ, sharedMemBytes);
+    if (getenv("ACUDA_DEBUG_SYMBOLS") && info->bda) {
+        fprintf(stderr, "ACuda: bda-info %s addr_push_bytes=%u bda_param=[",
+                info->entry, info->addr_push_bytes);
+        for (uint32_t bi2 = 0; bi2 < info->addr_push_bytes / 8u; bi2++)
+            fprintf(stderr, "%u%s", info->bda_param[bi2],
+                    (bi2 + 1 < info->addr_push_bytes / 8u) ? "," : "");
+        fprintf(stderr, "]\n");
+    }
     // Give unresolved .extern .func calls a usable default when the
     // CUDA API is used without ACuda's host-call registration.  Keep a
     // callback the application already registered.
@@ -843,13 +851,16 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             }
             {
                 uint32_t ww = info->wide_words ? info->wide_words[i] : 0;
+                /* Scalar area begins after the device pointer: 4 bytes on
+                 * 32-bit, 8 on 64-bit.  One offset keeps both ABIs identical. */
+                size_t scalar_off = sizeof(void *);
                 if (ww <= 1) {
-                    memcpy(&words[wi++], (const char *)karg + 4, 4);
+                    memcpy(&words[wi++], (const char *)karg + scalar_off, 4);
                 } else {
                     uint32_t nq6 = (ww - 1) * 2;
                     if (wi & 1u) wi++; // even-align multi-word scalar block
                     for (uint32_t q = 0; q < nq6; q++)
-                        memcpy(&words[wi++], (const char *)karg + 8 + (size_t)q * 4u, 4);
+                        memcpy(&words[wi++], (const char *)karg + scalar_off + (size_t)q * 4u, 4);
                 }
             }
         } else if (info->is_ptr[i] == 2) {

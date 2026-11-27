@@ -73,7 +73,8 @@ int acuda_arena_boot(acuda_context_t ctx) {
     // Committed eagerly: a late 256 MiB host-visible commit faces the same
     // fragmentation the small arenas avoid by booting early.  The mapping
     // (272 MiB) is the only address-space cost now -- no extra window.
-    (void)commit_arena(ACUDA_ARENA_BIG_INDEX); // best effort
+    if (!getenv("ACUDA_NO_BIG_ARENA"))
+        (void)commit_arena(ACUDA_ARENA_BIG_INDEX); // best effort
 #endif
     return 0;
 }

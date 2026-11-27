@@ -585,6 +585,7 @@ acuda_status_t launch_raw_once(acuda_context_t ctx,
                 fprintf(stderr,
                         "ACuda: bda push %u: idx=%u addr=0x%llx base=%zu\n",
                         k, idx, (unsigned long long)a, apush_base);
+                fflush(stderr);
             memcpy((char *)pushbuf + apush_base + (size_t)k * 8u, &a, 8);
         }
     }
