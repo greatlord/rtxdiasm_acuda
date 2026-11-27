@@ -364,11 +364,12 @@ CUresult ACUDA_CUDAAPI cuMemcpyDtoHAsync_v2(void *dst, CUdeviceptr src,
 }
 CUresult ACUDA_CUDAAPI cuMemcpyDtoDAsync_v2(CUdeviceptr dst, CUdeviceptr src,
                               size_t bytes, void *stream) {
-    (void)stream;
-    /* Asynchronous DtoD: device memory is host mapped, so apply the copy
-     * immediately and let the caller order it on its stream.  Taking the
-     * synchronising path here blocks PhysX's worker thread inside
-     * vkWaitSemaphores when a queued signal does not arrive. */
+    /* DtoD is a host memmove over the arena mapping, so it is not ordered
+     * on the stream by itself.  Wait for the stream first: otherwise the
+     * host copy races a kernel still writing `src` (PhysX uploads the
+     * fluid parameters from a device buffer right after a kernel), leaving
+     * garbage in the destination symbol and making the next CalcHash
+     * binary search diverge. */
     ACUDA_DEBUG_PRINT("acuda-trace .. cuMemcpyDtoDAsync(dst=%llx src=%llx bytes=%zu)\n",
                 (unsigned long long)dst, (unsigned long long)src, bytes);
     CUcontext c = NULL;
@@ -378,6 +379,9 @@ CUresult ACUDA_CUDAAPI cuMemcpyDtoDAsync_v2(CUdeviceptr dst, CUdeviceptr src,
         return r;
     if (bytes == 0)
         return CUDA_SUCCESS;
+    r = map_status(acuda_stream_synchronize(g_actx, stream));
+    if (r != CUDA_SUCCESS)
+        return r;
     void *hd = NULL, *hs = NULL;
     r = host_for(dst, bytes, &hd);
     if (r != CUDA_SUCCESS)

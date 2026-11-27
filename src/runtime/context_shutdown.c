@@ -16,6 +16,13 @@ acuda_status_t acuda_shutdown(acuda_context_t ctx) {
     if (ctx->default_stream)
         acuda_stream_destroy(ctx, ctx->default_stream);
     acuda_launch_cache_clear_ctx(ctx);
+    // Vulkan requires all queues to be idle before the device is
+    // destroyed.  flush_all() only submits; the default stream is
+    // waited by stream_destroy below, but any other stream is not.
+    // An idle wait here also covers a teardown that races the last
+    // dispatch (e.g. PhysX recreating its context between presets).
+    if (ctx->device)
+        vkDeviceWaitIdle(ctx->device);
     if (ctx->device)
         vkDestroyDevice(ctx->device, NULL);
     free(ctx->devices);

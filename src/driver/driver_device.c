@@ -215,6 +215,18 @@ CUresult ACUDA_CUDAAPI cuDeviceGetName(char *name, int len, CUdevice dev) {
     CUresult r = need_actx();
     if (r != CUDA_SUCCESS)
         return r;
+    /* Legacy PhysX (2.8.4) parses the CUDA device name to choose its
+     * hardware version (NX_HW_VERSION).  Allow a name override so an
+     * unrecognised modern GPU can present a name that legacy clients
+     * accept. */
+    {
+        const char *ov = getenv("ACUDA_DEVICE_NAME");
+        if (ov && *ov) {
+            strncpy(name, ov, (size_t)len - 1);
+            name[len - 1] = '\0';
+            return CUDA_SUCCESS;
+        }
+    }
     acuda_device_info_t info;
     acuda_status_t st = acuda_device_get(g_actx, (uint32_t)dev, &info);
     if (st != ACUDA_SUCCESS)
