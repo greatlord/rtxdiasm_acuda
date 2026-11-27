@@ -1,4 +1,4 @@
-#include "acuda/driver/driver_internal.h"
+﻿#include "acuda/driver/driver_internal.h"
 #include "acuda/driver/driver_export_dd9e98a4.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -372,7 +372,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     /* One parameter-model fetch serves the launch-info log, the packed
      * argument walk, and the launch below.  acuda_kernel_info_t is
      * ~283 KiB (per-parameter name tables); keep exactly one live copy
-     * — worker threads that drive PhysX do not have stack to spare. */
+     * â€” worker threads that drive PhysX do not have stack to spare. */
     const acuda_kernel_info_t *info = acuda_kernel_info_ptr(f->k);
     if (!info)
         { ACUDA_DEBUG_PRINT("acuda-trace !! cuLaunchKernel fail %d at line %d\n", (int)CUDA_ERROR_UNKNOWN, __LINE__); return CUDA_ERROR_UNKNOWN; }
@@ -1016,8 +1016,11 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
         // dispatch can be replayed without the application.
         const char *fdir = getenv("ACUDA_DUMP_FORCE_INPUTS");
         if (fdir && *fdir &&
-            (strstr(f->name, "KernelFluidForce") != NULL ||
-             strstr(f->name, "KernelFluidDensity") != NULL)) {
+            ((strstr(f->name, "KernelFluidForce") != NULL) ||
+             (strstr(f->name, "KernelFluidDensity") != NULL) ||
+             (strstr(f->name, "KernelReorderPosVel") != NULL) ||
+             (strstr(f->name, "radixSort") != NULL) ||
+             (strstr(f->name, "KernelFluidCalcHash") != NULL))) {
             static int fserial = 0;
             char path[1024];
             snprintf(path, sizeof(path), "%s/forcedump_%d.bin", fdir,
