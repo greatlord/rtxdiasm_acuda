@@ -1190,6 +1190,10 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
         }
         owned[i] = NULL;
     }
+    /* ACUDA_FLUSH_EACH_LAUNCH: submit and wait after every launch so a
+     * multi-dispatch batch cannot be the cause of a stalled timeline. */
+    if (getenv("ACUDA_FLUSH_EACH_LAUNCH"))
+        (void)acuda_stream_synchronize(g_actx, s);
     // NOTE: the CUfunction shell stays owned by the caller (like real
     // CUDA, functions die with the module, not the launch). Freeing it
     // here used to turn every handle reuse into use-after-free.
