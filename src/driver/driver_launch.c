@@ -789,7 +789,10 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             // are scalar push words. 32-bit 8-byte blob: 1 scalar at offset 4.
             // 64-bit wide blob: (wide_words-1)*8 scalar bytes at offset 8.
             CUdeviceptr dp6 = 0;
-            memcpy(&dp6, karg, sizeof(dp6));
+            /* On 32-bit the blob's word0 is a 4-byte device pointer and word1
+             * is the scalar; copying sizeof(dp6) (8) here folded the scalar
+             * into the pointer's high half and bound a bogus address. */
+            memcpy(&dp6, karg, sizeof(void *));
             ACUDA_DEBUG_PRINT("acuda-trace ?? bind kind-6 param [%u] dp=%llx stride=%u\n",
                         i, (unsigned long long)dp6,
                         info->param_stride
