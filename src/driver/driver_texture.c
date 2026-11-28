@@ -831,13 +831,18 @@ CUresult ACUDA_CUDAAPI cuTexRefSetAddress_v2(size_t *ByteOffset,
             if (acuda_arena_capacity((uint64_t)dptr, &cap) != 0)
                 cap = bytes;
             size_t take = bytes < cap ? bytes : cap;
-            if (take > (4u << 20))
-                take = (4u << 20);
+            if (take > (8u << 20))
+                take = (8u << 20);
+            // Writing the whole table on every bind is ~7 MB x 2 textures
+            // per frame; sample instead.  The last sample is within a few
+            // frames of a stall, which is what the invariant check needs.
+            static unsigned long dump_tick;
+            int due = ((dump_tick++ & 7) == 0);
             int ok = take && acuda_arena_host((uint64_t)dptr, take, &host) == 0;
             ACUDA_DEBUG_PRINT("acuda-texref dump %s addr=%llx bytes=%zu take=%zu ok=%d\n",
                               hTexRef->name ? hTexRef->name : "tex",
                               (unsigned long long)dptr, bytes, take, ok);
-            if (ok && host) {
+            if (ok && host && due) {
                 char path[1024];
                 // One file per texture name, overwritten on every bind: the
                 // interesting state is the last one before a kernel hangs.
