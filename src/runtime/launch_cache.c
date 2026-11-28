@@ -554,6 +554,12 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     {
         uint32_t tb[8], ts[8], tlo[8], thi[8];
         int nt = acuda_arena_token_table(tb, ts, tlo, thi, 8);
+        // ACUDA_NO_TOKEN_TABLE disables the arena token translation, for
+        // A/B testing: a parameter-derived device address whose low half
+        // falls inside an arena's host-mapping window would otherwise be
+        // given a delta it does not need.
+        if (getenv("ACUDA_NO_TOKEN_TABLE"))
+            nt = 0;
         for (int i = 0; i < nt; i++) {
             uint32_t w = 4u + (uint32_t)i * 4u;
             spec_data[w + 0] = tb[i];
