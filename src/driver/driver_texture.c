@@ -818,6 +818,39 @@ CUresult ACUDA_CUDAAPI cuTexRefSetAddress_v2(size_t *ByteOffset,
     hTexRef->bytes = bytes;
     hTexRef->is_array = 0;
     hTexRef->array = NULL;
+    {
+        // Diagnostic: snapshot the buffer a texture is bound to, named after
+        // the texture symbol.  The arena is persistently mapped, so this is a
+        // host copy with no GPU round trip.  Used to inspect the fluid cell
+        // table (inputCellStartTex / inputCellEndTex), which is only ever
+        // reachable through a texture binding.
+        const char *dir = getenv("ACUDA_DUMP_TEXREF");
+        if (dir && *dir && dptr && bytes) {
+            void *host = NULL;
+            size_t cap = 0;
+            if (acuda_arena_capacity((uint64_t)dptr, &cap) != 0)
+                cap = bytes;
+            size_t take = bytes < cap ? bytes : cap;
+            if (take > (4u << 20))
+                take = (4u << 20);
+            int ok = take && acuda_arena_host((uint64_t)dptr, take, &host) == 0;
+            ACUDA_DEBUG_PRINT("acuda-texref dump %s addr=%llx bytes=%zu take=%zu ok=%d\n",
+                              hTexRef->name ? hTexRef->name : "tex",
+                              (unsigned long long)dptr, bytes, take, ok);
+            if (ok && host) {
+                char path[1024];
+                // One file per texture name, overwritten on every bind: the
+                // interesting state is the last one before a kernel hangs.
+                snprintf(path, sizeof(path), "%s/%s.bin", dir,
+                         hTexRef->name ? hTexRef->name : "tex");
+                FILE *f = fopen(path, "wb");
+                if (f) {
+                    fwrite(host, 1, take, f);
+                    fclose(f);
+                }
+            }
+        }
+    }
     return texref_rebuild(hTexRef, 1);
 }
 
