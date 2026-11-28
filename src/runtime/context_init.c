@@ -976,6 +976,12 @@ acuda_status_t acuda_init(acuda_context_t *out_ctx) {
         return acuda_from_vk(vr);
     }
     vkGetDeviceQueue(ctx->device, ctx->queue_family, 0, &ctx->queue);
+    if (getenv("ACUDA_TRACE"))
+        ACUDA_DEBUG_PRINT("acuda-trace .. device exts: map_memory_placed=%d "
+                          "map_memory2=%d\n",
+                          has_device_ext(ctx->phys,
+                                         "VK_EXT_map_memory_placed"),
+                          has_device_ext(ctx->phys, "VK_KHR_map_memory2"));
     ctx->bg_queue = VK_NULL_HANDLE;
     ctx->bg_queue_family = ctx->queue_family;
     ctx->nuser_queues = 0;
