@@ -27,6 +27,7 @@ typedef struct {
     uint32_t block_y;
     uint32_t block_z;
     uint32_t dyn_words;
+    uint64_t arena_epoch;
     VkShaderModule mod;
     VkDescriptorSetLayout dsl;
     VkDescriptorSetLayout *surf_dsl;

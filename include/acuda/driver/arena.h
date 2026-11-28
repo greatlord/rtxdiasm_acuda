@@ -61,5 +61,13 @@ int acuda_arena_bind(uint64_t virt, size_t size, VkBuffer *buf_out,
 // Returns base/size of the allocation containing virt. 0 ok, -1 unknown.
 int acuda_arena_lookup(uint64_t virt, uint64_t *base_out, size_t *size_out);
 size_t acuda_arena_live(void);
+// Token translation table (see arena.c): up to max entries of
+// (token window base, window size, 64-bit delta low, delta high) where
+// device_addr = (uint64_t)token + (dhi << 32 | dlo).  Returns entries
+// written.
+int acuda_arena_token_table(uint32_t *base, uint32_t *size, uint32_t *dlo,
+                            uint32_t *dhi, int max);
+// Changes whenever the token table above would return different entries.
+uint64_t acuda_arena_token_epoch(void);
 
 #endif

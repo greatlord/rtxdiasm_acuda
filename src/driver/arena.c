@@ -32,6 +32,11 @@ static size_t g_nspans[ACUDA_ARENA_SLOTS], g_span_cap[ACUDA_ARENA_SLOTS];
 static alloc_t *g_allocs;
 static size_t g_nallocs, g_acap;
 static size_t g_live;
+// Bumped whenever the set of arenas with live allocations changes, i.e.
+// whenever the token table handed to the shader changes.  The launch cache
+// keys pipelines on it so a kernel cannot keep using a table that predates
+// an arena's first allocation.
+static uint64_t g_token_epoch;
 
 static int commit_arena(int idx);
 
@@ -333,6 +338,16 @@ int acuda_arena_alloc(size_t size, uint64_t *virt_out, VkBuffer *buf_out) {
             g_allocs[g_nallocs].size = size;
             g_allocs[g_nallocs].buf = buf;
             g_allocs[g_nallocs].arena = i;
+            {
+                int first_in_arena = 1;
+                for (size_t k = 0; k < g_nallocs; k++)
+                    if (g_allocs[k].arena == i) {
+                        first_in_arena = 0;
+                        break;
+                    }
+                if (first_in_arena)
+                    g_token_epoch++;
+            }
             g_nallocs++;
             g_live += size;
             *virt_out = virt;
@@ -358,6 +373,14 @@ int acuda_arena_free(uint64_t virt) {
             int ai = g_allocs[i].arena;
             size_t off = (size_t)(virt - arena_vbase(ai));
             size_t size = g_allocs[i].size;
+            {
+                int others = 0;
+                for (size_t k = 0; k < g_nallocs; k++)
+                    if (k != i && g_allocs[k].arena == ai)
+                        others++;
+                if (!others)
+                    g_token_epoch++;
+            }
             vkDestroyBuffer(g_ctx->device, g_allocs[i].buf, NULL);
             // Return span, coalescing neighbors.
             size_t lo = off, hi = off + size;
@@ -473,4 +496,54 @@ int acuda_arena_lookup(uint64_t virt, uint64_t *base_out, size_t *size_out) {
 }
 size_t acuda_arena_live(void) {
     return g_live;
+}
+
+// Token translation table for the shader: a 32-bit CUdeviceptr is the
+// arena's host mapping, while the GPU needs the buffer's device address.
+// For each arena with a live allocation, report the token window
+// (base, size) and the signed delta such that
+//   device_addr = (uint64_t)token + delta.
+// Returns the number of entries written; slots whose delta does not fit a
+// signed 32-bit value are omitted (their tokens then stay unusable on the
+// GPU, which is the pre-existing behaviour).
+int acuda_arena_token_table(uint32_t *base, uint32_t *size, uint32_t *dlo,
+                            uint32_t *dhi, int max) {
+    int n = 0;
+    if (!g_ctx)
+        return 0;
+    for (int i = 0; i < ACUDA_ARENA_SLOTS && n < max; i++) {
+        alloc_t *a = NULL;
+        for (size_t k = 0; k < g_nallocs; k++)
+            if (g_allocs[k].arena == i) {
+                a = &g_allocs[k];
+                break;
+            }
+        if (!a)
+            continue;
+        VkBufferDeviceAddressInfo bdai = {
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, NULL, a->buf
+        };
+        VkDeviceAddress bda = vkGetBufferDeviceAddress(g_ctx->device, &bdai);
+        uint32_t mb = (uint32_t)(uintptr_t)g_arenas[i].mapped;
+        if (bda == 0 || (uint64_t)mb + arena_vsize(i) > 0x100000000ull)
+            continue;
+        // The token is the host mapping plus the allocation's offset.
+        size_t aoff = (size_t)(a->virt - (uint64_t)(uintptr_t)
+                                            g_arenas[i].mapped);
+        // Wraps modulo 2^64 for arenas whose device address lies below the
+        // mapping; the shader adds it with wrapping 64-bit arithmetic.
+        uint64_t d = (uint64_t)bda - ((uint64_t)mb + (uint64_t)aoff);
+        base[n] = mb;
+        size[n] = (uint32_t)arena_vsize(i);
+        dlo[n] = (uint32_t)d;
+        dhi[n] = (uint32_t)(d >> 32);
+        n++;
+    }
+    return n;
+}
+
+// Monotonic counter that changes whenever acuda_arena_token_table() would
+// return a different set of entries.
+uint64_t acuda_arena_token_epoch(void) {
+    return g_token_epoch;
 }

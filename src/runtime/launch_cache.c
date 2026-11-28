@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "acuda/compiler.h"
+#include "acuda/driver/arena.h"
 #include "acuda/runtime/internal.h"
 #include "acuda/runtime/launch_internal.h"
 #include "acuda/runtime/time_compat.h"
@@ -233,7 +234,8 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             cache[i]->ctx == ctx && cache[i]->block_x == block_dim_x &&
             cache[i]->block_y == block_dim_y &&
             cache[i]->block_z == block_dim_z &&
-            cache[i]->dyn_words == dyn_words) {
+            cache[i]->dyn_words == dyn_words &&
+            cache[i]->arena_epoch == acuda_arena_token_epoch()) {
             *out = cache[i];
             cache_lock_release();
             return ACUDA_SUCCESS;
@@ -307,6 +309,7 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     e->block_y = block_dim_y;
     e->block_z = block_dim_z;
     e->dyn_words = dyn_words;
+    e->arena_epoch = acuda_arena_token_epoch();
 
     const uint32_t *words = NULL;
     size_t nwords = 0;
@@ -537,18 +540,39 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
     // left the array at its default length 1 and corrupted shared-
     // memory indexing in kernels (e.g. the fluid reorder) whose extern
     // flag was not propagated.
-    uint32_t spec_data[4] = { block_dim_x, block_dim_y, block_dim_z,
-                              dyn_words };
-    VkSpecializationMapEntry spec_map[4] = {
+    uint32_t spec_data[4 + 32] = { block_dim_x, block_dim_y, block_dim_z,
+                                   dyn_words };
+    VkSpecializationMapEntry spec_map[4 + 32] = {
         { .constantID = 0, .offset = 0, .size = sizeof(uint32_t) },
         { .constantID = 1, .offset = 4, .size = sizeof(uint32_t) },
         { .constantID = 2, .offset = 8, .size = sizeof(uint32_t) },
         { .constantID = 3, .offset = 12, .size = sizeof(uint32_t) },
     };
+    uint32_t map_count = 4u;
+    // Arena token table: SpecId 4+4i+{0,1,2,3} = {base, size, dlo, dhi}.
+    // Unused slots keep size 0, which makes the shader's range check false.
+    {
+        uint32_t tb[8], ts[8], tlo[8], thi[8];
+        int nt = acuda_arena_token_table(tb, ts, tlo, thi, 8);
+        for (int i = 0; i < nt; i++) {
+            uint32_t w = 4u + (uint32_t)i * 4u;
+            spec_data[w + 0] = tb[i];
+            spec_data[w + 1] = ts[i];
+            spec_data[w + 2] = tlo[i];
+            spec_data[w + 3] = thi[i];
+            for (uint32_t k = 0; k < 4u; k++)
+                spec_map[w + k] = (VkSpecializationMapEntry){
+                    .constantID = w + k,
+                    .offset = (w + k) * (uint32_t)sizeof(uint32_t),
+                    .size = sizeof(uint32_t),
+                };
+        }
+        map_count = 4u + (uint32_t)nt * 4u;
+    }
     VkSpecializationInfo spec_info = {
-        .mapEntryCount = 4u,
+        .mapEntryCount = map_count,
         .pMapEntries = spec_map,
-        .dataSize = sizeof(spec_data),
+        .dataSize = map_count * sizeof(uint32_t),
         .pData = spec_data,
     };
     if (getenv("ACUDA_TRACE"))
@@ -579,7 +603,8 @@ acuda_status_t cache_lookup(acuda_context_t ctx, const acuda_kernel_t *k,
             cache[i]->ctx == ctx && cache[i]->block_x == block_dim_x &&
             cache[i]->block_y == block_dim_y &&
             cache[i]->block_z == block_dim_z &&
-            cache[i]->dyn_words == dyn_words) {
+            cache[i]->dyn_words == dyn_words &&
+            cache[i]->arena_epoch == acuda_arena_token_epoch()) {
             *out = cache[i];
             cache_lock_release();
             cache_destroy_entry(ctx, e);
