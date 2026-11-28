@@ -1030,6 +1030,7 @@ CUresult ACUDA_CUDAAPI cuLaunchKernel(CUfunction f, unsigned int gridDimX,
             ((strstr(f->name, "KernelFluidForce") != NULL) ||
              (strstr(f->name, "KernelFluidDensity") != NULL) ||
              (strstr(f->name, "KernelReorderPosVel") != NULL) ||
+             (strstr(f->name, "PxgCudaFluidCollisionConstraints") != NULL) ||
              (strstr(f->name, "radixSort") != NULL) ||
              (strstr(f->name, "KernelFluidCalcHash") != NULL))) {
             static int fserial = 0;
